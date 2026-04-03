@@ -53,7 +53,8 @@ logging.basicConfig(
 
 # ── Configuration (all tuneable via environment variables) ───────────────
 
-K8S_NAMESPACE = os.environ.get("K8S_NAMESPACE", "deer-flow")
+K8S_NAMESPACE = os.environ.get("K8S_NAMESPACE", "scientific-tumbleweed")
+LEGACY_K8S_NAMESPACE = os.environ.get("LEGACY_K8S_NAMESPACE", "deer-flow")
 SANDBOX_IMAGE = os.environ.get(
     "SANDBOX_IMAGE",
     "enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest",
@@ -186,7 +187,7 @@ def _ensure_namespace() -> None:
                 metadata=k8s_client.V1ObjectMeta(
                     name=K8S_NAMESPACE,
                     labels={
-                        "app.kubernetes.io/name": "deer-flow",
+                        "app.kubernetes.io/name": "scientific-tumbleweed",
                         "app.kubernetes.io/component": "sandbox",
                     },
                 )
@@ -251,9 +252,9 @@ def _build_pod(sandbox_id: str, thread_id: str) -> k8s_client.V1Pod:
             name=_pod_name(sandbox_id),
             namespace=K8S_NAMESPACE,
             labels={
-                "app": "deer-flow-sandbox",
+                "app": "scientific-tumbleweed-sandbox",
                 "sandbox-id": sandbox_id,
-                "app.kubernetes.io/name": "deer-flow",
+                "app.kubernetes.io/name": "scientific-tumbleweed",
                 "app.kubernetes.io/component": "sandbox",
             },
         ),
@@ -348,9 +349,9 @@ def _build_service(sandbox_id: str) -> k8s_client.V1Service:
             name=_svc_name(sandbox_id),
             namespace=K8S_NAMESPACE,
             labels={
-                "app": "deer-flow-sandbox",
+                "app": "scientific-tumbleweed-sandbox",
                 "sandbox-id": sandbox_id,
-                "app.kubernetes.io/name": "deer-flow",
+                "app.kubernetes.io/name": "scientific-tumbleweed",
                 "app.kubernetes.io/component": "sandbox",
             },
         ),
@@ -519,12 +520,22 @@ async def list_sandboxes():
     try:
         services = core_v1.list_namespaced_service(
             K8S_NAMESPACE,
-            label_selector="app=deer-flow-sandbox",
+            label_selector="app=scientific-tumbleweed-sandbox",
         )
     except ApiException as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to list services: {exc.reason}"
         )
+
+    if LEGACY_K8S_NAMESPACE != K8S_NAMESPACE:
+        try:
+            legacy_services = core_v1.list_namespaced_service(
+                LEGACY_K8S_NAMESPACE,
+                label_selector="app=deer-flow-sandbox",
+            )
+            services.items.extend(legacy_services.items)
+        except ApiException:
+            pass
 
     sandboxes: list[SandboxResponse] = []
     for svc in services.items:

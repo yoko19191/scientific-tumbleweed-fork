@@ -136,7 +136,7 @@ stop:
 	@sleep 1
 	@-pkill -9 nginx 2>/dev/null || true
 	@echo "Cleaning up sandbox containers..."
-	@-./scripts/cleanup-containers.sh deer-flow-sandbox 2>/dev/null || true
+	@-./scripts/cleanup-containers.sh scientific-tumbleweed-sandbox 2>/dev/null || true
 	@echo "✓ All services stopped"
 
 # Clean up

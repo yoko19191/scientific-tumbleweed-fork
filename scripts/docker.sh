@@ -13,7 +13,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 DOCKER_DIR="$PROJECT_ROOT/docker"
 
 # Docker Compose command with project name
-COMPOSE_CMD="docker compose -p deer-flow-dev -f docker-compose-dev.yaml"
+COMPOSE_CMD="docker compose -p scientific-tumbleweed-dev -f docker-compose-dev.yaml"
 
 detect_sandbox_mode() {
     local config_file="$PROJECT_ROOT/config.yaml"
@@ -87,7 +87,7 @@ docker_available() {
 # Initialize: pre-pull the sandbox image so first Pod startup is fast
 init() {
     echo "=========================================="
-    echo "  DeerFlow Init — Pull Sandbox Image"
+    echo "  Scientific Tumbleweed Init — Pull Sandbox Image"
     echo "=========================================="
     echo ""
 
@@ -153,7 +153,7 @@ start() {
     local services
 
     echo "=========================================="
-    echo "  Starting DeerFlow Docker Development"
+    echo "  Starting Scientific Tumbleweed Docker Development"
     echo "=========================================="
     echo ""
 
@@ -188,7 +188,7 @@ start() {
             echo -e "${YELLOW}============================================================${NC}"
             echo -e "${YELLOW}  config.yaml has been created from config.example.yaml.${NC}"
             echo -e "${YELLOW}  Please edit config.yaml to set your API keys and model   ${NC}"
-            echo -e "${YELLOW}  configuration before starting DeerFlow.                  ${NC}"
+            echo -e "${YELLOW}  configuration before starting Scientific Tumbleweed.             ${NC}"
             echo -e "${YELLOW}============================================================${NC}"
             echo ""
             echo -e "${YELLOW}  Edit the file:  $PROJECT_ROOT/config.yaml${NC}"
@@ -217,7 +217,7 @@ start() {
     cd "$DOCKER_DIR" && $COMPOSE_CMD up --build -d --remove-orphans $services
     echo ""
     echo "=========================================="
-    echo "  DeerFlow Docker is starting!"
+    echo "  Scientific Tumbleweed Docker is starting!"
     echo "=========================================="
     echo ""
     echo "  🌐 Application: http://localhost:2026"
@@ -272,15 +272,21 @@ stop() {
     fi
     echo "Stopping Docker development services..."
     cd "$DOCKER_DIR" && $COMPOSE_CMD down
+    # Also stop legacy dev project to avoid orphaned containers/port conflicts
+    LEGACY_COMPOSE_CMD="docker compose -p deer-flow-dev -f docker-compose-dev.yaml"
+    if cd "$DOCKER_DIR" && $LEGACY_COMPOSE_CMD ps -q 2>/dev/null | grep -q .; then
+        echo "Stopping legacy deer-flow-dev services..."
+        cd "$DOCKER_DIR" && $LEGACY_COMPOSE_CMD down 2>/dev/null || true
+    fi
     echo "Cleaning up sandbox containers..."
+    "$SCRIPT_DIR/cleanup-containers.sh" scientific-tumbleweed-sandbox 2>/dev/null || true
     "$SCRIPT_DIR/cleanup-containers.sh" deer-flow-sandbox 2>/dev/null || true
-    echo -e "${GREEN}✓ Docker services stopped${NC}"
 }
 
 # Restart Docker development environment
 restart() {
     echo "========================================"
-    echo "  Restarting DeerFlow Docker Services"
+    echo "  Restarting Scientific Tumbleweed Docker Services"
     echo "========================================"
     echo ""
     echo -e "${BLUE}Restarting containers...${NC}"
@@ -295,7 +301,7 @@ restart() {
 
 # Show help
 help() {
-    echo "DeerFlow Docker Management Script"
+    echo "Scientific Tumbleweed Docker Management Script"
     echo ""
     echo "Usage: $0 <command> [options]"
     echo ""

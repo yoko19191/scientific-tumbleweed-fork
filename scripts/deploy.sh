@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# deploy.sh - Build and start (or stop) DeerFlow production services
+# deploy.sh - Build and start (or stop) Scientific Tumbleweed production services
 #
 # Usage:
 #   deploy.sh [up]   — build images and start containers (default)
@@ -16,7 +16,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 DOCKER_DIR="$REPO_ROOT/docker"
-COMPOSE_CMD=(docker compose -p deer-flow -f "$DOCKER_DIR/docker-compose.yaml")
+COMPOSE_CMD=(docker compose -p scientific-tumbleweed -f "$DOCKER_DIR/docker-compose.yaml")
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -146,14 +146,21 @@ if [ "$CMD" = "down" ]; then
     export DEER_FLOW_DOCKER_SOCKET="${DEER_FLOW_DOCKER_SOCKET:-/var/run/docker.sock}"
     export DEER_FLOW_REPO_ROOT="${DEER_FLOW_REPO_ROOT:-$REPO_ROOT}"
     export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-placeholder}"
+    # Stop current project
     "${COMPOSE_CMD[@]}" down
+    # Also stop legacy deer-flow project if it exists (migration safety)
+    LEGACY_COMPOSE_CMD=(docker compose -p deer-flow -f "$DOCKER_DIR/docker-compose.yaml")
+    if docker compose -p deer-flow ps -q 2>/dev/null | grep -q .; then
+        echo -e "${YELLOW}⚠ Found legacy deer-flow containers — stopping them too...${NC}"
+        "${LEGACY_COMPOSE_CMD[@]}" down 2>/dev/null || true
+    fi
     exit 0
 fi
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 
 echo "=========================================="
-echo "  DeerFlow Production Deployment"
+echo "  Scientific Tumbleweed Production Deployment"
 echo "=========================================="
 echo ""
 
@@ -189,6 +196,23 @@ fi
 
 echo ""
 
+# ── Step 1.5: Tear down legacy deer-flow stack if still running ───────────────
+
+LEGACY_COMPOSE_CMD=(docker compose -p deer-flow -f "$DOCKER_DIR/docker-compose.yaml")
+if docker compose -p deer-flow ps -q 2>/dev/null | grep -q .; then
+    echo -e "${YELLOW}⚠ Found legacy deer-flow containers — stopping them to free ports...${NC}"
+    export DEER_FLOW_HOME="${DEER_FLOW_HOME:-$REPO_ROOT/backend/.deer-flow}"
+    export DEER_FLOW_CONFIG_PATH="${DEER_FLOW_CONFIG_PATH:-$DEER_FLOW_HOME/config.yaml}"
+    export DEER_FLOW_EXTENSIONS_CONFIG_PATH="${DEER_FLOW_EXTENSIONS_CONFIG_PATH:-$DEER_FLOW_HOME/extensions_config.json}"
+    export DEER_FLOW_DOCKER_SOCKET="${DEER_FLOW_DOCKER_SOCKET:-/var/run/docker.sock}"
+    export DEER_FLOW_REPO_ROOT="${DEER_FLOW_REPO_ROOT:-$REPO_ROOT}"
+    export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-placeholder}"
+    "${LEGACY_COMPOSE_CMD[@]}" down 2>/dev/null || true
+    echo -e "${GREEN}✓ Legacy deer-flow stack stopped${NC}"
+fi
+
+echo ""
+
 # ── Step 2: Build and start ───────────────────────────────────────────────────
 
 echo "Building images and starting containers..."
@@ -199,7 +223,7 @@ echo ""
 
 echo ""
 echo "=========================================="
-echo "  DeerFlow is running!"
+echo "  Scientific Tumbleweed is running!"
 echo "=========================================="
 echo ""
 echo "  🌐 Application: http://localhost:${PORT:-2026}"

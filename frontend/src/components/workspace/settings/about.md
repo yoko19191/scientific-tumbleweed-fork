@@ -1,4 +1,4 @@
-# 🦌 [About DeerFlow 2.0](https://github.com/bytedance/deer-flow)
+# 🦌 About DeerFlow 2.0
 
 > **From Open Source, Back to Open Source**
 
@@ -7,10 +7,6 @@ With the help of sandboxes, memories, tools and skills, it handles
 different levels of tasks that could take minutes to hours.
 
 ---
-
-## 🌟 GitHub Repository
-
-Explore DeerFlow on GitHub: [github.com/bytedance/deer-flow](https://github.com/bytedance/deer-flow)
 
 ## 🌐 Official Website
 

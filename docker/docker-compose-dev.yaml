@@ -1,4 +1,4 @@
-# DeerFlow Development Environment
+# Scientific Tumbleweed Development Environment
 # Usage: docker-compose -f docker-compose-dev.yaml up --build
 #
 # Services:
@@ -26,11 +26,11 @@ services:
       dockerfile: Dockerfile
       args:
         APT_MIRROR: ${APT_MIRROR:-}
-    container_name: deer-flow-provisioner
+    container_name: scientific-tumbleweed-provisioner
     volumes:
       - ~/.kube/config:/root/.kube/config:ro
     environment:
-      - K8S_NAMESPACE=deer-flow
+      - K8S_NAMESPACE=scientific-tumbleweed
       - SANDBOX_IMAGE=enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest
       # Host paths for K8s HostPath volumes (must be absolute paths accessible by K8s node)
       # On Docker Desktop/OrbStack, use your actual host paths like /Users/username/...
@@ -48,7 +48,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - deer-flow-dev
+      - scientific-tumbleweed-dev
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
@@ -64,7 +64,7 @@ services:
   # - nginx.conf: includes provisioner route (provisioner mode)
   nginx:
     image: nginx:alpine
-    container_name: deer-flow-nginx
+    container_name: scientific-tumbleweed-nginx
     ports:
       - "2026:2026"
     volumes:
@@ -74,7 +74,7 @@ services:
       - gateway
       - langgraph
     networks:
-      - deer-flow-dev
+      - scientific-tumbleweed-dev
     restart: unless-stopped
 
   # Frontend - Next.js Development Server
@@ -86,7 +86,7 @@ services:
       args:
         PNPM_STORE_PATH: ${PNPM_STORE_PATH:-/root/.local/share/pnpm/store}
         NPM_REGISTRY: ${NPM_REGISTRY:-}
-    container_name: deer-flow-frontend
+    container_name: scientific-tumbleweed-frontend
     command: sh -c "cd frontend && pnpm run dev > /app/logs/frontend.log 2>&1"
     volumes:
       - ../frontend/src:/app/frontend/src
@@ -105,7 +105,7 @@ services:
     env_file:
       - ../frontend/.env
     networks:
-      - deer-flow-dev
+      - scientific-tumbleweed-dev
     restart: unless-stopped
 
   # Backend - Gateway API
@@ -118,7 +118,7 @@ services:
         APT_MIRROR: ${APT_MIRROR:-}
         UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.7.20}
         UV_INDEX_URL: ${UV_INDEX_URL:-https://pypi.org/simple}
-    container_name: deer-flow-gateway
+    container_name: scientific-tumbleweed-gateway
     command: sh -c "cd backend && uv sync && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --reload --reload-include='*.yaml .env' > /app/logs/gateway.log 2>&1"
     volumes:
       - ../backend/:/app/backend/
@@ -161,7 +161,7 @@ services:
       # For Linux: map host.docker.internal to host gateway
       - "host.docker.internal:host-gateway"
     networks:
-      - deer-flow-dev
+      - scientific-tumbleweed-dev
     restart: unless-stopped
 
   # Backend - LangGraph Server
@@ -174,7 +174,7 @@ services:
         APT_MIRROR: ${APT_MIRROR:-}
         UV_IMAGE: ${UV_IMAGE:-ghcr.io/astral-sh/uv:0.7.20}
         UV_INDEX_URL: ${UV_INDEX_URL:-https://pypi.org/simple}
-    container_name: deer-flow-langgraph
+    container_name: scientific-tumbleweed-langgraph
     command: sh -c "cd backend && uv sync && uv run langgraph dev --no-browser --allow-blocking --host 0.0.0.0 --port 2024 --n-jobs-per-worker 10 > /app/logs/langgraph.log 2>&1"
     volumes:
       - ../backend/:/app/backend/
@@ -215,7 +215,7 @@ services:
       # For Linux: map host.docker.internal to host gateway
       - "host.docker.internal:host-gateway"
     networks:
-      - deer-flow-dev
+      - scientific-tumbleweed-dev
     restart: unless-stopped
 
 volumes:
@@ -225,7 +225,8 @@ volumes:
   langgraph-venv:
 
 networks:
-  deer-flow-dev:
+  scientific-tumbleweed-dev:
+    name: scientific-tumbleweed-dev
     driver: bridge
     ipam:
       config:

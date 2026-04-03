@@ -27,7 +27,6 @@ import {
 } from "@/components/ui/sidebar";
 import { useI18n } from "@/core/i18n/hooks";
 
-import { GithubIcon } from "./github-icon";
 import { SettingsDialog } from "./settings";
 
 function NavMenuButtonContent({
@@ -99,7 +98,7 @@ export function WorkspaceNavMenu() {
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <a
-                    href="https://deerflow.tech/"
+                    href="https://liangzhulab.zju.edu.cn/"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -108,19 +107,9 @@ export function WorkspaceNavMenu() {
                       {t.workspace.officialWebsite}
                     </DropdownMenuItem>
                   </a>
-                  <a
-                    href="https://github.com/bytedance/deer-flow"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <DropdownMenuItem>
-                      <GithubIcon />
-                      {t.workspace.visitGithub}
-                    </DropdownMenuItem>
-                  </a>
                   <DropdownMenuSeparator />
                   <a
-                    href="https://github.com/bytedance/deer-flow/issues"
+                    href="https://wj.qq.com/s2/26212721/3f3d/"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -129,7 +118,7 @@ export function WorkspaceNavMenu() {
                       {t.workspace.reportIssue}
                     </DropdownMenuItem>
                   </a>
-                  <a href="mailto:support@deerflow.tech">
+                  <a href="mailto:chenguanghang2000@gmail.com">
                     <DropdownMenuItem>
                       <MailIcon />
                       {t.workspace.contactUs}

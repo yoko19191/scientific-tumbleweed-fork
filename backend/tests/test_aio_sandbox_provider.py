@@ -1,6 +1,7 @@
 """Tests for AioSandboxProvider mount helpers."""
 
 import importlib
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -134,3 +135,30 @@ def test_discover_or_create_only_unlocks_when_lock_succeeds(tmp_path, monkeypatc
             provider._discover_or_create_with_lock("thread-5", "sandbox-5")
 
     assert unlock_calls == []
+
+
+def test_load_config_uses_scientific_tumbleweed_sandbox_prefix_by_default(monkeypatch):
+    """Default sandbox containers should use the scientific-tumbleweed prefix."""
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+
+    monkeypatch.setattr(
+        aio_mod,
+        "get_app_config",
+        lambda: SimpleNamespace(
+            sandbox=SimpleNamespace(
+                image=None,
+                port=None,
+                container_prefix=None,
+                idle_timeout=None,
+                replicas=None,
+                mounts=[],
+                environment={},
+                provisioner_url=None,
+            )
+        ),
+    )
+
+    config = aio_mod.AioSandboxProvider._load_config(provider)
+
+    assert config["container_prefix"] == "scientific-tumbleweed-sandbox"

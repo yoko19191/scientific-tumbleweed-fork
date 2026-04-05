@@ -108,6 +108,7 @@ export const enUS: Translations = {
       "You already have text in the input. Choose how to send it.",
     followupConfirmAppend: "Append & send",
     followupConfirmReplace: "Replace & send",
+    aiDisclaimer: "AI can make mistakes, please double-check the answer",
     suggestions: [
       {
         suggestion: "Write",

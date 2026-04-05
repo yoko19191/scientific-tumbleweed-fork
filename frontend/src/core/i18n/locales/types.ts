@@ -87,6 +87,7 @@ export interface Translations {
     followupConfirmDescription: string;
     followupConfirmAppend: string;
     followupConfirmReplace: string;
+    aiDisclaimer: string;
     suggestions: {
       suggestion: string;
       prompt: string;

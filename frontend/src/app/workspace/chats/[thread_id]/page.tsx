@@ -99,7 +99,7 @@ export default function ChatPage() {
                 thread={thread}
               />
             </div>
-            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">
+            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4 pb-[6px]">
               <div
                 className={cn(
                   "relative w-full",
@@ -144,6 +144,11 @@ export default function ChatPage() {
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                 />
+                {!isNewThread && (
+                  <p className="relative z-10 text-muted-foreground/50 text-center text-[10px] leading-none" style={{ marginTop: "-10px" }}>
+                    {t.inputBox.aiDisclaimer}
+                  </p>
+                )}
                 {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" && (
                   <div className="text-muted-foreground/67 w-full translate-y-12 text-center text-xs">
                     {t.common.notAvailableInDemoMode}

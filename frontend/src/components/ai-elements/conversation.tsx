@@ -68,25 +68,33 @@ export const ConversationEmptyState = ({
   </div>
 );
 
-export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
+export type ConversationScrollButtonProps = ComponentProps<typeof Button> & {
+  bottomOffset?: number;
+};
 
 export const ConversationScrollButton = ({
   className,
+  bottomOffset = 4,
   ...props
 }: ConversationScrollButtonProps) => {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext();
 
   const handleScrollToBottom = useCallback(() => {
-    scrollToBottom();
+    scrollToBottom({ animation: "smooth" });
   }, [scrollToBottom]);
 
   return (
-    !isAtBottom && (
+    <div
+      className={cn(
+        "pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 transition-all duration-300 ease-in-out",
+        isAtBottom
+          ? "translate-y-4 opacity-0"
+          : "pointer-events-auto translate-y-0 opacity-100",
+      )}
+      style={{ bottom: bottomOffset }}
+    >
       <Button
-        className={cn(
-          "absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full",
-          className,
-        )}
+        className={cn("rounded-full shadow-md", className)}
         onClick={handleScrollToBottom}
         size="icon"
         type="button"
@@ -95,6 +103,6 @@ export const ConversationScrollButton = ({
       >
         <ArrowDownIcon className="size-4" />
       </Button>
-    )
+    </div>
   );
 };

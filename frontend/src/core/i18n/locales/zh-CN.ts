@@ -103,6 +103,7 @@ export const zhCN: Translations = {
     followupConfirmDescription: "当前输入框已有内容，选择发送方式。",
     followupConfirmAppend: "追加并发送",
     followupConfirmReplace: "替换并发送",
+    aiDisclaimer: "AI 回答仅供参考",
     suggestions: [
       {
         suggestion: "写作",

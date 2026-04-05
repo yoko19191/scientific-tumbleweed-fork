@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm install:*)",
+      "mcp__chrome-devtools__take_screenshot",
+      "mcp__chrome-devtools__list_pages",
+      "Bash(npx tsc:*)",
+      "Bash(python3:*)"
     ]
   }
 }

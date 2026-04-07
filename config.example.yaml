@@ -664,6 +664,79 @@ checkpointer:
 #             subagent_enabled: true
 
 # ============================================================================
+# Permissions Configuration (NEW in v5)
+# ============================================================================
+# Layered permission model for tool execution governance.
+# Each tool has a required permission level; the session mode determines
+# whether calls are allowed, denied, or require interactive confirmation.
+#
+# Modes (from least to most permissive):
+#   read_only          — only read tools allowed
+#   workspace_write    — read + workspace-scoped writes
+#   danger_full_access — all tools except auto-allow
+#   prompt             — high-risk tools require interactive approval
+#   allow              — all tools permitted (default, backward-compatible)
+#
+permissions:
+  enabled: true
+  mode: "allow"
+  # Uncomment to restrict specific tools:
+  # tool_overrides:
+  #   bash: "danger_full_access"
+  #   write_file: "workspace_write"
+
+# ============================================================================
+# Hooks Configuration (NEW in v5)
+# ============================================================================
+# Programmable interception points before and after tool calls.
+# Hooks can audit, modify inputs, deny execution, or inject feedback.
+# Supports both external shell commands and Python callables.
+#
+# External hook protocol (compatible with Claude Code):
+#   stdin: JSON payload {event, tool_name, input, output, is_error}
+#   env:   HOOK_EVENT, HOOK_TOOL_NAME, HOOK_TOOL_INPUT
+#   exit 0  → allow   (stdout = optional message)
+#   exit 2  → deny    (stdout = denial reason)
+#   other   → warn    (non-blocking, logged)
+#
+hooks:
+  enabled: true
+  # Add hook entries to activate auditing / interception:
+  # pre_tool_use:
+  #   - command: "python scripts/check_sensitive_paths.py"
+  #     tools: ["bash", "file_write"]
+  #   - use: "deerflow.hooks.builtins:audit_logger"
+  # post_tool_use:
+  #   - command: "python scripts/post_audit.py"
+  # post_tool_use_failure: []
+
+# ============================================================================
+# Context Compaction (NEW in v5)
+# ============================================================================
+# Deterministic conversation compression to manage token budgets.
+# When the estimated token count exceeds max_estimated_tokens, older
+# messages are replaced with a structured summary while preserving
+# the most recent messages verbatim.
+#
+# context:
+#   compaction:
+#     enabled: false
+#     max_estimated_tokens: 80000
+#     preserve_recent_messages: 6
+
+# ============================================================================
+# Plugins Configuration (NEW in v5)
+# ============================================================================
+# Manifest-based plugin system. Plugins contribute tools, hooks,
+# and runtime constraints via plugin.json manifests.
+#
+# plugins:
+#   enabled: false
+#   directories:
+#     - "~/.deerflow/plugins"
+#     - ".deerflow/plugins"
+
+# ============================================================================
 # Guardrails Configuration
 # ============================================================================
 # Optional pre-execution authorization for tool calls.

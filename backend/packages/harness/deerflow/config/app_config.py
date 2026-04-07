@@ -11,8 +11,11 @@ from deerflow.config.acp_config import load_acp_config_from_dict
 from deerflow.config.checkpointer_config import CheckpointerConfig, load_checkpointer_config_from_dict
 from deerflow.config.extensions_config import ExtensionsConfig
 from deerflow.config.guardrails_config import load_guardrails_config_from_dict
+from deerflow.config.hooks_config import load_hooks_config_from_dict
 from deerflow.config.memory_config import load_memory_config_from_dict
 from deerflow.config.model_config import ModelConfig
+from deerflow.config.permissions_config import load_permissions_config_from_dict
+from deerflow.config.plugins_config import load_plugins_config_from_dict
 from deerflow.config.sandbox_config import SandboxConfig
 from deerflow.config.skills_config import SkillsConfig
 from deerflow.config.stream_bridge_config import StreamBridgeConfig, load_stream_bridge_config_from_dict
@@ -113,6 +116,15 @@ class AppConfig(BaseModel):
         # Load tool_search config if present
         if "tool_search" in config_data:
             load_tool_search_config_from_dict(config_data["tool_search"])
+
+        # Load permissions config if present (NEW in v5)
+        load_permissions_config_from_dict(config_data.get("permissions"))
+
+        # Load hooks config if present (NEW in v5)
+        load_hooks_config_from_dict(config_data.get("hooks"))
+
+        # Load plugins config if present (NEW in v5)
+        load_plugins_config_from_dict(config_data.get("plugins"))
 
         # Load guardrails config if present
         if "guardrails" in config_data:

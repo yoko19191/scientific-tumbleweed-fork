@@ -101,7 +101,7 @@ class TestParseSkillFile:
         result = parse_skill_file(skill_file, "public")
         assert result is not None
         assert result.name == "multiline-skill"
-        assert result.description == "This is a multiline description for a skill.\n\nIt spans multiple lines."
+        assert result.description == "This is a multiline description for a skill.\nIt spans multiple lines."
         assert result.license == "MIT"
 
     def test_multiline_yaml_literal_description(self, tmp_path):

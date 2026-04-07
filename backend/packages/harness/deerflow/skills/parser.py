@@ -2,6 +2,8 @@ import logging
 import re
 from pathlib import Path
 
+import yaml
+
 from .types import Skill
 
 logger = logging.getLogger(__name__)
@@ -33,72 +35,32 @@ def parse_skill_file(skill_file: Path, category: str, relative_path: Path | None
 
         front_matter = front_matter_match.group(1)
 
-        # Parse YAML front matter with basic multiline string support
-        metadata = {}
-        lines = front_matter.split("\n")
-        current_key = None
-        current_value = []
-        is_multiline = False
-        multiline_style = None
-        indent_level = None
+        # Parse YAML front matter using yaml.safe_load for full YAML support
+        # (handles multiline strings with | and > block scalars).
+        # Falls back to simple key-value parsing if yaml.safe_load fails
+        # (e.g. unquoted colons in values like "description: A skill: does things").
+        metadata: dict | None = None
+        try:
+            parsed = yaml.safe_load(front_matter)
+            if isinstance(parsed, dict):
+                # Strip trailing whitespace from string values (yaml preserves trailing \n in block scalars)
+                metadata = {k: v.rstrip() if isinstance(v, str) else v for k, v in parsed.items()}
+        except yaml.YAMLError:
+            pass
 
-        for line in lines:
-            if is_multiline:
-                if not line.strip():
-                    current_value.append("")
+        if metadata is None:
+            # Fallback: simple key-value parsing (handles unquoted colons)
+            metadata = {}
+            for line in front_matter.split("\n"):
+                line_stripped = line.strip()
+                if not line_stripped:
                     continue
+                if ":" in line_stripped:
+                    key, value = line_stripped.split(":", 1)
+                    metadata[key.strip()] = value.strip()
 
-                current_indent = len(line) - len(line.lstrip())
-
-                if indent_level is None:
-                    if current_indent > 0:
-                        indent_level = current_indent
-                        current_value.append(line[indent_level:])
-                        continue
-                elif current_indent >= indent_level:
-                    current_value.append(line[indent_level:])
-                    continue
-
-            # If we reach here, it's either a new key or the end of multiline
-            if current_key and is_multiline:
-                if multiline_style == "|":
-                    metadata[current_key] = "\n".join(current_value).rstrip()
-                else:
-                    text = "\n".join(current_value).rstrip()
-                    # Replace single newlines with spaces for folded blocks
-                    metadata[current_key] = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
-
-                current_key = None
-                current_value = []
-                is_multiline = False
-                multiline_style = None
-                indent_level = None
-
-            if not line.strip():
-                continue
-
-            if ":" in line:
-                # Handle nested dicts simply by ignoring indentation for now,
-                # or just extracting top-level keys
-                key, value = line.split(":", 1)
-                key = key.strip()
-                value = value.strip()
-
-                if value in (">", "|"):
-                    current_key = key
-                    is_multiline = True
-                    multiline_style = value
-                    current_value = []
-                    indent_level = None
-                else:
-                    metadata[key] = value
-
-        if current_key and is_multiline:
-            if multiline_style == "|":
-                metadata[current_key] = "\n".join(current_value).rstrip()
-            else:
-                text = "\n".join(current_value).rstrip()
-                metadata[current_key] = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+        if not metadata:
+            return None
 
         # Extract required fields
         name = metadata.get("name")

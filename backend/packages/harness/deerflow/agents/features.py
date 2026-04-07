@@ -31,6 +31,9 @@ class RuntimeFeatures:
     vision: bool | AgentMiddleware = False
     auto_title: bool | AgentMiddleware = False
     guardrail: Literal[False] | AgentMiddleware = False
+    permissions: bool | AgentMiddleware = False
+    hooks: bool | AgentMiddleware = False
+    compaction: bool | AgentMiddleware = False
 
 
 # ---------------------------------------------------------------------------

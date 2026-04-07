@@ -402,10 +402,6 @@ def get_skills_prompt_section(available_skills: set[str] | None = None) -> str:
     if available_skills is not None:
         skills = [skill for skill in skills if skill.name in available_skills]
 
-    # Check again after filtering
-    if not skills:
-        return ""
-
     skill_items = "\n".join(
         f"    <skill>\n        <name>{skill.name}</name>\n        <description>{skill.description}</description>\n        <location>{skill.get_container_file_path(container_base_path)}</location>\n    </skill>" for skill in skills
     )
@@ -503,7 +499,136 @@ def _build_custom_mounts_section() -> str:
     return f"\n**Custom Mounted Directories:**\n{mounts_list}\n- If the user needs files outside `/mnt/user-data`, use these absolute container paths directly when they match the requested directory"
 
 
+def _apply_prompt_via_builder(
+    subagent_enabled: bool = False,
+    max_concurrent_subagents: int = 3,
+    *,
+    agent_name: str | None = None,
+    available_skills: set[str] | None = None,
+) -> str:
+    """Build system prompt using the modular SystemPromptBuilder.
+
+    This produces a prompt with a clear static/dynamic boundary for LLM API
+    prompt caching, while including all the same content as the legacy template.
+    """
+    from deerflow.prompts import SystemPromptBuilder
+
+    name = agent_name or "DeerFlow 2.0"
+    builder = SystemPromptBuilder(agent_name=name)
+
+    # Soul
+    soul = get_agent_soul(agent_name)
+    if soul:
+        builder.with_soul(soul)
+
+    # Memory
+    memory = _get_memory_context(agent_name)
+    if memory:
+        builder.with_memory(memory)
+
+    # Skills
+    skills = get_skills_prompt_section(available_skills)
+    if skills:
+        builder.with_skills(skills)
+
+    # Deferred tools
+    deferred = get_deferred_tools_prompt_section()
+    if deferred:
+        builder.with_deferred_tools(deferred)
+
+    # Environment
+    builder.with_environment(cwd=None, date_str=datetime.now().strftime("%Y-%m-%d, %A"))
+
+    # Subagent section
+    if subagent_enabled:
+        n = max_concurrent_subagents
+        subagent_section = _build_subagent_section(n)
+        builder.with_subagent(subagent_section, enabled=True)
+        builder.with_specialized_agents(verification=True, explore=True, plan=True)
+
+    # Clarification system (included as a dynamic section)
+    builder.with_clarification(_build_clarification_section())
+
+    # Working directory
+    acp_section = _build_acp_section()
+    custom_mounts_section = _build_custom_mounts_section()
+    acp_and_mounts = "\n".join(s for s in (acp_section, custom_mounts_section) if s)
+    builder.with_working_directory(_build_working_directory_section(acp_and_mounts))
+
+    # Citations
+    builder.with_citations(_build_citations_section())
+
+    return builder.build()
+
+
+def _build_clarification_section() -> str:
+    return """<clarification_system>
+**WORKFLOW PRIORITY: CLARIFY → PLAN → ACT**
+1. **FIRST**: Analyze the request — identify what's unclear, missing, or ambiguous
+2. **SECOND**: If clarification is needed, call `ask_clarification` tool IMMEDIATELY — do NOT start working
+3. **THIRD**: Only after all clarifications are resolved, proceed with execution
+
+**CRITICAL RULE: Clarification ALWAYS comes BEFORE action. Never start working and clarify mid-execution.**
+
+**Mandatory Clarification Scenarios:**
+- **Missing Information**: Required details not provided
+- **Ambiguous Requirements**: Multiple valid interpretations exist
+- **Approach Choices**: Several valid approaches with significant trade-offs
+- **Risky Operations**: Destructive actions need confirmation
+</clarification_system>"""
+
+
+def _build_working_directory_section(acp_section: str) -> str:
+    return f"""<working_directory existed="true">
+- User uploads: `/mnt/user-data/uploads` - Files uploaded by the user
+- User workspace: `/mnt/user-data/workspace` - Working directory for temporary files
+- Output files: `/mnt/user-data/outputs` - Final deliverables must be saved here
+
+**File Management:**
+- Use `read_file` tool to read uploaded files using their paths
+- For PDF, PPT, Excel, and Word files, converted Markdown versions (*.md) are available alongside originals
+- All temporary work happens in `/mnt/user-data/workspace`
+- Final deliverables must be copied to `/mnt/user-data/outputs` and presented using `present_file` tool
+{acp_section}
+</working_directory>"""
+
+
+def _build_citations_section() -> str:
+    return """<citations>
+**CRITICAL: Always include citations when using web search results**
+
+- **Format**: Use Markdown link format `[citation:TITLE](URL)` immediately after the claim
+- **Placement**: Inline citations should appear right after the sentence they support
+- **Sources Section**: Collect all citations in a "Sources" section at the end of reports
+- Every item in the Sources section MUST be a clickable markdown link with URL
+</citations>"""
+
+
 def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:
+    """Build the lead agent system prompt.
+
+    Uses SystemPromptBuilder for modular assembly with static/dynamic cache
+    boundary. Falls back to the legacy template only if the builder fails.
+    """
+    try:
+        return _apply_prompt_via_builder(
+            subagent_enabled=subagent_enabled,
+            max_concurrent_subagents=max_concurrent_subagents,
+            agent_name=agent_name,
+            available_skills=available_skills,
+        )
+    except Exception:
+        logger.warning("SystemPromptBuilder failed; falling back to legacy template", exc_info=True)
+        return _apply_legacy_prompt_template(
+            subagent_enabled=subagent_enabled,
+            max_concurrent_subagents=max_concurrent_subagents,
+            agent_name=agent_name,
+            available_skills=available_skills,
+        )
+
+
+def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:
+    """Legacy template-based prompt assembly (kept as fallback)."""
     # Get memory context
     memory_context = _get_memory_context(agent_name)
 

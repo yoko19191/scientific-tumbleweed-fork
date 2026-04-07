@@ -128,5 +128,32 @@ def get_available_tools(
     except Exception as e:
         logger.warning(f"Failed to load ACP tool: {e}")
 
-    logger.info(f"Total tools loaded: {len(loaded_tools)}, built-in tools: {len(builtin_tools)}, MCP tools: {len(mcp_tools)}, ACP tools: {len(acp_tools)}")
-    return loaded_tools + builtin_tools + mcp_tools + acp_tools
+    # Load plugin tools if plugin system is enabled
+    plugin_tools: list[BaseTool] = []
+    try:
+        from deerflow.config.plugins_config import get_plugins_config
+
+        plugins_cfg = get_plugins_config()
+        if plugins_cfg.enabled and plugins_cfg.directories:
+            from deerflow.plugins.loader import discover_plugins
+            from deerflow.plugins.tools import create_plugin_tools
+
+            existing_names = {t.name for t in loaded_tools + builtin_tools + mcp_tools + acp_tools}
+            registry = discover_plugins(plugins_cfg.directories, builtin_tool_names=existing_names)
+            for plugin in registry.plugins:
+                plugin_tools.extend(create_plugin_tools(plugin.tools, plugin_name=plugin.name, plugin_root=str(plugin.root_path)))
+            if plugin_tools:
+                logger.info("Loaded %d plugin tool(s) from %d plugin(s)", len(plugin_tools), len(registry.plugins))
+    except Exception as e:
+        logger.warning("Failed to load plugin tools: %s", e)
+
+    logger.info(
+        "Total tools loaded: %d (config=%d, builtin=%d, MCP=%d, ACP=%d, plugin=%d)",
+        len(loaded_tools) + len(builtin_tools) + len(mcp_tools) + len(acp_tools) + len(plugin_tools),
+        len(loaded_tools),
+        len(builtin_tools),
+        len(mcp_tools),
+        len(acp_tools),
+        len(plugin_tools),
+    )
+    return loaded_tools + builtin_tools + mcp_tools + acp_tools + plugin_tools

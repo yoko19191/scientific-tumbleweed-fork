@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware
@@ -19,6 +20,9 @@ from deerflow.config.agents_config import load_agent_config
 from deerflow.config.app_config import get_app_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
+
+if TYPE_CHECKING:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -195,16 +199,117 @@ Being proactive with task management demonstrates thoroughness and ensures all r
     return TodoMiddleware(system_prompt=system_prompt, tool_description=tool_description)
 
 
-# ThreadDataMiddleware must be before SandboxMiddleware to ensure thread_id is available
-# UploadsMiddleware should be after ThreadDataMiddleware to access thread_id
-# DanglingToolCallMiddleware patches missing ToolMessages before model sees the history
-# SummarizationMiddleware should be early to reduce context before other processing
-# TodoListMiddleware should be before ClarificationMiddleware to allow todo management
-# TitleMiddleware generates title after first exchange
-# MemoryMiddleware queues conversation for memory update (after TitleMiddleware)
-# ViewImageMiddleware should be before ClarificationMiddleware to inject image details before LLM
-# ToolErrorHandlingMiddleware should be before ClarificationMiddleware to convert tool exceptions to ToolMessages
-# ClarificationMiddleware should be last to intercept clarification requests after model calls
+# ---------------------------------------------------------------------------
+# Governance middleware factories (Permission, Hook, Compaction)
+# ---------------------------------------------------------------------------
+
+
+def _create_permission_middleware() -> AgentMiddleware | None:
+    """Create PermissionMiddleware from config. Returns None if not needed."""
+    try:
+        from deerflow.config.permissions_config import get_permissions_config
+
+        cfg = get_permissions_config()
+        if not cfg.enabled:
+            return None
+
+        from deerflow.permissions.middleware import PermissionMiddleware
+        from deerflow.permissions.mode import PermissionMode
+        from deerflow.permissions.policy import PermissionPolicy
+
+        mode_map = {
+            "allow": PermissionMode.ALLOW,
+            "prompt": PermissionMode.PROMPT,
+            "danger_full_access": PermissionMode.DANGER_FULL_ACCESS,
+            "workspace_write": PermissionMode.WORKSPACE_WRITE,
+            "read_only": PermissionMode.READ_ONLY,
+        }
+        active = mode_map.get(cfg.mode, PermissionMode.ALLOW)
+        if active == PermissionMode.ALLOW and not cfg.tool_overrides:
+            return None
+
+        policy = PermissionPolicy(active_mode=active)
+        for tool_name, mode_str in cfg.tool_overrides.items():
+            mode = mode_map.get(mode_str, PermissionMode.DANGER_FULL_ACCESS)
+            policy = policy.with_tool_requirement(tool_name, mode)
+
+        logger.info("PermissionMiddleware enabled: mode=%s, overrides=%d", active.name, len(cfg.tool_overrides))
+        return PermissionMiddleware(policy)
+    except Exception:
+        logger.debug("PermissionMiddleware not available; skipping", exc_info=True)
+        return None
+
+
+def _create_hook_middleware() -> AgentMiddleware | None:
+    """Create HookMiddleware from config. Returns None if no hooks configured."""
+    try:
+        from deerflow.config.hooks_config import get_hooks_config
+
+        cfg = get_hooks_config()
+        if not cfg.enabled:
+            return None
+
+        from deerflow.hooks.middleware import HookMiddleware
+        from deerflow.hooks.runner import HookRunner
+
+        raw: dict = {}
+        if cfg.pre_tool_use:
+            raw["pre_tool_use"] = [h.model_dump(exclude_none=True) for h in cfg.pre_tool_use]
+        if cfg.post_tool_use:
+            raw["post_tool_use"] = [h.model_dump(exclude_none=True) for h in cfg.post_tool_use]
+        if cfg.post_tool_use_failure:
+            raw["post_tool_use_failure"] = [h.model_dump(exclude_none=True) for h in cfg.post_tool_use_failure]
+
+        if not raw:
+            return None
+
+        runner = HookRunner.from_config(raw)
+        hook_count = sum(len(v) for v in raw.values())
+        logger.info("HookMiddleware enabled: %d hook(s)", hook_count)
+        return HookMiddleware(runner)
+    except Exception:
+        logger.debug("HookMiddleware not available; skipping", exc_info=True)
+        return None
+
+
+def _create_compaction_middleware() -> AgentMiddleware | None:
+    """Create CompactionMiddleware for context compression."""
+    try:
+        from deerflow.context.middleware import CompactionMiddleware
+
+        return CompactionMiddleware()
+    except Exception:
+        logger.debug("CompactionMiddleware not available; skipping", exc_info=True)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Middleware chain assembly
+# ---------------------------------------------------------------------------
+#
+# Canonical order (21 positions):
+#   [0-2]  Sandbox infrastructure (ThreadData → Uploads → Sandbox)
+#   [3]    DanglingToolCallMiddleware
+#   [4]    GuardrailMiddleware (if configured)
+#   [5]    SandboxAuditMiddleware
+#   [6]    ToolErrorHandlingMiddleware
+#   -- base chain ends here (from build_lead_runtime_middlewares) --
+#   [7]    PermissionMiddleware        ← NEW
+#   [8]    HookMiddleware              ← NEW
+#   [9]    SummarizationMiddleware
+#   [10]   CompactionMiddleware        ← NEW
+#   [11]   TodoMiddleware
+#   [12]   TokenUsageMiddleware
+#   [13]   TitleMiddleware
+#   [14]   MemoryMiddleware
+#   [15]   ViewImageMiddleware
+#   [16]   DeferredToolFilterMiddleware
+#   [17]   SubagentLimitMiddleware
+#   [18]   LoopDetectionMiddleware
+#   [19]   [custom middlewares]
+#   [20]   ClarificationMiddleware (always last)
+
+
 def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None):
     """Build middleware chain based on runtime configuration.
 
@@ -218,10 +323,24 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     """
     middlewares = build_lead_runtime_middlewares(lazy_init=True)
 
+    # --- Governance layer (NEW) ---
+    perm_mw = _create_permission_middleware()
+    if perm_mw is not None:
+        middlewares.append(perm_mw)
+
+    hook_mw = _create_hook_middleware()
+    if hook_mw is not None:
+        middlewares.append(hook_mw)
+
     # Add summarization middleware if enabled
     summarization_middleware = _create_summarization_middleware()
     if summarization_middleware is not None:
         middlewares.append(summarization_middleware)
+
+    # --- Context compaction (NEW) ---
+    compaction_mw = _create_compaction_middleware()
+    if compaction_mw is not None:
+        middlewares.append(compaction_mw)
 
     # Add TodoList middleware if plan mode is enabled
     is_plan_mode = config.get("configurable", {}).get("is_plan_mode", False)
@@ -343,8 +462,6 @@ def make_lead_agent(config: RunnableConfig):
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
         tools=get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled),
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
-        system_prompt=apply_prompt_template(
-            subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name, available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None
-        ),
+        system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, agent_name=agent_name),
         state_schema=ThreadState,
     )

@@ -28,19 +28,45 @@ deer-flow/
 │   │       └── deerflow/
 │   │           ├── agents/            # LangGraph agent system
 │   │           │   ├── lead_agent/    # Main agent (factory + system prompt)
-│   │           │   ├── middlewares/   # 10 middleware components
+│   │           │   ├── middlewares/   # 10+ middleware components
+│   │           │   ├── middleware_builder.py # Canonical middleware chain builder
 │   │           │   ├── memory/        # Memory extraction, queue, prompts
 │   │           │   └── thread_state.py # ThreadState schema
+│   │           ├── permissions/       # 5-level permission system (Claude Code pattern)
+│   │           │   ├── mode.py        # PermissionMode enum (READ_ONLY → ALLOW)
+│   │           │   ├── policy.py      # PermissionPolicy engine
+│   │           │   ├── middleware.py  # LangGraph middleware integration
+│   │           │   └── prompter.py   # Interactive approval abstraction
+│   │           ├── hooks/             # Hook governance layer (Claude Code pattern)
+│   │           │   ├── types.py       # HookEvent, HookResult, HookConfig
+│   │           │   ├── runner.py      # HookRunner (sequential execution, deny short-circuit)
+│   │           │   ├── external.py    # External shell hook executor
+│   │           │   ├── python_hook.py # Python callable hook executor
+│   │           │   └── middleware.py  # LangGraph middleware integration
+│   │           ├── context/           # Context compaction engine (Claude Code pattern)
+│   │           │   ├── compaction.py  # Zero-LLM-cost deterministic compression
+│   │           │   ├── budget.py      # Token budget tracking
+│   │           │   └── middleware.py  # LangGraph middleware integration
+│   │           ├── plugins/           # Declarative plugin system (Claude Code pattern)
+│   │           │   ├── manifest.py    # plugin.json manifest parsing
+│   │           │   ├── loader.py      # Plugin discovery and loading
+│   │           │   ├── registry.py    # Plugin registry
+│   │           │   └── tools.py       # Plugin tool bridge
+│   │           ├── prompts/           # Modular prompt assembly (Claude Code pattern)
+│   │           │   ├── builder.py     # SystemPromptBuilder with cache boundary
+│   │           │   └── sections.py    # Reusable prompt sections
 │   │           ├── sandbox/           # Sandbox execution system
 │   │           │   ├── local/         # Local filesystem provider
 │   │           │   ├── sandbox.py     # Abstract Sandbox interface
 │   │           │   ├── tools.py       # bash, ls, read/write/str_replace
 │   │           │   └── middleware.py  # Sandbox lifecycle management
 │   │           ├── subagents/         # Subagent delegation system
-│   │           │   ├── builtins/      # general-purpose, bash agents
+│   │           │   ├── builtins/      # general-purpose, bash, explore, plan, verification agents
 │   │           │   ├── executor.py    # Background execution engine
 │   │           │   └── registry.py    # Agent registry
-│   │           ├── tools/builtins/    # Built-in tools (present_files, ask_clarification, view_image)
+│   │           ├── tools/             # Tool system
+│   │           │   ├── builtins/      # Built-in tools (present_files, ask_clarification, view_image)
+│   │           │   └── execution.py   # 5-stage tool execution pipeline
 │   │           ├── mcp/               # MCP integration (tools, cache, client)
 │   │           ├── models/            # Model factory with thinking/vision support
 │   │           ├── skills/            # Skills discovery, loading, parsing

@@ -205,24 +205,45 @@ def _assemble_from_features(
     # --- [3] DanglingToolCall (always) ---
     chain.append(DanglingToolCallMiddleware())
 
-    # --- [4] Guardrail ---
+    # --- [4] Permissions (NEW) ---
+    if feat.permissions is not False:
+        if isinstance(feat.permissions, AgentMiddleware):
+            chain.append(feat.permissions)
+        else:
+            _maybe_add_permission_middleware(chain)
+
+    # --- [5] Guardrail ---
     if feat.guardrail is not False:
         if isinstance(feat.guardrail, AgentMiddleware):
             chain.append(feat.guardrail)
         else:
             raise ValueError("guardrail=True requires a custom AgentMiddleware instance (no built-in GuardrailMiddleware yet)")
 
-    # --- [5] ToolErrorHandling (always) ---
+    # --- [6] Hooks (NEW) ---
+    if feat.hooks is not False:
+        if isinstance(feat.hooks, AgentMiddleware):
+            chain.append(feat.hooks)
+        else:
+            _maybe_add_hook_middleware(chain)
+
+    # --- [7] ToolErrorHandling (always) ---
     chain.append(ToolErrorHandlingMiddleware())
 
-    # --- [6] Summarization ---
+    # --- [8] Summarization ---
     if feat.summarization is not False:
         if isinstance(feat.summarization, AgentMiddleware):
             chain.append(feat.summarization)
         else:
             raise ValueError("summarization=True requires a custom AgentMiddleware instance (SummarizationMiddleware needs a model argument)")
 
-    # --- [7] TodoMiddleware (plan_mode) ---
+    # --- [9] Compaction (NEW) ---
+    if feat.compaction is not False:
+        if isinstance(feat.compaction, AgentMiddleware):
+            chain.append(feat.compaction)
+        else:
+            _maybe_add_compaction_middleware(chain)
+
+    # --- [10] TodoMiddleware (plan_mode) ---
     if plan_mode:
         from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
 
@@ -370,3 +391,76 @@ def _insert_extra(chain: list[AgentMiddleware], extras: list[AgentMiddleware]) -
                 raise ValueError(f"Circular dependency among extra middlewares: {', '.join(t.__name__ for t in circular)}")
             raise ValueError(f"Cannot resolve positions for {', '.join(names)} — anchors {', '.join(a.__name__ for _, _, a in remaining)} not found in chain")
         pending = remaining
+
+
+# ---------------------------------------------------------------------------
+# Internal: governance middleware helpers (shared with middleware_builder)
+# ---------------------------------------------------------------------------
+
+
+def _maybe_add_permission_middleware(chain: list[AgentMiddleware]) -> None:
+    """Add PermissionMiddleware if permissions are configured."""
+    try:
+        from deerflow.config.permissions_config import get_permissions_config
+        from deerflow.permissions.middleware import PermissionMiddleware
+        from deerflow.permissions.mode import PermissionMode
+        from deerflow.permissions.policy import PermissionPolicy
+
+        cfg = get_permissions_config()
+        if not cfg.enabled:
+            return
+
+        mode_map = {
+            "allow": PermissionMode.ALLOW,
+            "prompt": PermissionMode.PROMPT,
+            "danger_full_access": PermissionMode.DANGER_FULL_ACCESS,
+            "workspace_write": PermissionMode.WORKSPACE_WRITE,
+            "read_only": PermissionMode.READ_ONLY,
+        }
+        active = mode_map.get(cfg.mode, PermissionMode.ALLOW)
+        if active == PermissionMode.ALLOW and not cfg.tool_overrides:
+            return
+
+        policy = PermissionPolicy(active_mode=active)
+        for tool_name, mode_str in cfg.tool_overrides.items():
+            mode = mode_map.get(mode_str, PermissionMode.DANGER_FULL_ACCESS)
+            policy = policy.with_tool_requirement(tool_name, mode)
+
+        chain.append(PermissionMiddleware(policy))
+    except Exception:
+        logger.debug("PermissionMiddleware not available in SDK path; skipping", exc_info=True)
+
+
+def _maybe_add_hook_middleware(chain: list[AgentMiddleware]) -> None:
+    """Add HookMiddleware if hooks are configured."""
+    try:
+        from deerflow.config.hooks_config import get_hooks_config
+        from deerflow.hooks.middleware import HookMiddleware
+        from deerflow.hooks.runner import HookRunner
+
+        cfg = get_hooks_config()
+        if not cfg.enabled:
+            return
+
+        raw: dict = {}
+        if cfg.pre_tool_use:
+            raw["pre_tool_use"] = [h.model_dump(exclude_none=True) for h in cfg.pre_tool_use]
+        if cfg.post_tool_use:
+            raw["post_tool_use"] = [h.model_dump(exclude_none=True) for h in cfg.post_tool_use]
+        if cfg.post_tool_use_failure:
+            raw["post_tool_use_failure"] = [h.model_dump(exclude_none=True) for h in cfg.post_tool_use_failure]
+
+        if raw:
+            chain.append(HookMiddleware(HookRunner.from_config(raw)))
+    except Exception:
+        logger.debug("HookMiddleware not available in SDK path; skipping", exc_info=True)
+
+
+def _maybe_add_compaction_middleware(chain: list[AgentMiddleware]) -> None:
+    """Add CompactionMiddleware for deterministic context compression."""
+    try:
+        from deerflow.context.middleware import CompactionMiddleware
+
+        chain.append(CompactionMiddleware())
+    except Exception:
+        logger.debug("CompactionMiddleware not available in SDK path; skipping", exc_info=True)

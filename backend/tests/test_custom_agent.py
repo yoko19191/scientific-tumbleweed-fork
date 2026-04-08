@@ -338,7 +338,7 @@ class TestMemoryFilePath:
         assert path == tmp_path / "memory.json"
 
     def test_agent_memory_path(self, tmp_path):
-        """Providing agent_name should return per-agent memory file."""
+        """Providing user_id should return per-user memory file."""
         from deerflow.agents.memory.storage import FileMemoryStorage
         from deerflow.config.memory_config import MemoryConfig
 
@@ -348,9 +348,9 @@ class TestMemoryFilePath:
         ):
             storage = FileMemoryStorage()
             path = storage._get_memory_file_path("code-reviewer")
-        assert path == tmp_path / "agents" / "code-reviewer" / "memory.json"
+        assert path == tmp_path / "users" / "code-reviewer" / "memory.json"
 
-    def test_different_paths_for_different_agents(self, tmp_path):
+    def test_different_paths_for_different_users(self, tmp_path):
         from deerflow.agents.memory.storage import FileMemoryStorage
         from deerflow.config.memory_config import MemoryConfig
 
@@ -360,8 +360,8 @@ class TestMemoryFilePath:
         ):
             storage = FileMemoryStorage()
             path_global = storage._get_memory_file_path(None)
-            path_a = storage._get_memory_file_path("agent-a")
-            path_b = storage._get_memory_file_path("agent-b")
+            path_a = storage._get_memory_file_path("user-a")
+            path_b = storage._get_memory_file_path("user-b")
 
         assert path_global != path_a
         assert path_global != path_b

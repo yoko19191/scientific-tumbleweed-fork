@@ -2,9 +2,10 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.gateway.deps import get_optional_user_id
 from app.gateway.path_utils import resolve_thread_virtual_path
 from deerflow.config.extensions_config import ExtensionsConfig, SkillStateConfig, get_extensions_config, reload_extensions_config
 from deerflow.skills import Skill, load_skills
@@ -69,9 +70,10 @@ def _skill_to_response(skill: Skill) -> SkillResponse:
     summary="List All Skills",
     description="Retrieve a list of all available skills from both public and custom directories.",
 )
-async def list_skills() -> SkillsListResponse:
+async def list_skills(request: Request) -> SkillsListResponse:
+    user_id = get_optional_user_id(request)
     try:
-        skills = load_skills(enabled_only=False)
+        skills = load_skills(enabled_only=False, user_id=user_id)
         return SkillsListResponse(skills=[_skill_to_response(skill) for skill in skills])
     except Exception as e:
         logger.error(f"Failed to load skills: {e}", exc_info=True)
@@ -84,9 +86,10 @@ async def list_skills() -> SkillsListResponse:
     summary="Get Skill Details",
     description="Retrieve detailed information about a specific skill by its name.",
 )
-async def get_skill(skill_name: str) -> SkillResponse:
+async def get_skill(skill_name: str, request: Request) -> SkillResponse:
+    user_id = get_optional_user_id(request)
     try:
-        skills = load_skills(enabled_only=False)
+        skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name), None)
 
         if skill is None:
@@ -106,40 +109,57 @@ async def get_skill(skill_name: str) -> SkillResponse:
     summary="Update Skill",
     description="Update a skill's enabled status by modifying the extensions_config.json file.",
 )
-async def update_skill(skill_name: str, request: SkillUpdateRequest) -> SkillResponse:
+async def update_skill(skill_name: str, request: Request, body: SkillUpdateRequest) -> SkillResponse:
+    user_id = get_optional_user_id(request)
     try:
-        skills = load_skills(enabled_only=False)
+        skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name), None)
 
         if skill is None:
             raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
 
-        config_path = ExtensionsConfig.resolve_config_path()
-        if config_path is None:
-            config_path = Path.cwd().parent / "extensions_config.json"
-            logger.info(f"No existing extensions config found. Creating new config at: {config_path}")
+        # Determine config path: user-scoped when authenticated, global otherwise
+        if user_id:
+            from deerflow.config.paths import get_paths
+            config_path = get_paths().user_extensions_config_file(user_id)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            config_path = ExtensionsConfig.resolve_config_path()
+            if config_path is None:
+                config_path = Path.cwd().parent / "extensions_config.json"
+                logger.info(f"No existing extensions config found. Creating new config at: {config_path}")
 
-        extensions_config = get_extensions_config()
-        extensions_config.skills[skill_name] = SkillStateConfig(enabled=request.enabled)
+        # Load existing config from the target path, or create empty
+        if config_path.exists():
+            try:
+                with open(config_path, encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                existing_data = {}
+        else:
+            existing_data = {}
 
-        config_data = {
-            "mcpServers": {name: server.model_dump() for name, server in extensions_config.mcp_servers.items()},
-            "skills": {name: {"enabled": skill_config.enabled} for name, skill_config in extensions_config.skills.items()},
-        }
+        # Update skills section
+        skills_data = existing_data.get("skills", {})
+        skills_data[skill_name] = {"enabled": body.enabled}
+        existing_data["skills"] = skills_data
 
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, indent=2)
+            json.dump(existing_data, f, indent=2)
 
         logger.info(f"Skills configuration updated and saved to: {config_path}")
-        reload_extensions_config()
 
-        skills = load_skills(enabled_only=False)
+        # Reload to pick up changes (only for global config singleton)
+        if not user_id:
+            reload_extensions_config()
+
+        skills = load_skills(enabled_only=False, user_id=user_id)
         updated_skill = next((s for s in skills if s.name == skill_name), None)
 
         if updated_skill is None:
             raise HTTPException(status_code=500, detail=f"Failed to reload skill '{skill_name}' after update")
 
-        logger.info(f"Skill '{skill_name}' enabled status updated to {request.enabled}")
+        logger.info(f"Skill '{skill_name}' enabled status updated to {body.enabled}")
         return _skill_to_response(updated_skill)
 
     except HTTPException:
@@ -155,10 +175,11 @@ async def update_skill(skill_name: str, request: SkillUpdateRequest) -> SkillRes
     summary="Install Skill",
     description="Install a skill from a .skill file (ZIP archive) located in the thread's user-data directory.",
 )
-async def install_skill(request: SkillInstallRequest) -> SkillInstallResponse:
+async def install_skill(request: Request, body: SkillInstallRequest) -> SkillInstallResponse:
+    user_id = get_optional_user_id(request)
     try:
-        skill_file_path = resolve_thread_virtual_path(request.thread_id, request.path)
-        result = install_skill_from_archive(skill_file_path)
+        skill_file_path = resolve_thread_virtual_path(body.thread_id, body.path)
+        result = install_skill_from_archive(skill_file_path, user_id=user_id)
         return SkillInstallResponse(**result)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

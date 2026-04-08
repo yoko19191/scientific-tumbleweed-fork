@@ -270,7 +270,18 @@ async def start_run(
 
     agent_factory = resolve_agent_factory(body.assistant_id)
     graph_input = normalize_input(body.input)
-    config = build_run_config(thread_id, body.config, body.metadata, assistant_id=body.assistant_id)
+
+    # Inject authenticated user_id into metadata for per-user isolation.
+    # Memory middleware and agent factory read user_id from config["metadata"].
+    from app.gateway.deps import get_optional_user_id
+    user_id = get_optional_user_id(request)
+    if user_id:
+        run_metadata = dict(body.metadata) if body.metadata else {}
+        run_metadata["user_id"] = user_id
+    else:
+        run_metadata = body.metadata
+
+    config = build_run_config(thread_id, body.config, run_metadata, assistant_id=body.assistant_id)
 
     # Merge DeerFlow-specific context overrides into configurable.
     # The ``context`` field is a custom extension for the langgraph-compat layer

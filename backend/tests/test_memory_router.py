@@ -24,6 +24,13 @@ def _sample_memory(facts: list[dict] | None = None) -> dict:
     }
 
 
+def _make_app():
+    """Create a test app with the memory router and mock auth returning None."""
+    app = FastAPI()
+    app.include_router(memory.router)
+    return app
+
+
 def test_export_memory_route_returns_current_memory() -> None:
     app = FastAPI()
     app.include_router(memory.router)
@@ -263,6 +270,7 @@ def test_update_memory_fact_route_preserves_omitted_fields() -> None:
         content="User prefers spaces",
         category=None,
         confidence=None,
+        user_id=None,
     )
     assert response.json()["facts"] == updated_memory["facts"]
 

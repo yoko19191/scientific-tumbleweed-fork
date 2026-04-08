@@ -148,7 +148,9 @@ class MemoryMiddleware(AgentMiddleware[MemoryMiddlewareState]):
         """Initialize the MemoryMiddleware.
 
         Args:
-            agent_name: If provided, memory is stored per-agent. If None, uses global memory.
+            agent_name: Kept for backward compatibility but no longer used for
+                memory scoping.  Memory is now scoped by ``user_id`` extracted
+                from the LangGraph runtime context at invocation time.
         """
         super().__init__()
         self._agent_name = agent_name
@@ -177,6 +179,14 @@ class MemoryMiddleware(AgentMiddleware[MemoryMiddlewareState]):
             logger.debug("No thread_id in context, skipping memory update")
             return None
 
+        # Extract user_id for per-user memory isolation
+        user_id: str | None = None
+        if runtime and runtime.context:
+            user_id = runtime.context.get("user_id")
+        if user_id is None:
+            config_data = get_config()
+            user_id = config_data.get("metadata", {}).get("user_id")
+
         # Get messages from state
         messages = state.get("messages", [])
         if not messages:
@@ -200,7 +210,7 @@ class MemoryMiddleware(AgentMiddleware[MemoryMiddlewareState]):
         queue.add(
             thread_id=thread_id,
             messages=filtered_messages,
-            agent_name=self._agent_name,
+            user_id=user_id,
             correction_detected=correction_detected,
         )
 

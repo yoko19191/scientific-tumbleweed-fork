@@ -226,6 +226,7 @@ class DeerFlowClient:
                 subagent_enabled=subagent_enabled,
                 max_concurrent_subagents=max_concurrent_subagents,
                 agent_name=self._agent_name,
+                user_id=config.get("metadata", {}).get("user_id"),
             ),
             "state_schema": ThreadState,
         }

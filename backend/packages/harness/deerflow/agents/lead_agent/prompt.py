@@ -348,11 +348,11 @@ combined with a FastAPI gateway for REST API access [citation:FastAPI](https://f
 """
 
 
-def _get_memory_context(agent_name: str | None = None) -> str:
+def _get_memory_context(user_id: str | None = None) -> str:
     """Get memory context for injection into system prompt.
 
     Args:
-        agent_name: If provided, loads per-agent memory. If None, loads global memory.
+        user_id: If provided, loads per-user memory. If None, loads global memory.
 
     Returns:
         Formatted memory context string wrapped in XML tags, or empty string if disabled.
@@ -365,7 +365,7 @@ def _get_memory_context(agent_name: str | None = None) -> str:
         if not config.enabled or not config.injection_enabled:
             return ""
 
-        memory_data = get_memory_data(agent_name)
+        memory_data = get_memory_data(user_id)
         memory_content = format_memory_for_injection(memory_data, max_tokens=config.max_injection_tokens)
 
         if not memory_content.strip():
@@ -424,9 +424,9 @@ You have access to skills that provide optimized workflows for specific tasks. E
 </skill_system>"""
 
 
-def get_agent_soul(agent_name: str | None) -> str:
+def get_agent_soul(agent_name: str | None, user_id: str | None = None) -> str:
     # Append SOUL.md (agent personality) if present
-    soul = load_agent_soul(agent_name)
+    soul = load_agent_soul(agent_name, user_id=user_id)
     if soul:
         return f"<soul>\n{soul}\n</soul>\n" if soul else ""
     return ""
@@ -504,6 +504,7 @@ def _apply_prompt_via_builder(
     max_concurrent_subagents: int = 3,
     *,
     agent_name: str | None = None,
+    user_id: str | None = None,
     available_skills: set[str] | None = None,
 ) -> str:
     """Build system prompt using the modular SystemPromptBuilder.
@@ -517,12 +518,12 @@ def _apply_prompt_via_builder(
     builder = SystemPromptBuilder(agent_name=name)
 
     # Soul
-    soul = get_agent_soul(agent_name)
+    soul = get_agent_soul(agent_name, user_id=user_id)
     if soul:
         builder.with_soul(soul)
 
     # Memory
-    memory = _get_memory_context(agent_name)
+    memory = _get_memory_context(user_id)
     if memory:
         builder.with_memory(memory)
 
@@ -604,7 +605,7 @@ def _build_citations_section() -> str:
 </citations>"""
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:
+def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, user_id: str | None = None, available_skills: set[str] | None = None) -> str:
     """Build the lead agent system prompt.
 
     Uses SystemPromptBuilder for modular assembly with static/dynamic cache
@@ -615,6 +616,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
             agent_name=agent_name,
+            user_id=user_id,
             available_skills=available_skills,
         )
     except Exception:
@@ -623,14 +625,15 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
             agent_name=agent_name,
+            user_id=user_id,
             available_skills=available_skills,
         )
 
 
-def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:
+def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, user_id: str | None = None, available_skills: set[str] | None = None) -> str:
     """Legacy template-based prompt assembly (kept as fallback)."""
     # Get memory context
-    memory_context = _get_memory_context(agent_name)
+    memory_context = _get_memory_context(user_id)
 
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
@@ -668,7 +671,7 @@ def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent
     # Format the prompt with dynamic skills and memory
     prompt = SYSTEM_PROMPT_TEMPLATE.format(
         agent_name=agent_name or "DeerFlow 2.0",
-        soul=get_agent_soul(agent_name),
+        soul=get_agent_soul(agent_name, user_id=user_id),
         skills_section=skills_section,
         deferred_tools_section=deferred_tools_section,
         memory_context=memory_context,

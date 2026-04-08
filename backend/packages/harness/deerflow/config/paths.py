@@ -7,6 +7,14 @@ from pathlib import Path, PureWindowsPath
 VIRTUAL_PATH_PREFIX = "/mnt/user-data"
 
 _SAFE_THREAD_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+_SAFE_USER_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _validate_user_id(user_id: str) -> str:
+    """Validate a user ID before using it in filesystem paths."""
+    if not user_id or not _SAFE_USER_ID_RE.match(user_id):
+        raise ValueError(f"Invalid user_id {user_id!r}: only alphanumeric characters, hyphens, and underscores are allowed.")
+    return user_id
 
 
 def _validate_thread_id(thread_id: str) -> str:
@@ -50,13 +58,22 @@ class Paths:
 
     Directory layout (host side):
         {base_dir}/
-        ├── memory.json
-        ├── USER.md          <-- global user profile (injected into all agents)
-        ├── agents/
+        ├── memory.json              <-- global fallback (no auth)
+        ├── USER.md                  <-- global fallback (no auth)
+        ├── agents/                  <-- global fallback (no auth)
         │   └── {agent_name}/
         │       ├── config.yaml
-        │       ├── SOUL.md  <-- agent personality/identity (injected alongside lead prompt)
-        │       └── memory.json
+        │       └── SOUL.md
+        ├── users/                   <-- per-user isolated data
+        │   └── {user_id}/
+        │       ├── memory.json
+        │       ├── USER.md
+        │       ├── agents/{name}/
+        │       │   ├── config.yaml
+        │       │   └── SOUL.md
+        │       ├── skills/custom/{name}/
+        │       │   └── SKILL.md
+        │       └── extensions_config.json
         └── threads/
             └── {thread_id}/
                 └── user-data/         <-- mounted as /mnt/user-data/ inside sandbox
@@ -132,6 +149,64 @@ class Paths:
     def agent_memory_file(self, name: str) -> Path:
         """Per-agent memory file: `{base_dir}/agents/{name}/memory.json`."""
         return self.agent_dir(name) / "memory.json"
+
+    # ── User-scoped paths (multi-tenant isolation) ─────────────────────
+
+    def user_dir(self, user_id: str) -> Path:
+        """Root directory for a user's isolated data: ``{base_dir}/users/{user_id}/``."""
+        return self.base_dir / "users" / _validate_user_id(user_id)
+
+    def user_memory_file(self, user_id: str) -> Path:
+        """Per-user memory file: ``{base_dir}/users/{user_id}/memory.json``."""
+        return self.user_dir(user_id) / "memory.json"
+
+    def user_md_file_for(self, user_id: str) -> Path:
+        """Per-user profile: ``{base_dir}/users/{user_id}/USER.md``."""
+        return self.user_dir(user_id) / "USER.md"
+
+    def user_agents_dir(self, user_id: str) -> Path:
+        """Per-user custom agents root: ``{base_dir}/users/{user_id}/agents/``."""
+        return self.user_dir(user_id) / "agents"
+
+    def user_agent_dir(self, user_id: str, agent_name: str) -> Path:
+        """Per-user agent directory: ``{base_dir}/users/{user_id}/agents/{name}/``."""
+        return self.user_agents_dir(user_id) / agent_name.lower()
+
+    def user_skills_custom_dir(self, user_id: str) -> Path:
+        """Per-user installed skills: ``{base_dir}/users/{user_id}/skills/custom/``."""
+        return self.user_dir(user_id) / "skills" / "custom"
+
+    def user_extensions_config_file(self, user_id: str) -> Path:
+        """Per-user extensions config: ``{base_dir}/users/{user_id}/extensions_config.json``."""
+        return self.user_dir(user_id) / "extensions_config.json"
+
+    # ── Resolve helpers (user_id=None → global fallback) ─────────────
+
+    def resolve_memory_file(self, user_id: str | None = None) -> Path:
+        """Return user-scoped or global memory file path."""
+        if user_id:
+            return self.user_memory_file(user_id)
+        return self.memory_file
+
+    def resolve_user_md(self, user_id: str | None = None) -> Path:
+        """Return user-scoped or global USER.md path."""
+        if user_id:
+            return self.user_md_file_for(user_id)
+        return self.user_md_file
+
+    def resolve_agents_dir(self, user_id: str | None = None) -> Path:
+        """Return user-scoped or global agents directory."""
+        if user_id:
+            return self.user_agents_dir(user_id)
+        return self.agents_dir
+
+    def resolve_agent_dir(self, name: str, user_id: str | None = None) -> Path:
+        """Return user-scoped or global agent directory."""
+        if user_id:
+            return self.user_agent_dir(user_id, name)
+        return self.agent_dir(name)
+
+    # ── Thread paths ─────────────────────────────────────────────────
 
     def thread_dir(self, thread_id: str) -> Path:
         """

@@ -32,7 +32,7 @@ def test_process_queue_forwards_correction_flag_to_updater() -> None:
         ConversationContext(
             thread_id="thread-1",
             messages=["conversation"],
-            agent_name="lead_agent",
+            user_id="user-123",
             correction_detected=True,
         )
     ]
@@ -45,6 +45,6 @@ def test_process_queue_forwards_correction_flag_to_updater() -> None:
     mock_updater.update_memory.assert_called_once_with(
         messages=["conversation"],
         thread_id="thread-1",
-        agent_name="lead_agent",
+        user_id="user-123",
         correction_detected=True,
     )

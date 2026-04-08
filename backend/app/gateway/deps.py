@@ -68,3 +68,25 @@ def get_checkpointer(request: Request):
 def get_store(request: Request):
     """Return the global store (may be ``None`` if not configured)."""
     return getattr(request.app.state, "store", None)
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers – bridge between auth module and resource routers
+# ---------------------------------------------------------------------------
+
+
+def get_optional_user_id(request: Request) -> str | None:
+    """Extract the authenticated user's ID from the request, or ``None``.
+
+    Works with the RFC-001 auth module (``request.state.auth.user.id``)
+    when it is active.  Returns ``None`` when auth is not enabled or the
+    request is anonymous — callers fall back to global (non-isolated) paths.
+    """
+    auth = getattr(request.state, "auth", None)
+    if auth is None:
+        return None
+    user = getattr(auth, "user", None)
+    if user is None:
+        return None
+    uid = getattr(user, "id", None)
+    return str(uid) if uid is not None else None

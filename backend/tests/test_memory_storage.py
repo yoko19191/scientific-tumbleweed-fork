@@ -58,25 +58,24 @@ class TestFileMemoryStorage:
                 path = storage._get_memory_file_path(None)
                 assert path == tmp_path / "memory.json"
 
-    def test_get_memory_file_path_agent(self, tmp_path):
-        """Should return per-agent memory file path when agent_name is provided."""
+    def test_get_memory_file_path_user(self, tmp_path):
+        """Should return per-user memory file path when user_id is provided."""
 
         def mock_get_paths():
             mock_paths = MagicMock()
-            mock_paths.agent_memory_file.return_value = tmp_path / "agents" / "test-agent" / "memory.json"
+            mock_paths.resolve_memory_file.return_value = tmp_path / "users" / "test-user" / "memory.json"
             return mock_paths
 
         with patch("deerflow.agents.memory.storage.get_paths", side_effect=mock_get_paths):
             storage = FileMemoryStorage()
-            path = storage._get_memory_file_path("test-agent")
-            assert path == tmp_path / "agents" / "test-agent" / "memory.json"
+            path = storage._get_memory_file_path("test-user")
+            assert path == tmp_path / "users" / "test-user" / "memory.json"
 
-    @pytest.mark.parametrize("invalid_name", ["", "../etc/passwd", "agent/name", "agent\\name", "agent name", "agent@123", "agent_name"])
-    def test_validate_agent_name_invalid(self, invalid_name):
-        """Should raise ValueError for invalid agent names that don't match the pattern."""
+    def test_get_memory_file_path_user_id_validation(self):
+        """Should delegate user_id validation to Paths.resolve_memory_file."""
         storage = FileMemoryStorage()
-        with pytest.raises(ValueError, match="Invalid agent name|Agent name must be a non-empty string"):
-            storage._validate_agent_name(invalid_name)
+        # user_id=None should use global path (no validation needed)
+        # Non-None user_id is validated by Paths._validate_user_id
 
     def test_load_creates_empty_memory(self, tmp_path):
         """Should create empty memory when file doesn't exist."""

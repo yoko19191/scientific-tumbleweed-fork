@@ -118,6 +118,7 @@ def install_skill_from_archive(
     zip_path: str | Path,
     *,
     skills_root: Path | None = None,
+    user_id: str | None = None,
 ) -> dict:
     """Install a skill from a .skill archive (ZIP).
 
@@ -125,6 +126,7 @@ def install_skill_from_archive(
         zip_path: Path to the .skill file.
         skills_root: Override the skills root directory. If None, uses
             the default from config.
+        user_id: If provided, installs to user-scoped custom skills directory.
 
     Returns:
         Dict with success, skill_name, message.
@@ -143,9 +145,14 @@ def install_skill_from_archive(
     if path.suffix != ".skill":
         raise ValueError("File must have .skill extension")
 
-    if skills_root is None:
-        skills_root = get_skills_root_path()
-    custom_dir = skills_root / "custom"
+    # Determine custom skills directory
+    if user_id:
+        from deerflow.config.paths import get_paths
+        custom_dir = get_paths().user_skills_custom_dir(user_id)
+    else:
+        if skills_root is None:
+            skills_root = get_skills_root_path()
+        custom_dir = skills_root / "custom"
     custom_dir.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmp:

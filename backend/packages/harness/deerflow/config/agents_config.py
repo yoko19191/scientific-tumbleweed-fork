@@ -24,11 +24,12 @@ class AgentConfig(BaseModel):
     tool_groups: list[str] | None = None
 
 
-def load_agent_config(name: str | None) -> AgentConfig | None:
+def load_agent_config(name: str | None, user_id: str | None = None) -> AgentConfig | None:
     """Load the custom or default agent's config from its directory.
 
     Args:
         name: The agent name.
+        user_id: If provided, loads from user-scoped directory.
 
     Returns:
         AgentConfig instance.
@@ -43,7 +44,7 @@ def load_agent_config(name: str | None) -> AgentConfig | None:
 
     if not AGENT_NAME_PATTERN.match(name):
         raise ValueError(f"Invalid agent name '{name}'. Must match pattern: {AGENT_NAME_PATTERN.pattern}")
-    agent_dir = get_paths().agent_dir(name)
+    agent_dir = get_paths().resolve_agent_dir(name, user_id)
     config_file = agent_dir / "config.yaml"
 
     if not agent_dir.exists():
@@ -69,19 +70,17 @@ def load_agent_config(name: str | None) -> AgentConfig | None:
     return AgentConfig(**data)
 
 
-def load_agent_soul(agent_name: str | None) -> str | None:
+def load_agent_soul(agent_name: str | None, user_id: str | None = None) -> str | None:
     """Read the SOUL.md file for a custom agent, if it exists.
-
-    SOUL.md defines the agent's personality, values, and behavioral guardrails.
-    It is injected into the lead agent's system prompt as additional context.
 
     Args:
         agent_name: The name of the agent or None for the default agent.
+        user_id: If provided, loads from user-scoped directory.
 
     Returns:
         The SOUL.md content as a string, or None if the file does not exist.
     """
-    agent_dir = get_paths().agent_dir(agent_name) if agent_name else get_paths().base_dir
+    agent_dir = get_paths().resolve_agent_dir(agent_name, user_id) if agent_name else get_paths().base_dir
     soul_path = agent_dir / SOUL_FILENAME
     if not soul_path.exists():
         return None
@@ -89,13 +88,16 @@ def load_agent_soul(agent_name: str | None) -> str | None:
     return content or None
 
 
-def list_custom_agents() -> list[AgentConfig]:
+def list_custom_agents(user_id: str | None = None) -> list[AgentConfig]:
     """Scan the agents directory and return all valid custom agents.
+
+    Args:
+        user_id: If provided, scans user-scoped agents directory.
 
     Returns:
         List of AgentConfig for each valid agent directory found.
     """
-    agents_dir = get_paths().agents_dir
+    agents_dir = get_paths().resolve_agents_dir(user_id)
 
     if not agents_dir.exists():
         return []

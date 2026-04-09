@@ -435,4 +435,28 @@ export const enUS: Translations = {
       emptyDescription: "Credits and acknowledgements will show here.",
     },
   },
+
+  // Auth
+  auth: {
+    login: "Login",
+    register: "Register",
+    email: "Email",
+    password: "Password",
+    confirmPassword: "Confirm Password",
+    loginButton: "Login",
+    registerButton: "Register",
+    noAccount: "Don't have an account?",
+    hasAccount: "Already have an account?",
+    loginSuccess: "Login successful",
+    registerSuccess: "Registration successful",
+    emailRequired: "Email is required",
+    passwordRequired: "Password is required",
+    passwordTooShort: "Password must be at least 8 characters",
+    passwordMismatch: "Passwords do not match",
+    emailAlreadyExists: "Email already registered",
+    invalidCredentials: "Incorrect email or password",
+    tooManyAttempts: "Too many login attempts. Please try again later",
+    logout: "Logout",
+    loggingOut: "Logging out...",
+  },
 };

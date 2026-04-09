@@ -10,6 +10,7 @@ from app.gateway.routers import (
     agents,
     artifacts,
     assistants_compat,
+    auth,
     channels,
     mcp,
     memory,
@@ -47,6 +48,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         raise RuntimeError(error_msg) from e
     config = get_gateway_config()
     logger.info(f"Starting API Gateway on {config.host}:{config.port}")
+
+    # Initialize auth subsystem
+    from app.gateway.auth.config import AuthConfig
+    from app.gateway.auth.local_provider import LocalAuthProvider
+    from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
+
+    auth_config = AuthConfig()
+    user_repo = SQLiteUserRepository(auth_config)
+    await user_repo.initialize()
+    auth_provider = LocalAuthProvider(user_repo, auth_config)
+    app.state.auth_config = auth_config
+    app.state.auth_provider = auth_provider
+    app.state.user_repo = user_repo
+
+    # Cache provider at module level for deps.get_local_provider()
+    from app.gateway.deps import set_local_provider
+    set_local_provider(auth_provider)
+
+    logger.info("Auth subsystem initialised (JWT + SQLite)")
 
     # Initialize LangGraph runtime components (StreamBridge, RunManager, checkpointer, store)
     async with langgraph_runtime(app):
@@ -165,7 +185,17 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
 
     # CORS is handled by nginx - no need for FastAPI middleware
 
+    # Auth & CSRF middleware (order matters: CSRF runs after auth)
+    from app.gateway.auth_middleware import AuthMiddleware
+    from app.gateway.csrf_middleware import CSRFMiddleware
+
+    app.add_middleware(CSRFMiddleware)
+    app.add_middleware(AuthMiddleware)
+
     # Include routers
+    # Auth API is mounted at /api/v1/auth
+    app.include_router(auth.router)
+
     # Models API is mounted at /api/models
     app.include_router(models.router)
 

@@ -416,4 +416,28 @@ export const zhCN: Translations = {
       emptyDescription: "相关的致谢信息会展示在这里。",
     },
   },
+
+  // Auth
+  auth: {
+    login: "登录",
+    register: "注册",
+    email: "邮箱",
+    password: "密码",
+    confirmPassword: "确认密码",
+    loginButton: "登录",
+    registerButton: "注册",
+    noAccount: "还没有账号？",
+    hasAccount: "已有账号？",
+    loginSuccess: "登录成功",
+    registerSuccess: "注册成功",
+    emailRequired: "请输入邮箱",
+    passwordRequired: "请输入密码",
+    passwordTooShort: "密码至少 8 位",
+    passwordMismatch: "两次密码不一致",
+    emailAlreadyExists: "该邮箱已注册",
+    invalidCredentials: "邮箱或密码错误",
+    tooManyAttempts: "登录尝试次数过多，请稍后再试",
+    logout: "退出登录",
+    loggingOut: "正在退出...",
+  },
 };

@@ -359,4 +359,28 @@ export interface Translations {
       emptyDescription: string;
     };
   };
+
+  // Auth
+  auth: {
+    login: string;
+    register: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+    loginButton: string;
+    registerButton: string;
+    noAccount: string;
+    hasAccount: string;
+    loginSuccess: string;
+    registerSuccess: string;
+    emailRequired: string;
+    passwordRequired: string;
+    passwordTooShort: string;
+    passwordMismatch: string;
+    emailAlreadyExists: string;
+    invalidCredentials: string;
+    tooManyAttempts: string;
+    logout: string;
+    loggingOut: string;
+  };
 }

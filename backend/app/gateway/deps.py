@@ -90,3 +90,95 @@ def get_optional_user_id(request: Request) -> str | None:
         return None
     uid = getattr(user, "id", None)
     return str(uid) if uid is not None else None
+
+
+def get_auth_provider(request: Request):
+    """Return the :class:`LocalAuthProvider` singleton, or 503."""
+    provider = getattr(request.app.state, "auth_provider", None)
+    if provider is None:
+        raise HTTPException(status_code=503, detail="Auth provider not available")
+    return provider
+
+
+def get_user_repo(request: Request):
+    """Return the :class:`SQLiteUserRepository` singleton, or 503."""
+    repo = getattr(request.app.state, "user_repo", None)
+    if repo is None:
+        raise HTTPException(status_code=503, detail="User repository not available")
+    return repo
+
+
+def get_auth_config(request: Request):
+    """Return the :class:`AuthConfig` singleton, or 503."""
+    cfg = getattr(request.app.state, "auth_config", None)
+    if cfg is None:
+        raise HTTPException(status_code=503, detail="Auth config not available")
+    return cfg
+
+
+# ---------------------------------------------------------------------------
+# User resolution from JWT cookie
+# ---------------------------------------------------------------------------
+
+
+def get_local_provider() -> "LocalAuthProvider":
+    """Return the global :class:`LocalAuthProvider`.
+
+    Called as a plain function (not per-request) by ``routers/auth.py``
+    because the provider is a process-level singleton set during lifespan.
+    """
+    from app.gateway.auth.local_provider import LocalAuthProvider
+
+    # Import here to avoid circular imports at module level.
+    # The provider is stored on the app state during lifespan init.
+    # We access it via the module-level _auth_provider cache.
+    global _local_provider
+    if _local_provider is not None:
+        return _local_provider
+    raise RuntimeError("LocalAuthProvider not initialised — lifespan not started?")
+
+
+_local_provider: "LocalAuthProvider | None" = None
+
+
+def set_local_provider(provider: "LocalAuthProvider") -> None:
+    """Called once from lifespan to cache the provider at module level."""
+    global _local_provider
+    _local_provider = provider
+
+
+async def get_optional_user_from_request(request: Request):
+    """Decode the JWT cookie and return the :class:`User`, or ``None``.
+
+    This is the full JWT → User pipeline used by ``authz.py``.
+    Returns ``None`` when no cookie is present or the token is invalid.
+    """
+    from app.gateway.auth.errors import TokenError
+    from app.gateway.auth.jwt import decode_token
+
+    cookie_value = request.cookies.get("access_token")
+    if not cookie_value:
+        return None
+
+    result = decode_token(cookie_value)
+    if isinstance(result, TokenError):
+        return None
+
+    provider = get_local_provider()
+    user = await provider.get_user_by_id(result.sub)
+    if user is None:
+        return None
+
+    # Verify token_version matches (password-change invalidation)
+    if user.token_version != result.ver:
+        return None
+
+    return user
+
+
+async def get_current_user_from_request(request: Request):
+    """Like :func:`get_optional_user_from_request` but raises 401 if absent."""
+    user = await get_optional_user_from_request(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user

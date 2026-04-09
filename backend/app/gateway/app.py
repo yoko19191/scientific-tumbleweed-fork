@@ -50,14 +50,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Starting API Gateway on {config.host}:{config.port}")
 
     # Initialize auth subsystem
-    from app.gateway.auth.config import AuthConfig
+    from app.gateway.auth.config import get_auth_config
     from app.gateway.auth.local_provider import LocalAuthProvider
     from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
 
-    auth_config = AuthConfig()
-    user_repo = SQLiteUserRepository(auth_config)
-    await user_repo.initialize()
-    auth_provider = LocalAuthProvider(user_repo, auth_config)
+    auth_config = get_auth_config()
+    user_repo = SQLiteUserRepository()
+    auth_provider = LocalAuthProvider(user_repo)
     app.state.auth_config = auth_config
     app.state.auth_provider = auth_provider
     app.state.user_repo = user_repo

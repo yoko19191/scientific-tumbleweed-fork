@@ -8,12 +8,12 @@
 
 ## Phase 0: 认证模块（登录注册）
 
-> **状态：TODO**
+> **状态：已完成 ✅**
 > **来源：上游 PR `feat/rfc-001-auth-module`**
 
 ### 后端
 
-- [ ] JWT 认证模块（`app/gateway/auth/`）
+- [x] JWT 认证模块（`app/gateway/auth/`）
   - `config.py` — JWT 配置管理（缺少密钥时自动生成 ephemeral secret）
   - `models.py` — User / UserResponse Pydantic 模型
   - `password.py` — bcrypt 密码哈希（async wrapper）
@@ -23,35 +23,47 @@
   - `repositories/sqlite.py` — SQLite 实现（init-once DDL）
   - `local_provider.py` — 本地认证 Provider
   - `providers.py` — AuthProvider ABC
-- [ ] 认证路由（`app/gateway/routers/auth.py`）
+- [x] 认证路由（`app/gateway/routers/auth.py`）
   - `POST /api/v1/auth/register` — 用户注册（首个用户自动 admin）
   - `POST /api/v1/auth/login/local` — 用户登录（JWT HttpOnly cookie）
   - `POST /api/v1/auth/logout` — 用户登出
   - `POST /api/v1/auth/change-password` — 修改密码
   - `GET /api/v1/auth/me` — 获取当前用户
   - `GET /api/v1/auth/setup-status` — 初始化状态检查
-- [ ] CSRF 防护（`app/gateway/csrf_middleware.py`）
+- [x] CSRF 防护（`app/gateway/csrf_middleware.py`）
   - Double Submit Cookie 模式
   - 所有 state-changing API 自动校验 `X-CSRF-Token`
-- [ ] 权限系统（`app/gateway/authz.py`）
+- [x] 权限系统（`app/gateway/authz.py`）
   - `AuthContext` — 认证上下文
   - `@require_auth` / `@require_permission` — 装饰器
   - Thread owner_check 隔离
+- [x] 集成到 `app.py` lifespan + `deps.py` 桥接层
+  - `get_local_provider()` / `set_local_provider()` — 进程级 provider 缓存
+  - `get_optional_user_from_request()` — JWT cookie → User 全链路
+  - `get_current_user_from_request()` — 同上但 401 on failure
+- [x] 新增依赖：`email-validator`、`bcrypt`、`PyJWT`
 
 ### 前端
 
-- [ ] `AuthProvider.tsx` — React Context（session check + 401 redirect）
-- [ ] `fetcher.ts` — fetchWithAuth / getCsrfHeaders
-- [ ] Login 页面（`/app/(auth)/login`）
-- [ ] Account Settings 页面
-- [ ] 所有 `core/*/api.ts` 的 state-changing fetch 携带 CSRF header
+- [x] 移除 `better-auth`（未被使用的空壳）+ 清理 `env.js` 中的 `BETTER_AUTH_*`
+- [x] 新建 `core/auth/` 模块
+  - `types.ts` — User、LoginCredentials、RegisterCredentials 等类型
+  - `fetcher.ts` — `fetchWithAuth()`（自动带 cookie + CSRF header）
+  - `AuthProvider.tsx` — React Context（session check + tab 可见性刷新）
+  - `AuthGuard.tsx` — 未登录重定向到 /login
+- [x] Login 页面（`/app/(auth)/login`）— 登录/注册切换，中英文 i18n
+- [x] i18n 新增 `auth` 翻译键（`zh-CN.ts` + `en-US.ts`）
+- [x] workspace layout 包裹 `AuthProvider` + `AuthGuard`
+- [x] 所有 API 调用切换到 `fetchWithAuth()`
+  - `memory/api.ts`、`agents/api.ts`、`skills/api.ts`、`mcp/api.ts`
+  - `models/api.ts`、`uploads/api.ts`、`threads/hooks.ts`、`input-box.tsx`
+- [ ] Account Settings 页面（推迟到后续迭代）
 
-### 已知问题（上游 PR 中的）
+### 遗留问题
 
-- `loadMemory()` 和 `exportMemory()` 缺少 `credentials: "include"`
-- 登出不清理 React Query 缓存和 localStorage
-- localStorage key 没有按用户命名空间隔离
-- Token 登出后不失效（不 bump `token_version`）
+- 登出不清理 React Query 缓存和 localStorage（后续优化）
+- localStorage key 没有按用户命名空间隔离（后续优化）
+- Token 登出后不失效（不 bump `token_version`）——设计取舍
 - 权限模型是扁平的——所有用户拥有全部权限，RBAC 标记为 Future Work
 
 ---

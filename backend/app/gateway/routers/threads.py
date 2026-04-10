@@ -254,6 +254,96 @@ async def bind_user(body: BindUserRequest, request: Request) -> dict[str, bool]:
     return {"success": True}
 
 
+@router.get("/listByUser", response_model=list[ThreadResponse])
+@require_auth
+async def list_by_user(request: Request) -> list[ThreadResponse]:
+    """Return only threads owned by the current user.
+
+    Queries the ``thread_owners`` namespace for mappings belonging to the
+    authenticated user, then enriches each thread with metadata from the
+    checkpointer (title, status, timestamps).
+    """
+    auth_ctx = request.state.auth
+    if not auth_ctx.is_authenticated:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = str(auth_ctx.user.id)
+    store = get_store(request)
+    if store is None:
+        return []
+
+    checkpointer = get_checkpointer(request)
+
+    # Fetch all ownership mappings and filter by user_id
+    try:
+        items = await store.asearch(THREAD_OWNERS_NS, limit=10_000)
+    except Exception:
+        logger.warning("Store search failed for listByUser", exc_info=True)
+        return []
+
+    owned_thread_ids = [item.key for item in items if item.value.get("user_id") == user_id]
+
+    if not owned_thread_ids:
+        return []
+
+    results: list[ThreadResponse] = []
+    for thread_id in owned_thread_ids:
+        # Read thread metadata from the threads namespace
+        thread_record = await _store_get(store, thread_id)
+
+        # Read latest checkpoint for status and title
+        config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+        checkpoint_tuple = None
+        try:
+            checkpoint_tuple = await checkpointer.aget_tuple(config)
+        except Exception:
+            logger.debug("Could not read checkpoint for thread %s", thread_id)
+
+        status = _derive_thread_status(checkpoint_tuple) if checkpoint_tuple is not None else "idle"
+
+        # Extract title from checkpoint channel_values
+        ckpt_values: dict[str, Any] = {}
+        if checkpoint_tuple is not None:
+            checkpoint_data = getattr(checkpoint_tuple, "checkpoint", {}) or {}
+            channel_values = checkpoint_data.get("channel_values", {})
+            if title := channel_values.get("title"):
+                ckpt_values["title"] = title
+
+        ckpt_meta = (getattr(checkpoint_tuple, "metadata", {}) or {}) if checkpoint_tuple is not None else {}
+
+        # Prefer thread record timestamps, fall back to checkpoint metadata
+        created_at = ""
+        updated_at = ""
+        metadata: dict[str, Any] = {}
+
+        if thread_record is not None:
+            created_at = str(thread_record.get("created_at", ""))
+            updated_at = str(thread_record.get("updated_at", ""))
+            metadata = thread_record.get("metadata", {})
+            # Merge store-level values with checkpoint values
+            store_values = thread_record.get("values", {})
+            ckpt_values = {**store_values, **ckpt_values}
+        else:
+            created_at = str(ckpt_meta.get("created_at", ""))
+            updated_at = str(ckpt_meta.get("updated_at", ckpt_meta.get("created_at", "")))
+            metadata = {k: v for k, v in ckpt_meta.items() if k not in ("created_at", "updated_at", "step", "source", "writes", "parents")}
+
+        results.append(
+            ThreadResponse(
+                thread_id=thread_id,
+                status=status,
+                created_at=created_at,
+                updated_at=updated_at,
+                metadata=metadata,
+                values=ckpt_values,
+            )
+        )
+
+    # Sort by updated_at descending
+    results.sort(key=lambda r: r.updated_at, reverse=True)
+    return results
+
+
 @router.delete("/{thread_id}", response_model=ThreadDeleteResponse)
 async def delete_thread_data(thread_id: str, request: Request) -> ThreadDeleteResponse:
     """Delete local persisted filesystem data for a thread.

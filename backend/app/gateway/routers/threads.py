@@ -345,22 +345,42 @@ async def list_by_user(request: Request) -> list[ThreadResponse]:
 
 
 @router.delete("/{thread_id}", response_model=ThreadDeleteResponse)
+@require_auth
 async def delete_thread_data(thread_id: str, request: Request) -> ThreadDeleteResponse:
     """Delete local persisted filesystem data for a thread.
 
     Cleans DeerFlow-managed thread directories, removes checkpoint data,
-    and removes the thread record from the Store.
+    removes the thread record from the Store, and removes the ownership
+    mapping from thread_owners.  Verifies the caller owns the thread.
     """
+    auth_ctx = request.state.auth
+    if not auth_ctx.is_authenticated:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = str(auth_ctx.user.id)
+    store = get_store(request)
+
+    # Verify ownership before deleting
+    if store is not None:
+        existing = await store.aget(THREAD_OWNERS_NS, thread_id)
+        if existing is not None and existing.value.get("user_id") != user_id:
+            raise HTTPException(status_code=404, detail=f"Thread {thread_id} not found")
+
     # Clean local filesystem
     response = _delete_thread_data(thread_id)
 
     # Remove from Store (best-effort)
-    store = get_store(request)
     if store is not None:
         try:
             await store.adelete(THREADS_NS, thread_id)
         except Exception:
             logger.debug("Could not delete store record for thread %s (not critical)", thread_id)
+
+        # Remove ownership mapping (idempotent — no error if absent)
+        try:
+            await store.adelete(THREAD_OWNERS_NS, thread_id)
+        except Exception:
+            logger.debug("Could not delete ownership mapping for thread %s (not critical)", thread_id)
 
     # Remove checkpoints (best-effort)
     checkpointer = getattr(request.app.state, "checkpointer", None)

@@ -25,6 +25,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/core/auth/AuthProvider";
 import { useI18n } from "@/core/i18n/hooks";
 
 import { SettingsDialog } from "./settings";
@@ -57,10 +58,14 @@ export function WorkspaceNavMenu() {
   const [mounted, setMounted] = useState(false);
   const { open: isSidebarOpen } = useSidebar();
   const { t } = useI18n();
+  const { user } = useAuth();
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const email = user?.email;
+  const avatarLetter = email ? email[0]!.toUpperCase() : "?";
 
   return (
     <>
@@ -70,6 +75,21 @@ export function WorkspaceNavMenu() {
         defaultSection={settingsDefaultSection}
       />
       <SidebarMenu className="w-full">
+        {email && (
+          <SidebarMenuItem>
+            {isSidebarOpen ? (
+              <div className="text-muted-foreground truncate px-3 py-1.5 text-xs">
+                {email}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center py-1.5">
+                <div className="bg-muted text-muted-foreground flex size-6 items-center justify-center rounded-full text-xs font-medium">
+                  {avatarLetter}
+                </div>
+              </div>
+            )}
+          </SidebarMenuItem>
+        )}
         <SidebarMenuItem>
           {mounted ? (
             <DropdownMenu>

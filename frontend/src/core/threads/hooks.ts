@@ -119,6 +119,11 @@ export function useThreadStream({
     onCreated(meta) {
       handleStreamStart(meta.thread_id);
       setOnStreamThreadId(meta.thread_id);
+      fetchWithAuth(`${getBackendBaseURL()}/api/threads/bindUser`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: meta.thread_id }),
+      }).catch(console.error);
     },
     onLangChainEvent(event) {
       if (event.event === "on_tool_end") {

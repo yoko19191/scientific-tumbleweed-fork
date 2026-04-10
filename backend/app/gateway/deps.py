@@ -10,10 +10,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request
 
 from deerflow.runtime import RunManager, StreamBridge
+
+if TYPE_CHECKING:
+    from app.gateway.auth.local_provider import LocalAuthProvider
 
 
 @asynccontextmanager
@@ -121,14 +125,12 @@ def get_auth_config(request: Request):
 # ---------------------------------------------------------------------------
 
 
-def get_local_provider() -> "LocalAuthProvider":
+def get_local_provider() -> LocalAuthProvider:
     """Return the global :class:`LocalAuthProvider`.
 
     Called as a plain function (not per-request) by ``routers/auth.py``
     because the provider is a process-level singleton set during lifespan.
     """
-    from app.gateway.auth.local_provider import LocalAuthProvider
-
     # Import here to avoid circular imports at module level.
     # The provider is stored on the app state during lifespan init.
     # We access it via the module-level _auth_provider cache.
@@ -138,10 +140,10 @@ def get_local_provider() -> "LocalAuthProvider":
     raise RuntimeError("LocalAuthProvider not initialised — lifespan not started?")
 
 
-_local_provider: "LocalAuthProvider | None" = None
+_local_provider: LocalAuthProvider | None = None
 
 
-def set_local_provider(provider: "LocalAuthProvider") -> None:
+def set_local_provider(provider: LocalAuthProvider) -> None:
     """Called once from lifespan to cache the provider at module level."""
     global _local_provider
     _local_provider = provider
@@ -165,7 +167,7 @@ async def get_optional_user_from_request(request: Request):
         return None
 
     provider = get_local_provider()
-    user = await provider.get_user_by_id(result.sub)
+    user = await provider.get_user(result.sub)
     if user is None:
         return None
 

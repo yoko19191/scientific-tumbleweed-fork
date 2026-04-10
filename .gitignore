@@ -55,3 +55,12 @@ web/
 # Deployment artifacts
 backend/Dockerfile.langgraph
 config.yaml.bak
+
+# Oh My OpenCode
+.sisyphus
+
+# Ruff
+.ruff_cache
+
+# Claude Code
+.claude/settings.local.json

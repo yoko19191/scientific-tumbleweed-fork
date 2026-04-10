@@ -20,6 +20,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.gateway.authz import require_auth
 from app.gateway.deps import get_checkpointer, get_store
 from deerflow.config.paths import Paths, get_paths
 from deerflow.runtime import serialize_channel_values
@@ -30,6 +31,9 @@ from deerflow.runtime import serialize_channel_values
 
 THREADS_NS: tuple[str, ...] = ("threads",)
 """Namespace used by the Store for thread metadata records."""
+
+THREAD_OWNERS_NS: tuple[str, ...] = ("thread_owners",)
+"""Namespace used by the Store for user_id <-> thread_id ownership mappings."""
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/threads", tags=["threads"])
@@ -57,6 +61,12 @@ class ThreadResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, description="Thread metadata")
     values: dict[str, Any] = Field(default_factory=dict, description="Current state channel values")
     interrupts: dict[str, Any] = Field(default_factory=dict, description="Pending interrupts")
+
+
+class BindUserRequest(BaseModel):
+    """Request body for binding a user to a thread."""
+
+    thread_id: str = Field(description="Thread ID to bind to the current user")
 
 
 class ThreadCreateRequest(BaseModel):
@@ -212,6 +222,36 @@ def _derive_thread_status(checkpoint_tuple) -> str:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.post("/bindUser")
+@require_auth
+async def bind_user(body: BindUserRequest, request: Request) -> dict[str, bool]:
+    """Register a user_id <-> thread_id ownership mapping.
+
+    Idempotent: if the mapping already exists with the same user_id, returns
+    success without modification.
+    """
+    auth_ctx = request.state.auth
+    if not auth_ctx.is_authenticated:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = str(auth_ctx.user.id)
+    store = get_store(request)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Store not available")
+
+    # Idempotency: check if mapping already exists with same user_id
+    existing = await store.aget(THREAD_OWNERS_NS, body.thread_id)
+    if existing is not None and existing.value.get("user_id") == user_id:
+        return {"success": True}
+
+    await store.aput(
+        THREAD_OWNERS_NS,
+        body.thread_id,
+        {"user_id": user_id, "created_at": time.time()},
+    )
+    return {"success": True}
 
 
 @router.delete("/{thread_id}", response_model=ThreadDeleteResponse)

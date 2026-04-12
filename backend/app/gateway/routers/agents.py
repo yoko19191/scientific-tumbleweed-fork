@@ -25,7 +25,7 @@ class AgentResponse(BaseModel):
     description: str = Field(default="", description="Agent description")
     model: str | None = Field(default=None, description="Optional model override")
     tool_groups: list[str] | None = Field(default=None, description="Optional tool group whitelist")
-    soul: str | None = Field(default=None, description="SOUL.md content (included on GET /{name})")
+    soul: str | None = Field(default=None, description="SOUL.md content")
 
 
 class AgentsListResponse(BaseModel):
@@ -93,13 +93,13 @@ def _agent_config_to_response(agent_cfg: AgentConfig, include_soul: bool = False
     "/agents",
     response_model=AgentsListResponse,
     summary="List Custom Agents",
-    description="List all custom agents available in the agents directory.",
+    description="List all custom agents available in the agents directory, including their soul content.",
 )
 async def list_agents(request: Request) -> AgentsListResponse:
     """List all custom agents.
 
     Returns:
-        List of all custom agents with their metadata (without soul content).
+        List of all custom agents with their metadata and soul content.
     """
     user_id = get_optional_user_id(request)
     try:

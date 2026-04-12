@@ -55,11 +55,11 @@ def load_skills(skills_path: Path | None = None, use_config: bool = True, enable
         else:
             skills_path = get_skills_root_path()
 
-    if not skills_path.exists():
-        skills = []
-    else:
-        skills = []
+    skills_by_name: dict[str, Skill] = {}
 
+    if not skills_path.exists():
+        pass
+    else:
         # When user_id is set, public skills come from the global path,
         # custom skills come from the user-scoped directory.
         if user_id:
@@ -90,7 +90,9 @@ def load_skills(skills_path: Path | None = None, use_config: bool = True, enable
 
                 skill = parse_skill_file(skill_file, category=category, relative_path=relative_path)
                 if skill:
-                    skills.append(skill)
+                    skills_by_name[skill.name] = skill
+
+    skills = list(skills_by_name.values())
 
     # Load skills state configuration and update enabled status
     # When user_id is set, read from user-scoped extensions config.

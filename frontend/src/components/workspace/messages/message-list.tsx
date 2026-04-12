@@ -30,11 +30,14 @@ import { MessageListItem } from "./message-list-item";
 import { MessageListSkeleton } from "./skeleton";
 import { SubtaskCard } from "./subtask-card";
 
+export const MESSAGE_LIST_DEFAULT_PADDING_BOTTOM = 160;
+export const MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM = 80;
+
 export function MessageList({
   className,
   threadId,
   thread,
-  paddingBottom = 160,
+  paddingBottom = MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
 }: {
   className?: string;
   threadId: string;
@@ -62,6 +65,7 @@ export function MessageList({
                   key={`${group.id}/${msg.id}`}
                   message={msg}
                   isLoading={thread.isLoading}
+                  threadId={threadId}
                 />
               );
             });
@@ -165,7 +169,7 @@ export function MessageList({
               results.push(
                 <div
                   key="subtask-count"
-                  className="text-muted-foreground font-norma pt-2 text-sm"
+                  className="text-muted-foreground pt-2 text-sm font-normal"
                 >
                   {t.subtasks.executing(tasks.size)}
                 </div>,

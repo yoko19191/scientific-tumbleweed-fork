@@ -13,6 +13,10 @@ DeerFlow is a LangGraph-based AI super agent system with a full-stack architectu
 - **Nginx** (port 2026): Unified reverse proxy entry point
 - **Provisioner** (port 8002, optional in Docker dev): Started only when sandbox is configured for provisioner/Kubernetes mode
 
+**Runtime Modes**:
+- **Standard mode** (`make dev`): LangGraph Server handles agent execution as a separate process. 4 processes total.
+- **Gateway mode** (`make dev-pro`, experimental): Agent runtime embedded in Gateway via `RunManager` + `run_agent()` + `StreamBridge` (`packages/harness/deerflow/runtime/`). Service manages its own concurrency via async tasks. 3 processes total, no LangGraph Server.
+
 **Project Structure**:
 ```
 deer-flow/
@@ -106,6 +110,8 @@ When making code changes, you MUST update the relevant documentation:
 make check      # Check system requirements
 make install    # Install all dependencies (frontend + backend)
 make dev        # Start all services (LangGraph + Gateway + Frontend + Nginx), with config.yaml preflight
+make dev-pro    # Gateway mode (experimental): skip LangGraph, agent runtime embedded in Gateway
+make start-pro  # Production + Gateway mode (experimental)
 make stop       # Stop all services
 ```
 
@@ -258,7 +264,7 @@ Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → 
 - `ls` - Directory listing (tree format, max 2 levels)
 - `read_file` - Read file contents with optional line range
 - `write_file` - Write/append to files, creates directories
-- `str_replace` - Substring replacement (single or all occurrences)
+- `str_replace` - Substring replacement (single or all occurrences); same-path serialization is scoped to `(sandbox.id, path)` so isolated sandboxes do not contend on identical virtual paths inside one process
 
 ### Subagent System (`packages/harness/deerflow/subagents/`)
 
@@ -313,9 +319,16 @@ Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → 
 
 - `create_chat_model(name, thinking_enabled)` instantiates LLM from config via reflection
 - Supports `thinking_enabled` flag with per-model `when_thinking_enabled` overrides
+- Supports vLLM-style thinking toggles via `when_thinking_enabled.extra_body.chat_template_kwargs.enable_thinking` for Qwen reasoning models, while normalizing legacy `thinking` configs for backward compatibility
 - Supports `supports_vision` flag for image understanding models
 - Config values starting with `$` resolved as environment variables
 - Missing provider modules surface actionable install hints from reflection resolvers (for example `uv add langchain-google-genai`)
+
+### vLLM Provider (`packages/harness/deerflow/models/vllm_provider.py`)
+
+- `VllmChatModel` subclasses `langchain_openai:ChatOpenAI` for vLLM 0.19.0 OpenAI-compatible endpoints
+- Preserves vLLM's non-standard assistant `reasoning` field on full responses, streaming deltas, and follow-up tool-call turns
+- Designed for configs that enable thinking through `extra_body.chat_template_kwargs.enable_thinking` on vLLM 0.19.0 Qwen reasoning models, while accepting the older `thinking` alias
 
 ### IM Channels System (`app/channels/`)
 
@@ -385,6 +398,7 @@ Focused regression coverage for the updater lives in `backend/tests/test_memory_
 
 **`config.yaml`** key sections:
 - `models[]` - LLM configs with `use` class path, `supports_thinking`, `supports_vision`, provider-specific fields
+- vLLM reasoning models should use `deerflow.models.vllm_provider:VllmChatModel`; for Qwen-style parsers prefer `when_thinking_enabled.extra_body.chat_template_kwargs.enable_thinking`, and DeerFlow will also normalize the older `thinking` alias
 - `tools[]` - Tool configs with `use` variable path and `group`
 - `tool_groups[]` - Logical groupings for tools
 - `sandbox.use` - Sandbox provider class path
@@ -407,14 +421,16 @@ Both can be modified at runtime via Gateway API endpoints or `DeerFlowClient` me
 **Architecture**: Imports the same `deerflow` modules that LangGraph Server and Gateway API use. Shares the same config files and data directories. No FastAPI dependency.
 
 **Agent Conversation** (replaces LangGraph Server):
-- `chat(message, thread_id)` — synchronous, returns final text
-- `stream(message, thread_id)` — yields `StreamEvent` aligned with LangGraph SSE protocol:
-  - `"values"` — full state snapshot (title, messages, artifacts)
-  - `"messages-tuple"` — per-message update (AI text, tool calls, tool results)
-  - `"end"` — stream finished
+- `chat(message, thread_id)` — synchronous, accumulates streaming deltas per message-id and returns the final AI text
+- `stream(message, thread_id)` — subscribes to LangGraph `stream_mode=["values", "messages", "custom"]` and yields `StreamEvent`:
+  - `"values"` — full state snapshot (title, messages, artifacts); AI text already delivered via `messages` mode is **not** re-synthesized here to avoid duplicate deliveries
+  - `"messages-tuple"` — per-chunk update: for AI text this is a **delta** (concat per `id` to rebuild the full message); tool calls and tool results are emitted once each
+  - `"custom"` — forwarded from `StreamWriter`
+  - `"end"` — stream finished (carries cumulative `usage` counted once per message id)
 - Agent created lazily via `create_agent()` + `_build_middlewares()`, same as `make_lead_agent`
 - Supports `checkpointer` parameter for state persistence across turns
 - `reset_agent()` forces agent recreation (e.g. after memory or skill changes)
+- See [docs/STREAMING.md](docs/STREAMING.md) for the full design: why Gateway and DeerFlowClient are parallel paths, LangGraph's `stream_mode` semantics, the per-id dedup invariants, and regression testing strategy
 
 **Gateway Equivalent Methods** (replaces Gateway API):
 
@@ -462,8 +478,25 @@ make dev
 
 This starts all services and makes the application available at `http://localhost:2026`.
 
+**All startup modes:**
+
+| | **Local Foreground** | **Local Daemon** | **Docker Dev** | **Docker Prod** |
+|---|---|---|---|---|
+| **Dev** | `./scripts/serve.sh --dev`<br/>`make dev` | `./scripts/serve.sh --dev --daemon`<br/>`make dev-daemon` | `./scripts/docker.sh start`<br/>`make docker-start` | — |
+| **Dev + Gateway** | `./scripts/serve.sh --dev --gateway`<br/>`make dev-pro` | `./scripts/serve.sh --dev --gateway --daemon`<br/>`make dev-daemon-pro` | `./scripts/docker.sh start --gateway`<br/>`make docker-start-pro` | — |
+| **Prod** | `./scripts/serve.sh --prod`<br/>`make start` | `./scripts/serve.sh --prod --daemon`<br/>`make start-daemon` | — | `./scripts/deploy.sh`<br/>`make up` |
+| **Prod + Gateway** | `./scripts/serve.sh --prod --gateway`<br/>`make start-pro` | `./scripts/serve.sh --prod --gateway --daemon`<br/>`make start-daemon-pro` | — | `./scripts/deploy.sh --gateway`<br/>`make up-pro` |
+
+| Action | Local | Docker Dev | Docker Prod |
+|---|---|---|---|
+| **Stop** | `./scripts/serve.sh --stop`<br/>`make stop` | `./scripts/docker.sh stop`<br/>`make docker-stop` | `./scripts/deploy.sh down`<br/>`make down` |
+| **Restart** | `./scripts/serve.sh --restart [flags]` | `./scripts/docker.sh restart` | — |
+
+Gateway mode embeds the agent runtime in Gateway, no LangGraph server.
+
 **Nginx routing**:
-- `/api/langgraph/*` → LangGraph Server (2024)
+- Standard mode: `/api/langgraph/*` → LangGraph Server (2024)
+- Gateway mode: `/api/langgraph/*` → Gateway embedded runtime (8001) (via envsubst)
 - `/api/*` (other) → Gateway API (8001)
 - `/` (non-API) → Frontend (3000)
 

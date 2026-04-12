@@ -15,7 +15,6 @@ Thumbs.db
 __pycache__/
 *.pyc
 *.pyo
-.pytest_cache/
 
 # Virtual environments
 .venv
@@ -37,7 +36,7 @@ extensions_config.json
 coverage.xml
 coverage/
 .deer-flow/
-#.claude/
+.claude/
 skills/custom/*
 logs/
 log/
@@ -55,12 +54,6 @@ web/
 # Deployment artifacts
 backend/Dockerfile.langgraph
 config.yaml.bak
-
-# Oh My OpenCode
-.sisyphus
-
-# Ruff
-.ruff_cache
-
-# Claude Code
-.claude/settings.local.json
+.playwright-mcp
+.gstack/
+.worktrees

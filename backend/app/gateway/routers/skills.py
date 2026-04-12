@@ -111,31 +111,6 @@ async def list_skills(request: Request) -> SkillsListResponse:
         raise HTTPException(status_code=500, detail=f"Failed to load skills: {str(e)}")
 
 
-@router.post(
-    "/skills/install",
-    response_model=SkillInstallResponse,
-    summary="Install Skill",
-    description="Install a skill from a .skill file (ZIP archive) located in the thread's user-data directory.",
-)
-async def install_skill(request: SkillInstallRequest) -> SkillInstallResponse:
-    try:
-        skill_file_path = resolve_thread_virtual_path(request.thread_id, request.path)
-        result = install_skill_from_archive(skill_file_path)
-        await refresh_skills_system_prompt_cache_async()
-        return SkillInstallResponse(**result)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except SkillAlreadyExistsError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to install skill: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to install skill: {str(e)}")
-
-
 @router.get("/skills/custom", response_model=SkillsListResponse, summary="List Custom Skills")
 async def list_custom_skills() -> SkillsListResponse:
     try:

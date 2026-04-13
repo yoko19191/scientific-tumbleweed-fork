@@ -86,7 +86,7 @@ export const ConversationScrollButton = ({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 transition-all duration-300 ease-in-out",
+        "pointer-events-none absolute left-1/2 z-40 -translate-x-1/2 transition-all duration-300 ease-in-out",
         isAtBottom
           ? "translate-y-4 opacity-0"
           : "pointer-events-auto translate-y-0 opacity-100",

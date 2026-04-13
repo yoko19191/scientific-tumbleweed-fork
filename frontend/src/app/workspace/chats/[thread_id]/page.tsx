@@ -178,6 +178,7 @@ export default function ChatPage() {
                   <p className="relative z-10 text-muted-foreground/50 text-center text-[10px] leading-none" style={{ marginTop: "-10px" }}>
                     {t.inputBox.aiDisclaimer}
                   </p>
+                )}
                 {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" && (
                   <div className="text-muted-foreground/67 w-full translate-y-12 text-center text-xs">
                     {t.common.notAvailableInDemoMode}

@@ -565,7 +565,7 @@ async def list_sandboxes():
         try:
             legacy_services = core_v1.list_namespaced_service(
                 LEGACY_K8S_NAMESPACE,
-                label_selector="app=deer-flow-sandbox",
+                label_selector="app=scientific-tumbleweed-sandbox",
             )
             services.items.extend(legacy_services.items)
         except ApiException:

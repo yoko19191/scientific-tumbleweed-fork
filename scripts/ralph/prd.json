@@ -1,19 +1,21 @@
 {
-  "project": "DeerFlow Thread Isolation",
-  "branchName": "ralph/thread-isolation",
-  "description": "Multi-tenant thread isolation via Gateway mapping layer + user info/logout UI in sidebar",
+  "project": "DeerFlow Multi-Tenant Resource Isolation",
+  "branchName": "ralph/multi-tenant-resource-isolation",
+  "description": "Extend per-user filesystem isolation to uploads, artifacts, thread directories, MCP config, and fix minor user_id leaks in memory/status and assistants_compat.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Backend: Add bindUser endpoint to Gateway",
-      "description": "As a backend developer, I want a POST /api/threads/bindUser endpoint that registers a user_id <-> thread_id mapping in the Store, so that thread ownership can be tracked.",
+      "title": "Paths: add user-scoped thread directory methods",
+      "description": "As a backend developer, I want Paths to expose user-scoped thread directory helpers and resolve helpers with user_id=None fallback, so that uploads/outputs/workspace can be stored under users/{user_id}/threads/{thread_id}/.",
       "acceptanceCriteria": [
-        "POST /api/threads/bindUser endpoint exists on the threads router",
-        "Endpoint uses @require_auth decorator to extract user_id from JWT cookie",
-        "Mapping is written to Store with namespace (\"thread_owners\",), key=thread_id, value={\"user_id\": ..., \"created_at\": ...}",
-        "Endpoint is idempotent: if mapping already exists with same user_id, returns success",
-        "Returns {\"success\": true} on success",
-        "Returns 401 if no valid auth cookie",
+        "Paths.user_thread_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/",
+        "Paths.user_thread_uploads_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/uploads/",
+        "Paths.user_thread_outputs_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/outputs/",
+        "Paths.user_thread_workspace_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/workspace/",
+        "Paths.resolve_uploads_dir(thread_id, user_id=None) returns user-scoped path when user_id given, else sandbox_uploads_dir(thread_id)",
+        "Paths.resolve_outputs_dir(thread_id, user_id=None) returns user-scoped path when user_id given, else sandbox_outputs_dir(thread_id)",
+        "Paths.resolve_workspace_dir(thread_id, user_id=None) returns user-scoped path when user_id given, else sandbox_work_dir(thread_id)",
+        "Paths.resolve_thread_user_data_dir(thread_id, user_id=None) returns user-scoped thread dir when user_id given, else sandbox_user_data_dir(thread_id)",
         "Typecheck passes"
       ],
       "priority": 1,
@@ -22,17 +24,16 @@
     },
     {
       "id": "US-002",
-      "title": "Backend: Add listByUser endpoint to Gateway",
-      "description": "As a backend developer, I want a GET /api/threads/listByUser endpoint that returns only threads owned by the current user, with metadata from the checkpointer.",
+      "title": "Paths: user-scoped ensure_thread_dirs, delete_thread_dir, resolve_virtual_path, host_sandbox_* methods",
+      "description": "As a backend developer, I want ensure_thread_dirs, delete_thread_dir, resolve_virtual_path, and host_sandbox_* methods to accept an optional user_id so that directory creation, deletion, virtual path resolution, and Docker volume mounts all use the correct user-scoped physical path.",
       "acceptanceCriteria": [
-        "GET /api/threads/listByUser endpoint exists on the threads router",
-        "Endpoint uses @require_auth decorator to extract user_id from JWT cookie",
-        "Queries Store namespace (\"thread_owners\",) and filters by user_id",
-        "For each owned thread_id, reads latest checkpoint from checkpointer to get title, updated_at, status",
-        "Returns Thread[] array compatible with LangGraph threads.search format (thread_id, status, created_at, updated_at, metadata, values with title)",
-        "Results sorted by updated_at descending",
-        "Returns empty array for users with no threads",
-        "Returns 401 if no valid auth cookie",
+        "ensure_thread_dirs(thread_id, user_id=None) creates workspace/uploads/outputs under users/{user_id}/threads/{thread_id}/ when user_id is given",
+        "ensure_thread_dirs(thread_id) with no user_id behaves exactly as before",
+        "delete_thread_dir(thread_id, user_id=None) deletes users/{user_id}/threads/{thread_id}/ when user_id is given",
+        "delete_thread_dir(thread_id) with no user_id behaves exactly as before",
+        "resolve_virtual_path(thread_id, virtual_path, user_id=None) resolves to user-scoped physical path when user_id is given",
+        "resolve_virtual_path(thread_id, virtual_path) with no user_id behaves exactly as before",
+        "host_sandbox_uploads_dir, host_sandbox_outputs_dir, host_sandbox_work_dir, host_sandbox_user_data_dir each accept optional user_id and return user-scoped host path when provided",
         "Typecheck passes"
       ],
       "priority": 2,
@@ -41,14 +42,15 @@
     },
     {
       "id": "US-003",
-      "title": "Backend: Add mapping cleanup to DELETE endpoint",
-      "description": "As a backend developer, I want the existing DELETE /api/threads/{thread_id} endpoint to also delete the thread_owners mapping record and verify ownership.",
+      "title": "ThreadDataMiddleware + UploadsMiddleware: pass user_id to path resolution",
+      "description": "As a backend developer, I want ThreadDataMiddleware and UploadsMiddleware to extract user_id from run metadata and use user-scoped paths, so that thread directories and upload file listings are in the correct user namespace.",
       "acceptanceCriteria": [
-        "DELETE /api/threads/{thread_id} now also calls store.adelete((\"thread_owners\",), thread_id)",
-        "Endpoint has @require_auth decorator added",
-        "Endpoint verifies the mapping's user_id matches the current user before deleting (returns 404 if mismatch or not found)",
-        "Mapping deletion is idempotent (no error if mapping doesn't exist)",
-        "Existing local thread data cleanup (filesystem, checkpointer, store threads namespace) still works",
+        "ThreadDataMiddleware.before_agent extracts user_id from runtime.context.get('user_id') first, then config metadata as fallback (same pattern as MemoryMiddleware)",
+        "ThreadDataMiddleware calls ensure_thread_dirs(thread_id, user_id=user_id)",
+        "ThreadDataMiddleware._get_thread_paths uses resolve_uploads_dir / resolve_outputs_dir / resolve_workspace_dir with user_id",
+        "UploadsMiddleware.before_agent extracts user_id from runtime.context or config metadata",
+        "UploadsMiddleware resolves uploads_dir via paths.resolve_uploads_dir(thread_id, user_id) instead of paths.sandbox_uploads_dir(thread_id)",
+        "When user_id is None in both middlewares, behavior is identical to before",
         "Typecheck passes"
       ],
       "priority": 3,
@@ -57,14 +59,16 @@
     },
     {
       "id": "US-004",
-      "title": "Frontend: Switch useThreads to call Gateway listByUser",
-      "description": "As a frontend developer, I want useThreads() to fetch the thread list from Gateway's /api/threads/listByUser instead of LangGraph's threads.search, so that only the current user's threads are shown.",
+      "title": "uploads.py router: use user-scoped uploads directory",
+      "description": "As a logged-in user, I want my uploaded files stored under users/{user_id}/threads/{thread_id}/uploads/ so that my files are isolated from other users.",
       "acceptanceCriteria": [
-        "useThreads() in frontend/src/core/threads/hooks.ts calls fetchWithAuth(getBackendBaseURL() + '/api/threads/listByUser') instead of apiClient.threads.search()",
-        "Response is parsed as AgentThread[] and returned to the component",
-        "TanStack Query queryKey remains ['threads', 'search'] so existing invalidateQueries calls still work",
-        "refetchOnWindowFocus remains false",
-        "Sidebar shows empty list for new users with no threads",
+        "All three endpoints (POST upload, GET list, DELETE file) accept request: Request and call get_optional_user_id(request)",
+        "get_uploads_dir(thread_id, user_id=None) and ensure_uploads_dir(thread_id, user_id=None) in uploads/manager.py accept optional user_id and delegate to resolve_uploads_dir",
+        "POST /api/threads/{thread_id}/uploads stores files in user-scoped path when user_id present",
+        "GET /api/threads/{thread_id}/uploads/list lists files from user-scoped path",
+        "DELETE /api/threads/{thread_id}/uploads/{filename} deletes from user-scoped path",
+        "sandbox_uploads path returned in response uses resolve_uploads_dir result",
+        "When user_id is None, all endpoints behave exactly as before",
         "Typecheck passes"
       ],
       "priority": 4,
@@ -73,13 +77,13 @@
     },
     {
       "id": "US-005",
-      "title": "Frontend: Register thread ownership on creation",
-      "description": "As a frontend developer, I want the useThreadStream onCreated callback to register the new thread with Gateway's bindUser endpoint, so that newly created threads appear in the user's list.",
+      "title": "artifacts.py + path_utils.py: use user-scoped virtual path resolution",
+      "description": "As a logged-in user, I want GET /api/threads/{thread_id}/artifacts/{path} to resolve artifact paths from my user-scoped directory so that I can only access my own artifacts.",
       "acceptanceCriteria": [
-        "onCreated callback in useThreadStream (frontend/src/core/threads/hooks.ts) calls fetchWithAuth POST /api/threads/bindUser with {thread_id: meta.thread_id}",
-        "The bindUser call uses .catch(console.error) so failures don't block the conversation",
-        "Existing handleStreamStart and setOnStreamThreadId calls are preserved",
-        "After creating a thread and sending a message, the thread appears in the sidebar on refresh",
+        "path_utils.resolve_thread_virtual_path(thread_id, virtual_path, user_id=None) passes user_id to Paths.resolve_virtual_path",
+        "artifacts.py get_artifact endpoint accepts request: Request and calls get_optional_user_id(request)",
+        "get_artifact passes user_id to resolve_thread_virtual_path for both normal paths and .skill archive paths",
+        "When user_id is None, behavior is identical to before",
         "Typecheck passes"
       ],
       "priority": 5,
@@ -88,15 +92,17 @@
     },
     {
       "id": "US-006",
-      "title": "Frontend: Show user email in sidebar bottom",
-      "description": "As a logged-in user, I want to see my email address displayed at the bottom of the sidebar so I know which account I'm using.",
+      "title": "mcp.py: make PUT /api/mcp/config read-only, add per-user enabled toggle",
+      "description": "As a logged-in user, I want to toggle individual MCP servers on/off for myself without affecting other users, and the global MCP config should be read-only.",
       "acceptanceCriteria": [
-        "workspace-nav-menu.tsx imports and uses useAuth() hook to get user.email",
-        "When sidebar is expanded, user email is displayed above or near the 'Settings and More' trigger",
-        "Email is truncated with ellipsis if too long",
-        "When sidebar is collapsed, a circular avatar with the first letter of the email is shown",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
+        "PUT /api/mcp/config returns 403 with detail message directing users to the new per-user endpoint",
+        "GET /api/mcp/config merges global MCP server list with per-user enabled overrides from users/{user_id}/extensions_config.json when user is logged in",
+        "New endpoint PUT /api/mcp/servers/{name}/enabled exists with request body {enabled: bool}",
+        "PUT /api/mcp/servers/{name}/enabled requires auth (returns 401 if not logged in)",
+        "PUT /api/mcp/servers/{name}/enabled returns 404 if server name not in global config",
+        "PUT /api/mcp/servers/{name}/enabled writes only the enabled field to users/{user_id}/extensions_config.json mcpServers section, preserving existing skills entries",
+        "GET /api/mcp/config without auth returns global config unchanged",
+        "Typecheck passes"
       ],
       "priority": 6,
       "passes": true,
@@ -104,16 +110,13 @@
     },
     {
       "id": "US-007",
-      "title": "Frontend: Add logout button to sidebar menu",
-      "description": "As a logged-in user, I want a logout button in the sidebar dropdown menu so I can sign out of my account.",
+      "title": "Fix memory/status endpoint missing user_id",
+      "description": "As a logged-in user, I want GET /api/memory/status to return my own memory data, not the global fallback.",
       "acceptanceCriteria": [
-        "A 'Logout' / '退出登录' menu item is added to the DropdownMenu in workspace-nav-menu.tsx",
-        "It appears at the bottom of the menu, separated from other items by a DropdownMenuSeparator",
-        "It uses the LogOut icon from lucide-react",
-        "Clicking it calls useAuth().logout() then navigates to /login via router.push",
-        "After logout, accessing /workspace redirects to /login (AuthGuard)",
-        "Typecheck passes",
-        "Verify in browser using dev-browser skill"
+        "get_memory_status() accepts request: Request parameter",
+        "get_memory_status() calls get_optional_user_id(request) and passes user_id to get_memory_data(user_id)",
+        "When not logged in, user_id is None and behavior is unchanged",
+        "Typecheck passes"
       ],
       "priority": 7,
       "passes": true,
@@ -121,18 +124,19 @@
     },
     {
       "id": "US-008",
-      "title": "Data cleanup: Clear historical thread data",
-      "description": "As a developer, I want to clear existing thread data that has no user_id mapping, so we start fresh with the isolation system.",
+      "title": "Fix assistants_compat missing user_id in list_custom_agents",
+      "description": "As a logged-in user, I want the assistants list to show only my own custom agents, not all users' agents.",
       "acceptanceCriteria": [
-        "backend/.deer-flow/checkpoints.db, checkpoints.db-wal, checkpoints.db-shm are deleted if they exist",
-        "backend/.deer-flow/memory.json is deleted if it exists",
-        "backend/.langgraph_api/ directory is deleted if it exists",
-        "A shell script or documented commands exist for this cleanup",
+        "_list_assistants(user_id=None) accepts user_id parameter and passes it to list_custom_agents(user_id=user_id)",
+        "search_assistants endpoint extracts user_id from request via get_optional_user_id and passes to _list_assistants",
+        "get_assistant_compat endpoint extracts user_id from request and passes to _list_assistants",
+        "get_assistant_graph and get_assistant_schemas also pass user_id to _list_assistants",
+        "When not logged in, user_id is None and behavior is unchanged (shows global agents)",
         "Typecheck passes"
       ],
       "priority": 8,
       "passes": true,
-      "notes": "This is a one-time operation before deploying the isolation feature. Can be a simple script in scripts/ or documented in the PRD."
+      "notes": ""
     }
   ]
 }

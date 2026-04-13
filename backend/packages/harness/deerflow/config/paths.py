@@ -207,6 +207,50 @@ class Paths:
             return self.user_agent_dir(user_id, name)
         return self.agent_dir(name)
 
+    # ── User-scoped thread paths ──────────────────────────────────────
+
+    def user_thread_dir(self, user_id: str, thread_id: str) -> Path:
+        """User-scoped thread directory: ``{base_dir}/users/{user_id}/threads/{thread_id}/``."""
+        return self.user_dir(user_id) / "threads" / _validate_thread_id(thread_id)
+
+    def user_thread_uploads_dir(self, user_id: str, thread_id: str) -> Path:
+        """User-scoped uploads directory: ``{base_dir}/users/{user_id}/threads/{thread_id}/uploads/``."""
+        return self.user_thread_dir(user_id, thread_id) / "uploads"
+
+    def user_thread_outputs_dir(self, user_id: str, thread_id: str) -> Path:
+        """User-scoped outputs directory: ``{base_dir}/users/{user_id}/threads/{thread_id}/outputs/``."""
+        return self.user_thread_dir(user_id, thread_id) / "outputs"
+
+    def user_thread_workspace_dir(self, user_id: str, thread_id: str) -> Path:
+        """User-scoped workspace directory: ``{base_dir}/users/{user_id}/threads/{thread_id}/workspace/``."""
+        return self.user_thread_dir(user_id, thread_id) / "workspace"
+
+    # ── Resolve helpers (thread + user_id=None → sandbox fallback) ────
+
+    def resolve_uploads_dir(self, thread_id: str, user_id: str | None = None) -> Path:
+        """Return user-scoped or sandbox uploads directory."""
+        if user_id:
+            return self.user_thread_uploads_dir(user_id, thread_id)
+        return self.sandbox_uploads_dir(thread_id)
+
+    def resolve_outputs_dir(self, thread_id: str, user_id: str | None = None) -> Path:
+        """Return user-scoped or sandbox outputs directory."""
+        if user_id:
+            return self.user_thread_outputs_dir(user_id, thread_id)
+        return self.sandbox_outputs_dir(thread_id)
+
+    def resolve_workspace_dir(self, thread_id: str, user_id: str | None = None) -> Path:
+        """Return user-scoped or sandbox workspace directory."""
+        if user_id:
+            return self.user_thread_workspace_dir(user_id, thread_id)
+        return self.sandbox_work_dir(thread_id)
+
+    def resolve_thread_user_data_dir(self, thread_id: str, user_id: str | None = None) -> Path:
+        """Return user-scoped thread dir or sandbox user-data dir."""
+        if user_id:
+            return self.user_thread_dir(user_id, thread_id)
+        return self.sandbox_user_data_dir(thread_id)
+
     # ── Thread paths ─────────────────────────────────────────────────
 
     def thread_dir(self, thread_id: str) -> Path:

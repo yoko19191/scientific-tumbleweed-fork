@@ -302,14 +302,15 @@ async def get_memory_config_endpoint() -> MemoryConfigResponse:
     summary="Get Memory Status",
     description="Retrieve both memory configuration and current data in a single request.",
 )
-async def get_memory_status() -> MemoryStatusResponse:
+async def get_memory_status(request: Request) -> MemoryStatusResponse:
     """Get the memory system status including configuration and data.
 
     Returns:
         Combined memory configuration and current data.
     """
     config = get_memory_config()
-    memory_data = get_memory_data()
+    user_id = get_optional_user_id(request)
+    memory_data = get_memory_data(user_id)
 
     return MemoryStatusResponse(
         config=MemoryConfigResponse(

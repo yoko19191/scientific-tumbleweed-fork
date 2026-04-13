@@ -70,7 +70,15 @@
       "WebFetch(domain:localhost)",
       "Bash(pnpm store:*)",
       "Bash(python:*)",
-      "Bash(find /Users/guchen/Library/pnpm/store/v10 -name *.cjs -path *langgraph*)"
+      "Bash(find /Users/guchen/Library/pnpm/store/v10 -name *.cjs -path *langgraph*)",
+      "Bash(make docker-start:*)",
+      "Bash(make docker-stop:*)",
+      "Bash(make docker-logs:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker network:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker stop:*)",
+      "Bash(git rm:*)"
     ]
   }
 }

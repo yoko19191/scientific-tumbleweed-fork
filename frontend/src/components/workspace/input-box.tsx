@@ -430,9 +430,9 @@ export function InputBox({
   }, [context.model_name, disabled, isMock, status, thread.messages, threadId]);
 
   return (
-    <div ref={promptRootRef} className="relative flex flex-col gap-4">
+    <div ref={promptRootRef} className="relative flex flex-col gap-3">
       {showFollowups && (
-        <div className="flex items-center justify-center pb-2">
+        <div className="flex items-center justify-center">
           <div className="flex items-center gap-2">
             {followupsLoading ? (
               <div className="text-muted-foreground bg-background/80 rounded-full border px-4 py-2 text-xs backdrop-blur-sm">
@@ -845,7 +845,7 @@ export function InputBox({
       </PromptInput>
 
       {isNewThread && searchParams.get("mode") !== "skill" && (
-        <div className="flex items-center justify-center pt-2">
+        <div className="flex items-center justify-center pt-1">
           <SuggestionList />
         </div>
       )}

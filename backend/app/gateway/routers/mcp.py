@@ -3,10 +3,12 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.gateway.deps import get_optional_user_id
 from deerflow.config.extensions_config import ExtensionsConfig, get_extensions_config, reload_extensions_config
+from deerflow.config.paths import get_paths
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["mcp"])
@@ -69,101 +71,95 @@ class McpConfigUpdateRequest(BaseModel):
     summary="Get MCP Configuration",
     description="Retrieve the current Model Context Protocol (MCP) server configurations.",
 )
-async def get_mcp_configuration() -> McpConfigResponse:
+async def get_mcp_configuration(request: Request) -> McpConfigResponse:
     """Get the current MCP configuration.
+
+    When the user is logged in, merges global MCP server list with per-user
+    enabled overrides from users/{user_id}/extensions_config.json.
 
     Returns:
         The current MCP configuration with all servers.
-
-    Example:
-        ```json
-        {
-            "mcp_servers": {
-                "github": {
-                    "enabled": true,
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-github"],
-                    "env": {"GITHUB_TOKEN": "ghp_xxx"},
-                    "description": "GitHub MCP server for repository operations"
-                }
-            }
-        }
-        ```
     """
     config = get_extensions_config()
+    servers = {name: McpServerConfigResponse(**server.model_dump()) for name, server in config.mcp_servers.items()}
 
-    return McpConfigResponse(mcp_servers={name: McpServerConfigResponse(**server.model_dump()) for name, server in config.mcp_servers.items()})
+    user_id = get_optional_user_id(request)
+    if user_id:
+        user_ext_file = get_paths().user_extensions_config_file(user_id)
+        if user_ext_file.is_file():
+            try:
+                user_data = json.loads(user_ext_file.read_text(encoding="utf-8"))
+                user_mcp = user_data.get("mcpServers", {})
+                for name, overrides in user_mcp.items():
+                    if name in servers and "enabled" in overrides:
+                        servers[name] = servers[name].model_copy(update={"enabled": overrides["enabled"]})
+            except Exception:
+                logger.warning("Failed to read per-user extensions config for user %s", user_id, exc_info=True)
+
+    return McpConfigResponse(mcp_servers=servers)
 
 
 @router.put(
     "/mcp/config",
-    response_model=McpConfigResponse,
-    summary="Update MCP Configuration",
-    description="Update Model Context Protocol (MCP) server configurations and save to file.",
+    summary="Update MCP Configuration (disabled)",
+    description="Global MCP config is read-only. Use PUT /api/mcp/servers/{name}/enabled to toggle per-user.",
 )
-async def update_mcp_configuration(request: McpConfigUpdateRequest) -> McpConfigResponse:
-    """Update the MCP configuration.
+async def update_mcp_configuration() -> None:
+    """Global MCP config is now read-only.
 
-    This will:
-    1. Save the new configuration to the mcp_config.json file
-    2. Reload the configuration cache
-    3. Reset MCP tools cache to trigger reinitialization
+    Use PUT /api/mcp/servers/{name}/enabled to toggle individual servers per user.
+    """
+    raise HTTPException(
+        status_code=403,
+        detail="Global MCP config is read-only. Use PUT /api/mcp/servers/{name}/enabled to toggle per-user.",
+    )
 
-    Args:
-        request: The new MCP configuration to save.
 
-    Returns:
-        The updated MCP configuration.
+class McpServerEnabledRequest(BaseModel):
+    """Request body for toggling a per-user MCP server enabled state."""
+
+    enabled: bool
+
+
+@router.put(
+    "/mcp/servers/{name}/enabled",
+    summary="Toggle per-user MCP server enabled state",
+    description="Enable or disable an MCP server for the authenticated user.",
+)
+async def set_mcp_server_enabled(name: str, body: McpServerEnabledRequest, request: Request) -> dict:
+    """Toggle an MCP server on/off for the authenticated user.
+
+    Writes only the enabled field to users/{user_id}/extensions_config.json
+    mcpServers section, preserving existing skills entries.
 
     Raises:
-        HTTPException: 500 if the configuration file cannot be written.
-
-    Example Request:
-        ```json
-        {
-            "mcp_servers": {
-                "github": {
-                    "enabled": true,
-                    "command": "npx",
-                    "args": ["-y", "@modelcontextprotocol/server-github"],
-                    "env": {"GITHUB_TOKEN": "$GITHUB_TOKEN"},
-                    "description": "GitHub MCP server for repository operations"
-                }
-            }
-        }
-        ```
+        HTTPException 401: If not logged in.
+        HTTPException 404: If server name not in global config.
     """
-    try:
-        # Get the current config path (or determine where to save it)
-        config_path = ExtensionsConfig.resolve_config_path()
+    user_id = get_optional_user_id(request)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
 
-        # If no config file exists, create one in the parent directory (project root)
-        if config_path is None:
-            config_path = Path.cwd().parent / "extensions_config.json"
-            logger.info(f"No existing extensions config found. Creating new config at: {config_path}")
+    global_config = get_extensions_config()
+    if name not in global_config.mcp_servers:
+        raise HTTPException(status_code=404, detail=f"MCP server not found: {name}")
 
-        # Load current config to preserve skills configuration
-        current_config = get_extensions_config()
+    user_ext_file = get_paths().user_extensions_config_file(user_id)
+    user_ext_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert request to dict format for JSON serialization
-        config_data = {
-            "mcpServers": {name: server.model_dump() for name, server in request.mcp_servers.items()},
-            "skills": {name: {"enabled": skill.enabled} for name, skill in current_config.skills.items()},
-        }
+    # Load existing user config to preserve skills and other entries
+    if user_ext_file.is_file():
+        try:
+            user_data = json.loads(user_ext_file.read_text(encoding="utf-8"))
+        except Exception:
+            user_data = {}
+    else:
+        user_data = {}
 
-        # Write the configuration to file
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, indent=2)
+    mcp_section = user_data.setdefault("mcpServers", {})
+    server_entry = mcp_section.setdefault(name, {})
+    server_entry["enabled"] = body.enabled
+    user_ext_file.write_text(json.dumps(user_data, indent=2), encoding="utf-8")
 
-        logger.info(f"MCP configuration updated and saved to: {config_path}")
-
-        # NOTE: No need to reload/reset cache here - LangGraph Server (separate process)
-        # will detect config file changes via mtime and reinitialize MCP tools automatically
-
-        # Reload the configuration and update the global cache
-        reloaded_config = reload_extensions_config()
-        return McpConfigResponse(mcp_servers={name: McpServerConfigResponse(**server.model_dump()) for name, server in reloaded_config.mcp_servers.items()})
-
-    except Exception as e:
-        logger.error(f"Failed to update MCP configuration: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update MCP configuration: {str(e)}")
+    logger.info("User %s set MCP server %r enabled=%s", user_id, name, body.enabled)
+    return {"success": True, "name": name, "enabled": body.enabled}

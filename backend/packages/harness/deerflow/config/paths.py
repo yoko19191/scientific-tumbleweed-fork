@@ -313,28 +313,42 @@ class Paths:
         """Host path for a thread directory, preserving Windows path syntax."""
         return _join_host_path(self._host_base_dir_str(), "threads", _validate_thread_id(thread_id))
 
-    def host_sandbox_user_data_dir(self, thread_id: str) -> str:
-        """Host path for a thread's user-data root."""
+    def _host_user_thread_dir(self, user_id: str, thread_id: str) -> str:
+        """Host path for a user-scoped thread directory, preserving Windows path syntax."""
+        return _join_host_path(self._host_base_dir_str(), "users", _validate_user_id(user_id), "threads", _validate_thread_id(thread_id))
+
+    def host_sandbox_user_data_dir(self, thread_id: str, user_id: str | None = None) -> str:
+        """Host path for a thread's user-data root.
+
+        When user_id is given, returns the user-scoped thread directory.
+        Otherwise returns the legacy sandbox user-data directory.
+        """
+        if user_id:
+            return self._host_user_thread_dir(user_id, thread_id)
         return _join_host_path(self.host_thread_dir(thread_id), "user-data")
 
-    def host_sandbox_work_dir(self, thread_id: str) -> str:
+    def host_sandbox_work_dir(self, thread_id: str, user_id: str | None = None) -> str:
         """Host path for the workspace mount source."""
-        return _join_host_path(self.host_sandbox_user_data_dir(thread_id), "workspace")
+        return _join_host_path(self.host_sandbox_user_data_dir(thread_id, user_id), "workspace")
 
-    def host_sandbox_uploads_dir(self, thread_id: str) -> str:
+    def host_sandbox_uploads_dir(self, thread_id: str, user_id: str | None = None) -> str:
         """Host path for the uploads mount source."""
-        return _join_host_path(self.host_sandbox_user_data_dir(thread_id), "uploads")
+        return _join_host_path(self.host_sandbox_user_data_dir(thread_id, user_id), "uploads")
 
-    def host_sandbox_outputs_dir(self, thread_id: str) -> str:
+    def host_sandbox_outputs_dir(self, thread_id: str, user_id: str | None = None) -> str:
         """Host path for the outputs mount source."""
-        return _join_host_path(self.host_sandbox_user_data_dir(thread_id), "outputs")
+        return _join_host_path(self.host_sandbox_user_data_dir(thread_id, user_id), "outputs")
 
     def host_acp_workspace_dir(self, thread_id: str) -> str:
         """Host path for the ACP workspace mount source."""
         return _join_host_path(self.host_thread_dir(thread_id), "acp-workspace")
 
-    def ensure_thread_dirs(self, thread_id: str) -> None:
+    def ensure_thread_dirs(self, thread_id: str, user_id: str | None = None) -> None:
         """Create all standard sandbox directories for a thread.
+
+        When user_id is given, creates workspace/uploads/outputs under
+        ``users/{user_id}/threads/{thread_id}/``.  Otherwise creates the
+        legacy sandbox layout under ``threads/{thread_id}/user-data/``.
 
         Directories are created with mode 0o777 so that sandbox containers
         (which may run as a different UID than the host backend process) can
@@ -346,25 +360,41 @@ class Paths:
         the sandbox container at ``/mnt/acp-workspace`` even before the first
         ACP agent invocation.
         """
-        for d in [
-            self.sandbox_work_dir(thread_id),
-            self.sandbox_uploads_dir(thread_id),
-            self.sandbox_outputs_dir(thread_id),
-            self.acp_workspace_dir(thread_id),
-        ]:
+        dirs: list[Path]
+        if user_id:
+            dirs = [
+                self.user_thread_workspace_dir(user_id, thread_id),
+                self.user_thread_uploads_dir(user_id, thread_id),
+                self.user_thread_outputs_dir(user_id, thread_id),
+                self.acp_workspace_dir(thread_id),
+            ]
+        else:
+            dirs = [
+                self.sandbox_work_dir(thread_id),
+                self.sandbox_uploads_dir(thread_id),
+                self.sandbox_outputs_dir(thread_id),
+                self.acp_workspace_dir(thread_id),
+            ]
+        for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
             d.chmod(0o777)
 
-    def delete_thread_dir(self, thread_id: str) -> None:
+    def delete_thread_dir(self, thread_id: str, user_id: str | None = None) -> None:
         """Delete all persisted data for a thread.
+
+        When user_id is given, deletes ``users/{user_id}/threads/{thread_id}/``.
+        Otherwise deletes the legacy ``threads/{thread_id}/`` directory.
 
         The operation is idempotent: missing thread directories are ignored.
         """
-        thread_dir = self.thread_dir(thread_id)
-        if thread_dir.exists():
-            shutil.rmtree(thread_dir)
+        if user_id:
+            target = self.user_thread_dir(user_id, thread_id)
+        else:
+            target = self.thread_dir(thread_id)
+        if target.exists():
+            shutil.rmtree(target)
 
-    def resolve_virtual_path(self, thread_id: str, virtual_path: str) -> Path:
+    def resolve_virtual_path(self, thread_id: str, virtual_path: str, user_id: str | None = None) -> Path:
         """Resolve a sandbox virtual path to the actual host filesystem path.
 
         Args:
@@ -372,6 +402,8 @@ class Paths:
             virtual_path: Virtual path as seen inside the sandbox, e.g.
                           ``/mnt/user-data/outputs/report.pdf``.
                           Leading slashes are stripped before matching.
+            user_id: When provided, resolves against the user-scoped thread
+                     directory instead of the legacy sandbox user-data dir.
 
         Returns:
             The resolved absolute host filesystem path.
@@ -389,7 +421,10 @@ class Paths:
             raise ValueError(f"Path must start with /{prefix}")
 
         relative = stripped[len(prefix) :].lstrip("/")
-        base = self.sandbox_user_data_dir(thread_id).resolve()
+        if user_id:
+            base = self.user_thread_dir(user_id, thread_id).resolve()
+        else:
+            base = self.sandbox_user_data_dir(thread_id).resolve()
         actual = (base / relative).resolve()
 
         try:

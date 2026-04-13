@@ -379,6 +379,14 @@ export interface Translations {
     email: string;
     password: string;
     confirmPassword: string;
+    username: string;
+    displayName: string;
+    usernamePlaceholder: string;
+    displayNamePlaceholder: string;
+    usernameRequired: string;
+    usernameInvalid: string;
+    displayNameRequired: string;
+    usernameAlreadyExists: string;
     loginButton: string;
     registerButton: string;
     noAccount: string;
@@ -394,5 +402,24 @@ export interface Translations {
     tooManyAttempts: string;
     logout: string;
     loggingOut: string;
+  };
+
+  // Preferences
+  preferences: {
+    title: string;
+    tabs: {
+      memory: string;
+      tools: string;
+      skills: string;
+    };
+  };
+
+  // Account
+  account: {
+    title: string;
+    username: string;
+    displayName: string;
+    email: string;
+    logout: string;
   };
 }

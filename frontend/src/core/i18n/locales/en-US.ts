@@ -460,6 +460,14 @@ export const enUS: Translations = {
     email: "Email",
     password: "Password",
     confirmPassword: "Confirm Password",
+    username: "Username",
+    displayName: "Display Name",
+    usernamePlaceholder: "e.g. john_doe (letters, numbers, underscore)",
+    displayNamePlaceholder: "e.g. John Doe",
+    usernameRequired: "Username is required",
+    usernameInvalid: "Username must be 3-30 characters, letters/numbers/underscore only",
+    displayNameRequired: "Display name is required",
+    usernameAlreadyExists: "Username already taken",
     loginButton: "Login",
     registerButton: "Register",
     noAccount: "Don't have an account?",
@@ -475,5 +483,22 @@ export const enUS: Translations = {
     tooManyAttempts: "Too many login attempts. Please try again later",
     logout: "Logout",
     loggingOut: "Logging out...",
+  },
+
+  preferences: {
+    title: "Preferences",
+    tabs: {
+      memory: "Memory",
+      tools: "Tools",
+      skills: "Skills",
+    },
+  },
+
+  account: {
+    title: "Account",
+    username: "Username",
+    displayName: "Display Name",
+    email: "Email",
+    logout: "Sign Out",
   },
 };

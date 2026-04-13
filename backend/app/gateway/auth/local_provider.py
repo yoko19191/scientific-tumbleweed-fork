@@ -49,7 +49,7 @@ class LocalAuthProvider(AuthProvider):
         """Get user by ID."""
         return await self._repo.get_user_by_id(user_id)
 
-    async def create_user(self, email: str, password: str | None = None, system_role: str = "user", needs_setup: bool = False) -> User:
+    async def create_user(self, email: str, password: str | None = None, system_role: str = "user", needs_setup: bool = False, username: str = "", display_name: str = "") -> User:
         """Create a new local user.
 
         Args:
@@ -57,6 +57,8 @@ class LocalAuthProvider(AuthProvider):
             password: Plain text password (will be hashed)
             system_role: Role to assign ("admin" or "user")
             needs_setup: If True, user must complete setup on first login
+            username: Unique username (alphanumeric + underscore)
+            display_name: Non-unique display name shown in UI
 
         Returns:
             Created User instance
@@ -64,6 +66,8 @@ class LocalAuthProvider(AuthProvider):
         password_hash = await hash_password_async(password) if password else None
         user = User(
             email=email,
+            username=username,
+            display_name=display_name,
             password_hash=password_hash,
             system_role=system_role,
             needs_setup=needs_setup,

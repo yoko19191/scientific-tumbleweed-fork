@@ -5,12 +5,10 @@ import {
   ChevronsUpDown,
   GlobeIcon,
   InfoIcon,
-  LogOutIcon,
-  MailIcon,
   Settings2Icon,
   SettingsIcon,
+  UserIcon,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
@@ -34,20 +32,32 @@ import { SettingsDialog } from "./settings";
 
 function NavMenuButtonContent({
   isSidebarOpen,
+  displayName,
+  avatarLetter,
   t,
 }: {
   isSidebarOpen: boolean;
+  displayName: string;
+  avatarLetter: string;
   t: ReturnType<typeof useI18n>["t"];
 }) {
   return isSidebarOpen ? (
     <div className="text-muted-foreground flex w-full items-center gap-2 text-left text-sm">
-      <SettingsIcon className="size-4" />
-      <span>{t.workspace.settingsAndMore}</span>
-      <ChevronsUpDown className="text-muted-foreground ml-auto size-4" />
+      <div className="bg-muted text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium">
+        {avatarLetter}
+      </div>
+      <span className="truncate">{displayName || t.workspace.settingsAndMore}</span>
+      <ChevronsUpDown className="text-muted-foreground ml-auto size-4 shrink-0" />
     </div>
   ) : (
     <div className="flex size-full items-center justify-center">
-      <SettingsIcon className="text-muted-foreground size-4" />
+      {displayName ? (
+        <div className="bg-muted text-muted-foreground flex size-6 items-center justify-center rounded-full text-xs font-medium">
+          {avatarLetter}
+        </div>
+      ) : (
+        <SettingsIcon className="text-muted-foreground size-4" />
+      )}
     </div>
   );
 }
@@ -55,20 +65,21 @@ function NavMenuButtonContent({
 export function WorkspaceNavMenu() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsDefaultSection, setSettingsDefaultSection] = useState<
-    "appearance" | "memory" | "tools" | "skills" | "notification" | "about"
+    "appearance" | "notification" | "about" | "account"
   >("appearance");
   const [mounted, setMounted] = useState(false);
   const { open: isSidebarOpen } = useSidebar();
   const { t } = useI18n();
-  const { user, logout } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const email = user?.email;
-  const avatarLetter = email ? email[0]!.toUpperCase() : "?";
+  const displayName = user?.display_name ?? "";
+  const avatarLetter = displayName
+    ? displayName[0]!.toUpperCase()
+    : (user?.email?.[0]?.toUpperCase() ?? "?");
 
   return (
     <>
@@ -78,21 +89,6 @@ export function WorkspaceNavMenu() {
         defaultSection={settingsDefaultSection}
       />
       <SidebarMenu className="w-full">
-        {email && (
-          <SidebarMenuItem>
-            {isSidebarOpen ? (
-              <div className="text-muted-foreground truncate px-3 py-1.5 text-xs">
-                {email}
-              </div>
-            ) : (
-              <div className="flex items-center justify-center py-1.5">
-                <div className="bg-muted text-muted-foreground flex size-6 items-center justify-center rounded-full text-xs font-medium">
-                  {avatarLetter}
-                </div>
-              </div>
-            )}
-          </SidebarMenuItem>
-        )}
         <SidebarMenuItem>
           {mounted ? (
             <DropdownMenu>
@@ -101,7 +97,12 @@ export function WorkspaceNavMenu() {
                   size="lg"
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
-                  <NavMenuButtonContent isSidebarOpen={isSidebarOpen} t={t} />
+                  <NavMenuButtonContent
+                    isSidebarOpen={isSidebarOpen}
+                    displayName={displayName}
+                    avatarLetter={avatarLetter}
+                    t={t}
+                  />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -110,6 +111,17 @@ export function WorkspaceNavMenu() {
                 sideOffset={4}
               >
                 <DropdownMenuGroup>
+                  {user && (
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSettingsDefaultSection("account");
+                        setSettingsOpen(true);
+                      }}
+                    >
+                      <UserIcon />
+                      {t.account.title}
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem
                     onClick={() => {
                       setSettingsDefaultSection("appearance");
@@ -141,12 +153,6 @@ export function WorkspaceNavMenu() {
                       {t.workspace.reportIssue}
                     </DropdownMenuItem>
                   </a>
-                  <a href="mailto:chenguanghang2000@gmail.com">
-                    <DropdownMenuItem>
-                      <MailIcon />
-                      {t.workspace.contactUs}
-                    </DropdownMenuItem>
-                  </a>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -158,25 +164,16 @@ export function WorkspaceNavMenu() {
                   <InfoIcon />
                   {t.workspace.about}
                 </DropdownMenuItem>
-                {user && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        await logout();
-                        router.push("/login");
-                      }}
-                    >
-                      <LogOutIcon />
-                      退出登录
-                    </DropdownMenuItem>
-                  </>
-                )}
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
             <SidebarMenuButton size="lg" className="pointer-events-none">
-              <NavMenuButtonContent isSidebarOpen={isSidebarOpen} t={t} />
+              <NavMenuButtonContent
+                isSidebarOpen={isSidebarOpen}
+                displayName={displayName}
+                avatarLetter={avatarLetter}
+                t={t}
+              />
             </SidebarMenuButton>
           )}
         </SidebarMenuItem>

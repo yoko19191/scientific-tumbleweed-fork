@@ -69,6 +69,18 @@ class UserRepository(ABC):
         ...
 
     @abstractmethod
+    async def get_user_by_username(self, username: str) -> User | None:
+        """Get user by username.
+
+        Args:
+            username: Unique username
+
+        Returns:
+            User if found, None otherwise
+        """
+        ...
+
+    @abstractmethod
     async def get_user_by_oauth(self, provider: str, oauth_id: str) -> User | None:
         """Get user by OAuth provider and ID.
 

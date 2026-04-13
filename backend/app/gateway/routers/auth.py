@@ -36,6 +36,8 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(..., min_length=8)
+    username: str = Field(..., min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_]+$")
+    display_name: str = Field(..., min_length=1, max_length=50)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -188,8 +190,20 @@ async def register(request: Request, response: Response, body: RegisterRequest):
     Auto-login by setting the session cookie.
     """
     try:
-        user = await get_local_provider().create_user(email=body.email, password=body.password, system_role="user")
-    except ValueError:
+        user = await get_local_provider().create_user(
+            email=body.email,
+            password=body.password,
+            system_role="user",
+            username=body.username,
+            display_name=body.display_name,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "Username already taken" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=AuthErrorResponse(code=AuthErrorCode.USERNAME_ALREADY_EXISTS, message="Username already taken").model_dump(),
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=AuthErrorResponse(code=AuthErrorCode.EMAIL_ALREADY_EXISTS, message="Email already registered").model_dump(),
@@ -198,7 +212,7 @@ async def register(request: Request, response: Response, body: RegisterRequest):
     token = create_access_token(str(user.id), token_version=user.token_version)
     _set_session_cookie(response, token, request)
 
-    return UserResponse(id=str(user.id), email=user.email, system_role=user.system_role)
+    return UserResponse(id=str(user.id), email=user.email, username=user.username, display_name=user.display_name, system_role=user.system_role)
 
 
 @router.post("/logout", response_model=MessageResponse)
@@ -258,7 +272,7 @@ async def change_password(request: Request, response: Response, body: ChangePass
 async def get_me(request: Request):
     """Get current authenticated user info."""
     user = await get_current_user_from_request(request)
-    return UserResponse(id=str(user.id), email=user.email, system_role=user.system_role, needs_setup=user.needs_setup)
+    return UserResponse(id=str(user.id), email=user.email, username=user.username, display_name=user.display_name, system_role=user.system_role, needs_setup=user.needs_setup)
 
 
 @router.get("/setup-status")

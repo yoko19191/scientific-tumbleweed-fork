@@ -182,7 +182,22 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
         ],
     )
 
-    # CORS is handled by nginx - no need for FastAPI middleware
+    # CORS — allow localhost origins for local dev (nginx handles this in production)
+    import os
+    from fastapi.middleware.cors import CORSMiddleware
+    dev_origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:2026",
+        "http://127.0.0.1:2026",
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=dev_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Auth & CSRF middleware (order matters: CSRF runs after auth)
     from app.gateway.auth_middleware import AuthMiddleware

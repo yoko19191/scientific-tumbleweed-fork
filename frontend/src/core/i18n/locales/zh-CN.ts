@@ -441,6 +441,14 @@ export const zhCN: Translations = {
     email: "邮箱",
     password: "密码",
     confirmPassword: "确认密码",
+    username: "用户名",
+    displayName: "昵称",
+    usernamePlaceholder: "如 john_doe（字母、数字、下划线）",
+    displayNamePlaceholder: "如 张三",
+    usernameRequired: "请输入用户名",
+    usernameInvalid: "用户名须为 3-30 位字母、数字或下划线",
+    displayNameRequired: "请输入昵称",
+    usernameAlreadyExists: "该用户名已被占用",
     loginButton: "登录",
     registerButton: "注册",
     noAccount: "还没有账号？",
@@ -456,5 +464,22 @@ export const zhCN: Translations = {
     tooManyAttempts: "登录尝试次数过多，请稍后再试",
     logout: "退出登录",
     loggingOut: "正在退出...",
+  },
+
+  preferences: {
+    title: "个性化",
+    tabs: {
+      memory: "记忆",
+      tools: "工具",
+      skills: "技能",
+    },
+  },
+
+  account: {
+    title: "账号",
+    username: "用户名",
+    displayName: "昵称",
+    email: "邮箱",
+    logout: "退出登录",
   },
 };

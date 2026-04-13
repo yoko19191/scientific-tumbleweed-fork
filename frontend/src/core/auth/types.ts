@@ -5,6 +5,8 @@
 export interface User {
   id: string;
   email: string;
+  username: string;
+  display_name: string;
   system_role: "admin" | "user";
 }
 
@@ -21,6 +23,8 @@ export interface LoginCredentials {
 export interface RegisterCredentials {
   email: string;
   password: string;
+  username: string;
+  display_name: string;
 }
 
 export interface LoginResponse {

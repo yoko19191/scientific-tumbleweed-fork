@@ -81,7 +81,12 @@ export async function register(
 ): Promise<User> {
   const res = await fetchWithAuth(`${AUTH_BASE()}/register`, {
     method: "POST",
-    body: JSON.stringify(credentials),
+    body: JSON.stringify({
+      email: credentials.email,
+      password: credentials.password,
+      username: credentials.username,
+      display_name: credentials.display_name,
+    }),
     headers: { "Content-Type": "application/json" },
   });
 

@@ -46,6 +46,8 @@ def _init_users_table(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             email TEXT UNIQUE NOT NULL,
+            username TEXT UNIQUE NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
             password_hash TEXT,
             system_role TEXT NOT NULL DEFAULT 'user',
             created_at REAL NOT NULL,
@@ -94,12 +96,14 @@ class SQLiteUserRepository(UserRepository):
             try:
                 conn.execute(
                     """
-                    INSERT INTO users (id, email, password_hash, system_role, created_at, oauth_provider, oauth_id, needs_setup, token_version)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO users (id, email, username, display_name, password_hash, system_role, created_at, oauth_provider, oauth_id, needs_setup, token_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(user.id),
                         user.email,
+                        user.username,
+                        user.display_name,
                         user.password_hash,
                         user.system_role,
                         datetime.now(UTC).timestamp(),
@@ -113,6 +117,8 @@ class SQLiteUserRepository(UserRepository):
             except sqlite3.IntegrityError as e:
                 if "UNIQUE constraint failed: users.email" in str(e):
                     raise ValueError(f"Email already registered: {user.email}") from e
+                if "UNIQUE constraint failed: users.username" in str(e):
+                    raise ValueError(f"Username already taken: {user.username}") from e
                 raise
         return user
 
@@ -149,8 +155,8 @@ class SQLiteUserRepository(UserRepository):
     def _update_user_sync(self, user: User) -> User:
         with _get_users_conn() as conn:
             conn.execute(
-                "UPDATE users SET email = ?, password_hash = ?, system_role = ?, oauth_provider = ?, oauth_id = ?, needs_setup = ?, token_version = ? WHERE id = ?",
-                (user.email, user.password_hash, user.system_role, user.oauth_provider, user.oauth_id, int(user.needs_setup), user.token_version, str(user.id)),
+                "UPDATE users SET email = ?, username = ?, display_name = ?, password_hash = ?, system_role = ?, oauth_provider = ?, oauth_id = ?, needs_setup = ?, token_version = ? WHERE id = ?",
+                (user.email, user.username, user.display_name, user.password_hash, user.system_role, user.oauth_provider, user.oauth_id, int(user.needs_setup), user.token_version, str(user.id)),
             )
             conn.commit()
         return user
@@ -180,12 +186,27 @@ class SQLiteUserRepository(UserRepository):
                 return None
             return self._row_to_user(dict(row))
 
+    async def get_user_by_username(self, username: str) -> User | None:
+        """Get user by username from SQLite."""
+        return await asyncio.to_thread(self._get_user_by_username_sync, username)
+
+    def _get_user_by_username_sync(self, username: str) -> User | None:
+        """Synchronous get by username (runs in thread pool)."""
+        with _get_users_conn() as conn:
+            cursor = conn.execute("SELECT * FROM users WHERE username = ?", (username,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return self._row_to_user(dict(row))
+
     @staticmethod
     def _row_to_user(row: dict[str, Any]) -> User:
         """Convert a database row to a User model."""
         return User(
             id=UUID(row["id"]),
             email=row["email"],
+            username=row.get("username", ""),
+            display_name=row.get("display_name", ""),
             password_hash=row["password_hash"],
             system_role=row["system_role"],
             created_at=datetime.fromtimestamp(row["created_at"], tz=UTC),

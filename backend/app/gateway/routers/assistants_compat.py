@@ -13,8 +13,10 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+
+from app.gateway.deps import get_optional_user_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/assistants", tags=["assistants-compat"])
@@ -56,7 +58,7 @@ def _get_default_assistant() -> AssistantResponse:
     )
 
 
-def _list_assistants() -> list[AssistantResponse]:
+def _list_assistants(user_id: str | None = None) -> list[AssistantResponse]:
     """List all available assistants from config."""
     assistants = [_get_default_assistant()]
 
@@ -64,7 +66,7 @@ def _list_assistants() -> list[AssistantResponse]:
     try:
         from deerflow.config.agents_config import list_custom_agents
 
-        for agent_cfg in list_custom_agents():
+        for agent_cfg in list_custom_agents(user_id=user_id):
             now = datetime.now(UTC).isoformat()
             assistants.append(
                 AssistantResponse(
@@ -86,12 +88,13 @@ def _list_assistants() -> list[AssistantResponse]:
 
 
 @router.post("/search", response_model=list[AssistantResponse])
-async def search_assistants(body: AssistantSearchRequest | None = None) -> list[AssistantResponse]:
+async def search_assistants(request: Request, body: AssistantSearchRequest | None = None) -> list[AssistantResponse]:
     """Search assistants.
 
     Returns all registered assistants (lead_agent + custom agents from config).
     """
-    assistants = _list_assistants()
+    user_id = get_optional_user_id(request)
+    assistants = _list_assistants(user_id)
 
     if body and body.graph_id:
         assistants = [a for a in assistants if a.graph_id == body.graph_id]
@@ -104,22 +107,24 @@ async def search_assistants(body: AssistantSearchRequest | None = None) -> list[
 
 
 @router.get("/{assistant_id}", response_model=AssistantResponse)
-async def get_assistant_compat(assistant_id: str) -> AssistantResponse:
+async def get_assistant_compat(assistant_id: str, request: Request) -> AssistantResponse:
     """Get an assistant by ID."""
-    for a in _list_assistants():
+    user_id = get_optional_user_id(request)
+    for a in _list_assistants(user_id):
         if a.assistant_id == assistant_id:
             return a
     raise HTTPException(status_code=404, detail=f"Assistant {assistant_id} not found")
 
 
 @router.get("/{assistant_id}/graph")
-async def get_assistant_graph(assistant_id: str) -> dict:
+async def get_assistant_graph(assistant_id: str, request: Request) -> dict:
     """Get the graph structure for an assistant.
 
     Returns a minimal graph description. Full graph introspection is
     not supported in the Gateway — this stub satisfies SDK validation.
     """
-    found = any(a.assistant_id == assistant_id for a in _list_assistants())
+    user_id = get_optional_user_id(request)
+    found = any(a.assistant_id == assistant_id for a in _list_assistants(user_id))
     if not found:
         raise HTTPException(status_code=404, detail=f"Assistant {assistant_id} not found")
 
@@ -131,12 +136,13 @@ async def get_assistant_graph(assistant_id: str) -> dict:
 
 
 @router.get("/{assistant_id}/schemas")
-async def get_assistant_schemas(assistant_id: str) -> dict:
+async def get_assistant_schemas(assistant_id: str, request: Request) -> dict:
     """Get JSON schemas for an assistant's input/output/state.
 
     Returns empty schemas — full introspection not supported in Gateway.
     """
-    found = any(a.assistant_id == assistant_id for a in _list_assistants())
+    user_id = get_optional_user_id(request)
+    found = any(a.assistant_id == assistant_id for a in _list_assistants(user_id))
     if not found:
         raise HTTPException(status_code=404, detail=f"Assistant {assistant_id} not found")
 

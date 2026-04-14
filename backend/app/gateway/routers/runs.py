@@ -14,9 +14,10 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from app.gateway.deps import get_checkpointer, get_run_manager, get_stream_bridge
+from app.gateway.deps import get_checkpointer, get_optional_user_id, get_run_manager, get_stream_bridge
 from app.gateway.routers.thread_runs import RunCreateRequest
 from app.gateway.services import sse_consumer, start_run
+from app.gateway.thread_ownership import bind_thread_to_user, require_thread_owner
 from deerflow.runtime import serialize_channel_values
 
 logger = logging.getLogger(__name__)
@@ -35,11 +36,30 @@ def _resolve_thread_id(body: RunCreateRequest) -> str:
 async def stateless_stream(body: RunCreateRequest, request: Request) -> StreamingResponse:
     """Create a run and stream events via SSE.
 
-    If ``config.configurable.thread_id`` is provided, the run is created
-    on the given thread so that conversation history is preserved.
-    Otherwise a new temporary thread is created.
+    If ``config.configurable.thread_id`` is provided and the caller owns it,
+    the run is created on that thread.  If the caller provides a thread_id
+    owned by another user, 404 is returned.  Otherwise a new thread is created
+    and bound to the authenticated user (if any).
     """
-    thread_id = _resolve_thread_id(body)
+    caller_thread_id = (body.config or {}).get("configurable", {}).get("thread_id")
+    store = None
+    from app.gateway.deps import get_store as _get_store
+    store = _get_store(request)
+
+    if caller_thread_id:
+        # Caller supplied a thread_id — verify ownership before reusing it
+        await require_thread_owner(request, str(caller_thread_id))
+        thread_id = str(caller_thread_id)
+    else:
+        # Auto-generate a new thread and bind it to the authenticated user
+        thread_id = str(uuid.uuid4())
+        user_id = get_optional_user_id(request)
+        if store is not None and user_id is not None:
+            try:
+                await bind_thread_to_user(store, user_id, thread_id)
+            except Exception:
+                logger.debug("Failed to bind auto-thread %s to user %s (non-fatal)", thread_id, user_id)
+
     bridge = get_stream_bridge(request)
     run_mgr = get_run_manager(request)
     record = await start_run(body, thread_id, request)
@@ -60,11 +80,26 @@ async def stateless_stream(body: RunCreateRequest, request: Request) -> Streamin
 async def stateless_wait(body: RunCreateRequest, request: Request) -> dict:
     """Create a run and block until completion.
 
-    If ``config.configurable.thread_id`` is provided, the run is created
-    on the given thread so that conversation history is preserved.
-    Otherwise a new temporary thread is created.
+    If ``config.configurable.thread_id`` is provided and the caller owns it,
+    the run is created on that thread.  Otherwise a new thread is created and
+    bound to the authenticated user (if any).
     """
-    thread_id = _resolve_thread_id(body)
+    caller_thread_id = (body.config or {}).get("configurable", {}).get("thread_id")
+    from app.gateway.deps import get_store as _get_store
+    store = _get_store(request)
+
+    if caller_thread_id:
+        await require_thread_owner(request, str(caller_thread_id))
+        thread_id = str(caller_thread_id)
+    else:
+        thread_id = str(uuid.uuid4())
+        user_id = get_optional_user_id(request)
+        if store is not None and user_id is not None:
+            try:
+                await bind_thread_to_user(store, user_id, thread_id)
+            except Exception:
+                logger.debug("Failed to bind auto-thread %s to user %s (non-fatal)", thread_id, user_id)
+
     record = await start_run(body, thread_id, request)
 
     if record.task is not None:

@@ -49,6 +49,8 @@ def test_delete_thread_data_rejects_invalid_thread_id(tmp_path):
 
 
 def test_delete_thread_route_cleans_thread_directory(tmp_path):
+    from unittest.mock import AsyncMock
+
     paths = Paths(tmp_path)
     thread_dir = paths.thread_dir("thread-route")
     paths.sandbox_work_dir("thread-route").mkdir(parents=True, exist_ok=True)
@@ -57,7 +59,11 @@ def test_delete_thread_route_cleans_thread_directory(tmp_path):
     app = FastAPI()
     app.include_router(threads.router)
 
-    with patch("app.gateway.routers.threads.get_paths", return_value=paths):
+    with (
+        patch("app.gateway.routers.threads.get_paths", return_value=paths),
+        patch("app.gateway.deps.get_current_user_id", new=AsyncMock(return_value="user-test")),
+        patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value="user-test")),
+    ):
         with TestClient(app) as client:
             response = client.delete("/api/threads/thread-route")
 
@@ -80,12 +86,18 @@ def test_delete_thread_route_rejects_invalid_thread_id(tmp_path):
 
 
 def test_delete_thread_route_returns_422_for_route_safe_invalid_id(tmp_path):
+    from unittest.mock import AsyncMock
+
     paths = Paths(tmp_path)
 
     app = FastAPI()
     app.include_router(threads.router)
 
-    with patch("app.gateway.routers.threads.get_paths", return_value=paths):
+    with (
+        patch("app.gateway.routers.threads.get_paths", return_value=paths),
+        patch("app.gateway.deps.get_current_user_id", new=AsyncMock(return_value="user-test")),
+        patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value="user-test")),
+    ):
         with TestClient(app) as client:
             response = client.delete("/api/threads/thread.with.dot")
 

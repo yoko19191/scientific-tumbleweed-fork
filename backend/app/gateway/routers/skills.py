@@ -1,3 +1,4 @@
+import errno
 import json
 import logging
 import shutil
@@ -178,19 +179,24 @@ async def delete_custom_skill(skill_name: str, user_id: str = Depends(get_curren
         ensure_custom_skill_is_editable(skill_name, user_id)
         skill_dir = get_custom_skill_dir(skill_name, user_id)
         prev_content = read_custom_skill_content(skill_name, user_id)
-        append_history(
-            skill_name,
-            {
-                "action": "human_delete",
-                "author": "human",
-                "thread_id": None,
-                "file_path": "SKILL.md",
-                "prev_content": prev_content,
-                "new_content": None,
-                "scanner": {"decision": "allow", "reason": "Deletion requested."},
-            },
-            user_id,
-        )
+        try:
+            append_history(
+                skill_name,
+                {
+                    "action": "human_delete",
+                    "author": "human",
+                    "thread_id": None,
+                    "file_path": "SKILL.md",
+                    "prev_content": prev_content,
+                    "new_content": None,
+                    "scanner": {"decision": "allow", "reason": "Deletion requested."},
+                },
+                user_id,
+            )
+        except OSError as e:
+            if not isinstance(e, PermissionError) and e.errno not in {errno.EACCES, errno.EPERM, errno.EROFS}:
+                raise
+            logger.warning("Skipping delete history write for custom skill %s due to readonly/permission failure; continuing with skill directory removal: %s", skill_name, e)
         shutil.rmtree(skill_dir)
         await refresh_skills_system_prompt_cache_async()
         return {"success": True}

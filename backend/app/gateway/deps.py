@@ -184,3 +184,22 @@ async def get_current_user_from_request(request: Request):
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     return user
+
+
+async def get_current_user_id(request: Request) -> str:
+    """FastAPI dependency that returns the authenticated user's ID as a string.
+
+    Decodes the ``access_token`` session cookie, verifies ``token_version``,
+    and returns the user ID.  Raises HTTP 401 for every failure case:
+    missing cookie, invalid/expired token, unknown user, or token_version
+    mismatch.
+
+    **Never** reads user identity from request body, query params, metadata,
+    config, or headers — only from the server-verified session cookie.
+
+    Use this dependency on every route that must operate on an isolated,
+    per-user resource.  For routes that optionally support anonymous access
+    use :func:`get_optional_user_id` instead.
+    """
+    user = await get_current_user_from_request(request)
+    return str(user.id)

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from app.gateway.thread_ownership import require_thread_owner
 from deerflow.config.app_config import get_app_config
 from deerflow.config.paths import get_paths
-from deerflow.sandbox.sandbox_provider import get_sandbox_provider
+from deerflow.sandbox.sandbox_provider import SandboxProvider, get_sandbox_provider
 from deerflow.uploads.manager import (
     PathTraversalError,
     delete_file_safe,
@@ -127,7 +127,7 @@ async def upload_files(
 
             virtual_path = upload_virtual_path(safe_filename)
 
-            if sandbox_id != "local":
+            if sync_to_sandbox and sandbox is not None:
                 _make_file_sandbox_writable(file_path)
                 sandbox.update_file(virtual_path, content)
 
@@ -147,7 +147,7 @@ async def upload_files(
                 if md_path:
                     md_virtual_path = upload_virtual_path(md_path.name)
 
-                    if sandbox_id != "local":
+                    if sync_to_sandbox and sandbox is not None:
                         _make_file_sandbox_writable(md_path)
                         sandbox.update_file(md_virtual_path, md_path.read_bytes())
 

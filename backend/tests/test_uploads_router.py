@@ -32,6 +32,7 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = True
     provider.acquire.return_value = "local"
     sandbox = MagicMock()
     provider.get.return_value = sandbox
@@ -51,6 +52,7 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
     assert (thread_uploads_dir / "notes.txt").read_bytes() == b"hello uploads"
 
     sandbox.update_file.assert_not_called()
+
 
 
 
@@ -108,6 +110,7 @@ def test_upload_files_syncs_non_local_sandbox_and_marks_markdown_file(tmp_path):
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = False
     provider.acquire.return_value = "aio-1"
     sandbox = MagicMock()
     provider.get.return_value = sandbox
@@ -146,6 +149,7 @@ def test_upload_files_makes_non_local_files_sandbox_writable(tmp_path):
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = False
     provider.acquire.return_value = "aio-1"
     sandbox = MagicMock()
     provider.get.return_value = sandbox
@@ -177,6 +181,7 @@ def test_upload_files_does_not_adjust_permissions_for_local_sandbox(tmp_path):
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = True
     provider.acquire.return_value = "local"
     sandbox = MagicMock()
     provider.get.return_value = sandbox

@@ -129,16 +129,16 @@ def test_make_lead_agent_empty_skills_passed_correctly(monkeypatch):
     monkeypatch.setattr(lead_agent_module, "apply_prompt_template", mock_apply_prompt_template)
 
     # Case 1: Empty skills list
-    monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x: AgentConfig(name="test", skills=[]))
+    monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x, user_id=None: AgentConfig(name="test", skills=[]))
     lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
     assert captured_skills[-1] == set()
 
     # Case 2: None skills list
-    monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x: AgentConfig(name="test", skills=None))
+    monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x, user_id=None: AgentConfig(name="test", skills=None))
     lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
     assert captured_skills[-1] is None
 
     # Case 3: Some skills list
-    monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x: AgentConfig(name="test", skills=["skill1"]))
+    monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x, user_id=None: AgentConfig(name="test", skills=["skill1"]))
     lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
     assert captured_skills[-1] == {"skill1"}

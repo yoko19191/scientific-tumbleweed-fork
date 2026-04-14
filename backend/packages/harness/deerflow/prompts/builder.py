@@ -3,7 +3,7 @@
 Usage::
 
     prompt = (
-        SystemPromptBuilder(agent_name="DeerFlow 2.0")
+        SystemPromptBuilder(agent_name="科学风滚草")
         .with_memory(memory_text)
         .with_skills(skills_section)
         .with_subagent(subagent_section)
@@ -17,15 +17,19 @@ prompt-caching can reuse the static prefix across turns.
 from __future__ import annotations
 
 from deerflow.prompts.sections import (
+    DEFAULT_AGENT_NAME,
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
     actions_section,
     code_citing_section,
+    collaboration_mechanics_section,
+    conversation_craft_section,
     environment_section,
     git_safety_section,
     intro_section,
     linter_section,
     making_code_changes_section,
     output_efficiency_section,
+    platform_persona_section,
     session_guidance_section,
     system_rules_section,
     task_philosophy_section,
@@ -37,7 +41,7 @@ from deerflow.prompts.sections import (
 class SystemPromptBuilder:
     """Builder for modular system prompt assembly."""
 
-    def __init__(self, agent_name: str = "DeerFlow 2.0"):
+    def __init__(self, agent_name: str = DEFAULT_AGENT_NAME):
         self._agent_name = agent_name
         self._soul: str | None = None
         self._memory: str | None = None
@@ -135,6 +139,9 @@ class SystemPromptBuilder:
 
         # ===== Static prefix (cacheable) =====
         sections.append(intro_section(self._agent_name))
+        sections.append(platform_persona_section(self._agent_name))
+        sections.append(conversation_craft_section())
+        sections.append(collaboration_mechanics_section())
         sections.append(system_rules_section())
         sections.append(task_philosophy_section())
         sections.append(actions_section())

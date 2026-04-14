@@ -1,21 +1,18 @@
 {
-  "project": "DeerFlow Multi-Tenant Resource Isolation",
-  "branchName": "ralph/multi-tenant-resource-isolation",
-  "description": "Extend per-user filesystem isolation to uploads, artifacts, thread directories, MCP config, and fix minor user_id leaks in memory/status and assistants_compat.",
+  "project": "User ID Prefixed Skill Artifact Isolation",
+  "branchName": "ralph/user-id-prefixed-skill-artifact-isolation",
+  "description": "Enforce strict per-user isolation for thread views, thread interactions, memory JSON, uploads, artifacts, custom skills, skill state, MCP config, and all Skill Artifact storage using authenticated user ID prefixes with no global fallback.",
   "userStories": [
     {
       "id": "US-001",
-      "title": "Paths: add user-scoped thread directory methods",
-      "description": "As a backend developer, I want Paths to expose user-scoped thread directory helpers and resolve helpers with user_id=None fallback, so that uploads/outputs/workspace can be stored under users/{user_id}/threads/{thread_id}/.",
+      "title": "Add authenticated user context dependency",
+      "description": "As a backend developer, I want a reusable dependency that returns the verified current user ID for resource routes so that every isolated resource uses server-authenticated identity.",
       "acceptanceCriteria": [
-        "Paths.user_thread_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/",
-        "Paths.user_thread_uploads_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/uploads/",
-        "Paths.user_thread_outputs_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/outputs/",
-        "Paths.user_thread_workspace_dir(user_id, thread_id) returns {base_dir}/users/{user_id}/threads/{thread_id}/workspace/",
-        "Paths.resolve_uploads_dir(thread_id, user_id=None) returns user-scoped path when user_id given, else sandbox_uploads_dir(thread_id)",
-        "Paths.resolve_outputs_dir(thread_id, user_id=None) returns user-scoped path when user_id given, else sandbox_outputs_dir(thread_id)",
-        "Paths.resolve_workspace_dir(thread_id, user_id=None) returns user-scoped path when user_id given, else sandbox_work_dir(thread_id)",
-        "Paths.resolve_thread_user_data_dir(thread_id, user_id=None) returns user-scoped thread dir when user_id given, else sandbox_user_data_dir(thread_id)",
+        "Add a helper or dependency that decodes the session cookie, verifies token_version, and returns the current user ID as a string",
+        "The helper raises 401 when the cookie is missing, invalid, expired, or points to a missing user",
+        "The helper does not read user_id from request body, query params, metadata, config, configurable, or headers",
+        "Existing get_optional_user_id behavior remains available only for explicitly optional or legacy paths",
+        "Add tests covering valid cookie, missing cookie, invalid token, and token_version mismatch",
         "Typecheck passes"
       ],
       "priority": 1,
@@ -24,16 +21,14 @@
     },
     {
       "id": "US-002",
-      "title": "Paths: user-scoped ensure_thread_dirs, delete_thread_dir, resolve_virtual_path, host_sandbox_* methods",
-      "description": "As a backend developer, I want ensure_thread_dirs, delete_thread_dir, resolve_virtual_path, and host_sandbox_* methods to accept an optional user_id so that directory creation, deletion, virtual path resolution, and Docker volume mounts all use the correct user-scoped physical path.",
+      "title": "Add canonical user resource prefix helpers",
+      "description": "As a backend developer, I want canonical user prefix helpers so that Store keys and filesystem resource identifiers use one validated user namespace format.",
       "acceptanceCriteria": [
-        "ensure_thread_dirs(thread_id, user_id=None) creates workspace/uploads/outputs under users/{user_id}/threads/{thread_id}/ when user_id is given",
-        "ensure_thread_dirs(thread_id) with no user_id behaves exactly as before",
-        "delete_thread_dir(thread_id, user_id=None) deletes users/{user_id}/threads/{thread_id}/ when user_id is given",
-        "delete_thread_dir(thread_id) with no user_id behaves exactly as before",
-        "resolve_virtual_path(thread_id, virtual_path, user_id=None) resolves to user-scoped physical path when user_id is given",
-        "resolve_virtual_path(thread_id, virtual_path) with no user_id behaves exactly as before",
-        "host_sandbox_uploads_dir, host_sandbox_outputs_dir, host_sandbox_work_dir, host_sandbox_user_data_dir each accept optional user_id and return user-scoped host path when provided",
+        "Add a canonical user_prefix(user_id) helper that returns '{userID}: ' after validating the user ID",
+        "Add helper functions for prefixed thread keys, memory keys, extension config keys, and artifact path labels",
+        "User ID validation rejects empty IDs, path traversal, slashes, backslashes, and unsafe characters",
+        "Filesystem-safe mapping is documented and covered by tests if physical paths cannot directly use colon and trailing space",
+        "Add unit tests for valid IDs, invalid IDs, logical prefix output, and stable filesystem-safe mapping if used",
         "Typecheck passes"
       ],
       "priority": 2,
@@ -42,15 +37,15 @@
     },
     {
       "id": "US-003",
-      "title": "ThreadDataMiddleware + UploadsMiddleware: pass user_id to path resolution",
-      "description": "As a backend developer, I want ThreadDataMiddleware and UploadsMiddleware to extract user_id from run metadata and use user-scoped paths, so that thread directories and upload file listings are in the correct user namespace.",
+      "title": "Create strict thread ownership service",
+      "description": "As a backend developer, I want a single thread ownership service so that all thread routes consistently create and verify ownership before reading data.",
       "acceptanceCriteria": [
-        "ThreadDataMiddleware.before_agent extracts user_id from runtime.context.get('user_id') first, then config metadata as fallback (same pattern as MemoryMiddleware)",
-        "ThreadDataMiddleware calls ensure_thread_dirs(thread_id, user_id=user_id)",
-        "ThreadDataMiddleware._get_thread_paths uses resolve_uploads_dir / resolve_outputs_dir / resolve_workspace_dir with user_id",
-        "UploadsMiddleware.before_agent extracts user_id from runtime.context or config metadata",
-        "UploadsMiddleware resolves uploads_dir via paths.resolve_uploads_dir(thread_id, user_id) instead of paths.sandbox_uploads_dir(thread_id)",
-        "When user_id is None in both middlewares, behavior is identical to before",
+        "Add service functions to bind a thread to an authenticated user using a user-prefixed Store key",
+        "Add service function require_thread_owner(request, thread_id) that returns the authenticated user ID or raises 401/404",
+        "Owner check happens before reading checkpoint values, thread metadata, uploads, artifacts, or run records",
+        "Unowned threads are rejected in strict multi-user mode",
+        "Client-provided owner metadata is ignored or overwritten by server-authenticated user ID",
+        "Add tests for owner match, owner mismatch, missing owner mapping, and malicious client user_id metadata",
         "Typecheck passes"
       ],
       "priority": 3,
@@ -59,16 +54,16 @@
     },
     {
       "id": "US-004",
-      "title": "uploads.py router: use user-scoped uploads directory",
-      "description": "As a logged-in user, I want my uploaded files stored under users/{user_id}/threads/{thread_id}/uploads/ so that my files are isolated from other users.",
+      "title": "Enforce owner checks on thread CRUD and state routes",
+      "description": "As a logged-in user, I want thread detail, search, state, history, patch, and delete routes to only operate on my own threads so that direct thread_id access cannot cross users.",
       "acceptanceCriteria": [
-        "All three endpoints (POST upload, GET list, DELETE file) accept request: Request and call get_optional_user_id(request)",
-        "get_uploads_dir(thread_id, user_id=None) and ensure_uploads_dir(thread_id, user_id=None) in uploads/manager.py accept optional user_id and delegate to resolve_uploads_dir",
-        "POST /api/threads/{thread_id}/uploads stores files in user-scoped path when user_id present",
-        "GET /api/threads/{thread_id}/uploads/list lists files from user-scoped path",
-        "DELETE /api/threads/{thread_id}/uploads/{filename} deletes from user-scoped path",
-        "sandbox_uploads path returned in response uses resolve_uploads_dir result",
-        "When user_id is None, all endpoints behave exactly as before",
+        "POST /api/threads creates or binds the thread using the authenticated user ID from the server",
+        "POST /api/threads/search returns only threads under the current user prefix",
+        "GET /api/threads/{thread_id} checks ownership before returning metadata or values",
+        "GET and POST /api/threads/{thread_id}/state check ownership before reading or writing checkpoints",
+        "POST /api/threads/{thread_id}/history checks ownership before listing history",
+        "PATCH and DELETE /api/threads/{thread_id} check ownership before modifying or deleting",
+        "Cross-user access returns 404 or the chosen uniform denial status without leaking title or metadata",
         "Typecheck passes"
       ],
       "priority": 4,
@@ -77,65 +72,253 @@
     },
     {
       "id": "US-005",
-      "title": "artifacts.py + path_utils.py: use user-scoped virtual path resolution",
-      "description": "As a logged-in user, I want GET /api/threads/{thread_id}/artifacts/{path} to resolve artifact paths from my user-scoped directory so that I can only access my own artifacts.",
+      "title": "Enforce owner checks on runs routes",
+      "description": "As a logged-in user, I want run creation, streaming, waiting, joining, listing, reading, and cancelling to be limited to my own threads so that active agent execution cannot cross users.",
       "acceptanceCriteria": [
-        "path_utils.resolve_thread_virtual_path(thread_id, virtual_path, user_id=None) passes user_id to Paths.resolve_virtual_path",
-        "artifacts.py get_artifact endpoint accepts request: Request and calls get_optional_user_id(request)",
-        "get_artifact passes user_id to resolve_thread_virtual_path for both normal paths and .skill archive paths",
-        "When user_id is None, behavior is identical to before",
+        "All /api/threads/{thread_id}/runs endpoints call the thread ownership service before creating, reading, joining, streaming, or cancelling runs",
+        "Stateless /api/runs endpoints bind generated thread IDs to the current user before running",
+        "Stateless /api/runs endpoints reject caller-supplied thread_id values owned by another user",
+        "start_run injects metadata.user_id from the authenticated server user and overwrites any client-provided user_id",
+        "RunManager list/get/cancel responses are filtered or rejected by thread owner",
+        "Add tests for cross-user run create, wait, join, cancel, and client-supplied metadata.user_id override",
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-006",
-      "title": "mcp.py: make PUT /api/mcp/config read-only, add per-user enabled toggle",
-      "description": "As a logged-in user, I want to toggle individual MCP servers on/off for myself without affecting other users, and the global MCP config should be read-only.",
+      "title": "Route main LangGraph traffic through authenticated Gateway path",
+      "description": "As a system operator, I want the main chat path to pass through authenticated Gateway owner checks so that frontend chat, state, and runs cannot bypass isolation by talking to unauthenticated LangGraph Server routes.",
       "acceptanceCriteria": [
-        "PUT /api/mcp/config returns 403 with detail message directing users to the new per-user endpoint",
-        "GET /api/mcp/config merges global MCP server list with per-user enabled overrides from users/{user_id}/extensions_config.json when user is logged in",
-        "New endpoint PUT /api/mcp/servers/{name}/enabled exists with request body {enabled: bool}",
-        "PUT /api/mcp/servers/{name}/enabled requires auth (returns 401 if not logged in)",
-        "PUT /api/mcp/servers/{name}/enabled returns 404 if server name not in global config",
-        "PUT /api/mcp/servers/{name}/enabled writes only the enabled field to users/{user_id}/extensions_config.json mcpServers section, preserving existing skills entries",
-        "GET /api/mcp/config without auth returns global config unchanged",
+        "Document and implement the selected routing strategy for /api/langgraph traffic: Gateway-compatible endpoints or equivalent LangGraph auth",
+        "Default local and Docker configuration no longer exposes unauthenticated state/runs/history paths for browser traffic",
+        "Frontend LangGraph SDK base URL uses the authenticated route by default",
+        "Existing streaming behavior still works through the authenticated route",
+        "Add a regression test or config assertion showing the default route does not bypass Gateway owner checks",
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-007",
-      "title": "Fix memory/status endpoint missing user_id",
-      "description": "As a logged-in user, I want GET /api/memory/status to return my own memory data, not the global fallback.",
+      "title": "Isolate frontend thread view and caches by user",
+      "description": "As a logged-in user, I want frontend thread lists, current thread view, stream reconnection, and cached state to reset or scope by user so that switching accounts never shows another user's data.",
       "acceptanceCriteria": [
-        "get_memory_status() accepts request: Request parameter",
-        "get_memory_status() calls get_optional_user_id(request) and passes user_id to get_memory_data(user_id)",
-        "When not logged in, user_id is None and behavior is unchanged",
+        "Thread list query keys include current user ID or are fully cleared on logout and user change",
+        "Current chat route verifies thread accessibility and redirects or shows an inaccessible state when the thread is not owned by the user",
+        "useStream reconnectOnMount/sessionStorage keys cannot reuse a run ID across different users",
+        "Logout clears thread, state, history, artifact, upload, and run-related caches",
+        "Two users in separate browser sessions do not see each other's thread list or direct thread page content",
+        "Verify in browser using dev-browser skill",
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-008",
-      "title": "Fix assistants_compat missing user_id in list_custom_agents",
-      "description": "As a logged-in user, I want the assistants list to show only my own custom agents, not all users' agents.",
+      "title": "Make memory API strict per-user with no global fallback",
+      "description": "As a logged-in user, I want memory endpoints to read and write only my user-prefixed memory JSON so that no other user's memory is visible or mutable.",
       "acceptanceCriteria": [
-        "_list_assistants(user_id=None) accepts user_id parameter and passes it to list_custom_agents(user_id=user_id)",
-        "search_assistants endpoint extracts user_id from request via get_optional_user_id and passes to _list_assistants",
-        "get_assistant_compat endpoint extracts user_id from request and passes to _list_assistants",
-        "get_assistant_graph and get_assistant_schemas also pass user_id to _list_assistants",
-        "When not logged in, user_id is None and behavior is unchanged (shows global agents)",
+        "All memory endpoints require authenticated user ID before reading or writing memory",
+        "Memory storage path or key uses the canonical user prefix for the authenticated user",
+        "GET /api/memory/status returns the authenticated user's memory data, not global memory",
+        "Memory import/export only targets the authenticated user's prefix",
+        "Missing authenticated user returns 401 and does not read global memory",
+        "Tests cover user A and user B writing different memory facts without cross-read",
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": true,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Make memory middleware and prompt injection strict per-user",
+      "description": "As a logged-in user, I want automatic memory updates and prompt memory injection to use only the run owner's user-prefixed memory so that agent context never leaks across users.",
+      "acceptanceCriteria": [
+        "MemoryMiddleware extracts user_id only from trusted server-injected runtime context or metadata",
+        "MemoryMiddleware does not write to global memory when user_id is missing in strict mode",
+        "Lead agent prompt memory injection loads memory with the authenticated run owner user_id",
+        "Agent creation fails or disables memory injection when no trusted user_id is available in strict mode",
+        "Tests prove user A memory is not injected into user B prompt",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Add user-prefixed thread filesystem paths",
+      "description": "As a backend developer, I want thread-local workspace, uploads, outputs, and acp-workspace host paths to include the authenticated user's prefix so that artifact files cannot collide across users.",
+      "acceptanceCriteria": [
+        "Paths exposes user-prefixed helpers for thread workspace, uploads, outputs, user-data root, and acp-workspace",
+        "ensure_thread_dirs creates user-prefixed directories for authenticated runs",
+        "resolve_virtual_path resolves /mnt/user-data paths under the authenticated user's prefix",
+        "delete_thread_dir deletes only the authenticated user's prefixed thread directory",
+        "The same thread_id under two different users maps to different host paths",
+        "Tests cover path creation, virtual path resolution, deletion, and same thread_id under two users",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Update sandbox and thread-data middleware for user-prefixed paths",
+      "description": "As a logged-in user, I want sandbox mounts and thread data middleware to mount only my user-prefixed thread directories so that agent execution cannot read another user's workspace or outputs.",
+      "acceptanceCriteria": [
+        "ThreadDataMiddleware uses trusted user_id when creating and reporting workspace/uploads/outputs paths",
+        "Sandbox provider acquire/get/reconcile keys include user prefix or otherwise distinguish users with the same thread_id",
+        "Sandbox mounts for workspace, uploads, outputs, and acp-workspace use user-prefixed host paths",
+        "When trusted user_id is missing in strict mode, sandbox/thread-data setup fails instead of using global thread paths",
+        "Tests cover same thread_id under two users producing distinct sandbox mount sources",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Enforce upload and artifact owner checks with user-prefixed paths",
+      "description": "As a logged-in user, I want upload and artifact endpoints to check thread ownership and resolve paths under my user prefix so that knowing another user's artifact URL is not enough to access files.",
+      "acceptanceCriteria": [
+        "POST /api/threads/{thread_id}/uploads checks owner before writing files",
+        "GET /api/threads/{thread_id}/uploads/list checks owner before listing files",
+        "DELETE /api/threads/{thread_id}/uploads/{filename} checks owner before deleting files",
+        "GET /api/threads/{thread_id}/artifacts/{path} checks owner before resolving normal paths",
+        "GET /api/threads/{thread_id}/artifacts/{path} checks owner before extracting files from .skill archives",
+        "Upload responses and artifact resolution use user-prefixed physical paths",
+        "Tests cover cross-user upload list, delete, artifact download, and .skill archive read denial",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Make custom skill CRUD user-prefixed",
+      "description": "As a logged-in user, I want installed and edited custom skills plus their history to live under my user prefix so that my skill changes never affect other users.",
+      "acceptanceCriteria": [
+        "Custom skill list/get/update/delete endpoints require authenticated user ID",
+        "Custom skill install writes to the authenticated user's prefixed custom skills directory",
+        "Custom skill history and rollback read and write under the authenticated user's prefix",
+        "Global custom skill manager helpers are not used for authenticated custom skill CRUD unless they accept user_id and resolve user-prefixed paths",
+        "Two users can install or edit custom skills with the same name without overwriting each other",
+        "Tests cover same skill name under two users, independent history, and cross-user read denial",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Make skill state and prompt injection user-prefixed",
+      "description": "As a logged-in user, I want skill enablement and available skill prompt injection to use my user-prefixed configuration so that my Skill set is private and independent.",
+      "acceptanceCriteria": [
+        "Skill enable/disable endpoint writes to the authenticated user's prefixed extensions config",
+        "load_skills(enabled_only=True, user_id=current_user_id) is used for authenticated prompt injection",
+        "Enabled skills cache is keyed by user_id or removed in favor of user-scoped loading",
+        "Agent prompt available_skills only includes skills visible and enabled for the run owner",
+        "User A disabling a public skill does not disable it for user B",
+        "Tests cover per-user skill enablement and prompt skill list isolation",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Make agents and user profile strict per-user",
+      "description": "As a logged-in user, I want custom agents, SOUL.md, and USER.md to be read and written only under my user prefix so that agent configuration does not leak across users.",
+      "acceptanceCriteria": [
+        "All /api/agents endpoints require authenticated user ID and use user-prefixed agent paths",
+        "All /api/user-profile endpoints require authenticated user ID and use the user-prefixed USER.md path",
+        "list_custom_agents(user_id) passes user_id through to load_agent_config for each scanned agent",
+        "Lead agent factory loads agent config and SOUL.md using the trusted run owner user_id",
+        "Authenticated agent/profile routes do not fall back to global agents or global USER.md",
+        "Tests cover user A and user B creating same agent name with different SOUL.md content",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Make MCP config user-prefixed with optional read-only global template",
+      "description": "As a logged-in user, I want MCP configuration and secrets to be isolated under my user prefix unless an administrator explicitly provides a read-only global template.",
+      "acceptanceCriteria": [
+        "GET /api/mcp/config requires authenticated user ID for user-owned MCP config",
+        "PUT /api/mcp/config or replacement endpoints write only to the authenticated user's prefixed MCP config",
+        "Global MCP templates, if supported, are read-only for ordinary users",
+        "Ordinary users cannot read or write another user's MCP env, headers, OAuth tokens, client secret, or refresh token",
+        "Agent MCP tool loading uses the run owner's user-prefixed MCP config merged with allowed read-only global templates",
+        "Tests cover per-user MCP enabled state and secret isolation",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Remove authenticated global fallback paths",
+      "description": "As a system maintainer, I want authenticated resource access to fail instead of silently falling back to global paths so that old global data cannot leak into new user sessions.",
+      "acceptanceCriteria": [
+        "Authenticated memory, agent, profile, skill, upload, artifact, and MCP paths fail when trusted user_id is unavailable",
+        "Existing user_id=None global fallback remains only behind an explicit legacy or single-user mode setting if kept at all",
+        "Default configuration disables legacy global fallback for authenticated resource routes",
+        "Code comments or docs identify any remaining intentionally public/global resources",
+        "Tests assert authenticated resource access does not read .deer-flow/memory.json, .deer-flow/agents, global skills/custom, or global extensions_config.json",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Add migration or cleanup command for legacy global data",
+      "description": "As a system operator, I want an explicit migration or cleanup path for legacy global data so that strict isolation can be enabled without accidentally exposing old shared resources.",
+      "acceptanceCriteria": [
+        "Add documentation or a script describing how to clear legacy global memory, agents, custom skills, extensions config, thread directories, and checkpoints",
+        "If migration is implemented, it requires an explicit target user ID and never guesses ownership",
+        "Migration or cleanup outputs a summary of changed, skipped, and failed resources",
+        "The default application startup does not auto-migrate or auto-read legacy global data",
+        "Tests or dry-run output demonstrate no implicit legacy data adoption",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Add cross-user isolation regression tests",
+      "description": "As a maintainer, I want automated cross-user tests covering thread, memory, artifact, skill, and MCP boundaries so that regressions are caught before deployment.",
+      "acceptanceCriteria": [
+        "Tests create two authenticated users and assert thread list/detail/state/history isolation",
+        "Tests assert cross-user runs, uploads, artifact downloads, and .skill archive reads are denied",
+        "Tests assert memory writes and prompt injection are isolated between users",
+        "Tests assert custom skill content/history and skill enablement are isolated between users",
+        "Tests assert MCP config and secrets are isolated between users",
+        "Tests assert authenticated routes do not use global fallback resources",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
       "notes": ""
     }
   ]

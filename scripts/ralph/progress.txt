@@ -1,77 +1,61 @@
-## Codebase Patterns
-- Paths class in `backend/packages/harness/deerflow/config/paths.py` is the central path registry; add new path methods there
-- User-scoped paths follow pattern: `{base_dir}/users/{user_id}/...`; thread-scoped: `{base_dir}/threads/{thread_id}/user-data/...`
-- Resolve helpers use `user_id=None` fallback pattern: if user_id given → user-scoped, else → sandbox/global path
-- `_validate_user_id` and `_validate_thread_id` must be called for any user/thread input used in paths
-- Pre-existing test failure: `test_feishu_parser.py` and `test_channels.py::TestFeishuChannel` fail due to missing `app.channels.commands` module (unrelated to this PRD)
-- `get_optional_user_id(request)` is the standard way to extract user_id from a FastAPI Request in app/gateway routers
-- MemoryMiddleware pattern for extracting user_id: `runtime.context.get('user_id')` first, then `config.metadata` as fallback (guard with try/except RuntimeError for get_config() calls)
-- When adding `request: Request` to existing router endpoints, update tests that call the function directly to pass a mock request
-- Test lambda mocks for path resolution functions need `_user_id=None` default arg when the function signature gains a user_id param
-- Pre-existing test failures in `test_gateway_services.py` (3 tests about build_run_config) are unrelated to this PRD
-
----
-
 # Ralph Progress Log
-Started: 2026年 4月13日 星期一 21时10分22秒 CST
+Started: 2026年 4月14日 星期二 14时00分23秒 CST
 ---
 
-## 2026-04-13 - US-001
-- Added user-scoped thread directory methods to `Paths` class in `backend/packages/harness/deerflow/config/paths.py`
-- New methods: `user_thread_dir`, `user_thread_uploads_dir`, `user_thread_outputs_dir`, `user_thread_workspace_dir`
-- New resolve helpers: `resolve_uploads_dir`, `resolve_outputs_dir`, `resolve_workspace_dir`, `resolve_thread_user_data_dir` (all with `user_id=None` fallback)
-- Files changed: `backend/packages/harness/deerflow/config/paths.py`
+## Codebase Patterns
+- Auth pipeline: `get_optional_user_from_request` in `app/gateway/deps.py` decodes JWT cookie → verifies token_version → returns User. Patch `app.gateway.auth.jwt.decode_token` and `app.gateway.deps.get_local_provider` in tests.
+- FastAPI dependency injection: use `Depends(get_current_user_id)` in route signatures for strict auth; `Depends(get_optional_user_id)` for optional/legacy paths.
+- Test pattern: use `contextmanager` + `TestClient` with `client.cookies.set(...)` (not per-request cookies) to avoid deprecation warnings.
+- Pre-existing test failures (not caused by this branch): `test_feishu_parser.py`, `test_threads_router.py`, `test_custom_agent.py`, `test_gateway_services.py`, `test_skills_custom_router.py`, live tests.
+
+## 2026-04-14 - US-001
+- Added `get_current_user_id` async FastAPI dependency to `backend/app/gateway/deps.py`
+- Dependency decodes `access_token` cookie, verifies `token_version`, returns `str(user.id)`; raises HTTP 401 for all failure cases
+- `get_optional_user_id` preserved unchanged for legacy/optional paths
+- Files changed: `backend/app/gateway/deps.py`, `backend/tests/test_deps_get_current_user_id.py`
 - **Learnings for future iterations:**
-  - User-scoped thread paths go under `users/{user_id}/threads/{thread_id}/` (flat subdirs, not `user-data/` nesting)
-  - Sandbox paths use `threads/{thread_id}/user-data/{workspace,uploads,outputs}` — different structure from user-scoped
-  - All resolve helpers follow the same pattern: `if user_id: return user_scoped else: return sandbox_fallback`
+  - `decode_token` is a local import inside `get_optional_user_from_request`; patch it at `app.gateway.auth.jwt.decode_token`
+  - `get_local_provider` is a module-level function; patch at `app.gateway.deps.get_local_provider`
+  - Use `contextmanager` wrapper (not `yield` method) for TestClient helpers
 ---
 
-## 2026-04-13 - US-002
-- Extended `ensure_thread_dirs`, `delete_thread_dir`, `resolve_virtual_path` to accept `user_id=None`
-- Extended `host_sandbox_user_data_dir`, `host_sandbox_work_dir`, `host_sandbox_uploads_dir`, `host_sandbox_outputs_dir` to accept `user_id=None`
-- Added `_host_user_thread_dir` private helper for Windows-safe user-scoped host paths
-- Files changed: `backend/packages/harness/deerflow/config/paths.py`
+## 2026-04-14 - US-002
+- Added `backend/app/gateway/user_prefix.py` with canonical user prefix helpers
+- `validate_user_id()`: rejects empty, path separators, backslashes, unsafe chars
+- `user_threads_namespace()`, `user_thread_owners_namespace()`, `user_memory_namespace()`, `user_extensions_namespace()` for Store namespace tuples
+- `validated_user_id_for_path()` for filesystem path usage
+- Files changed: `backend/app/gateway/user_prefix.py`, `backend/tests/test_user_prefix.py`
 - **Learnings for future iterations:**
-  - `resolve_virtual_path` with user_id uses `user_thread_dir` as base instead of `sandbox_user_data_dir`
-  - `host_sandbox_user_data_dir` with user_id returns the user thread dir directly (no `user-data/` suffix)
+  - Store namespaces are tuples; user-scoped format is `("resource_type", "user:{user_id}")`
+  - `Paths` methods in `deerflow.config.paths` already accept `user_id` directly — use `validated_user_id_for_path()` before passing
 ---
 
-## 2026-04-13 - US-003
-- Updated `ThreadDataMiddleware.before_agent` to extract user_id and pass to `_get_thread_paths`/`_create_thread_directories`
-- Updated `UploadsMiddleware.before_agent` to extract user_id and use `resolve_uploads_dir` instead of `sandbox_uploads_dir`
-- Both use the MemoryMiddleware pattern: `runtime.context.get('user_id')` first, then `get_config().get('metadata', {}).get('user_id')` with try/except RuntimeError
-- Files changed: `backend/packages/harness/deerflow/agents/middlewares/thread_data_middleware.py`, `backend/packages/harness/deerflow/agents/middlewares/uploads_middleware.py`
+## 2026-04-14 - US-003
+- Added `backend/app/gateway/thread_ownership.py` with thread ownership service
+- `bind_thread_to_user()`: idempotent binding, rejects ownership conflicts (403)
+- `require_thread_owner()`: verifies cookie-authenticated user owns thread; raises 401/404/503; never trusts client-supplied user_id
+- `get_thread_owner()`: non-raising variant for conditional logic
+- Files changed: `backend/app/gateway/thread_ownership.py`, `backend/tests/test_thread_ownership.py`
+- **Learnings for future iterations:**
+  - `get_current_user_id` is a local import inside `require_thread_owner`; patch at `app.gateway.deps.get_current_user_id`
+  - Async tests need `@pytest.mark.anyio` (not `@pytest.mark.asyncio`) — this project uses anyio plugin
+  - `_make_request_with_store(store)` pattern: build a `StarletteRequest` with a minimal scope dict and `app.state.store = store`
 ---
 
-## 2026-04-13 - US-004
-- Updated `get_uploads_dir` and `ensure_uploads_dir` in `uploads/manager.py` to accept `user_id=None` and delegate to `resolve_uploads_dir`
-- Updated all three upload endpoints (POST, GET /list, DELETE) to accept `request: Request`, call `get_optional_user_id`, and pass `user_id` to path functions
-- Updated `test_uploads_router.py` to pass mock request objects to all direct function calls
-- Files changed: `backend/packages/harness/deerflow/uploads/manager.py`, `backend/app/gateway/routers/uploads.py`, `backend/tests/test_uploads_router.py`
----
-
-## 2026-04-13 - US-005
-- Updated `resolve_thread_virtual_path` in `path_utils.py` to accept `user_id=None` and pass to `Paths.resolve_virtual_path`
-- Updated `get_artifact` endpoint to call `get_optional_user_id(request)` and pass `user_id` to both normal and `.skill/` archive path resolution
-- Updated `test_artifacts_router.py` lambda mocks to accept `_user_id=None` default arg
-- Files changed: `backend/app/gateway/path_utils.py`, `backend/app/gateway/routers/artifacts.py`, `backend/tests/test_artifacts_router.py`
----
-
-## 2026-04-13 - US-006
-- Made `PUT /api/mcp/config` return 403 with message directing to new per-user endpoint
-- Updated `GET /api/mcp/config` to accept `request: Request`, extract user_id, and merge per-user enabled overrides from `users/{user_id}/extensions_config.json`
-- Added `PUT /api/mcp/servers/{name}/enabled` endpoint requiring auth (401 if not logged in, 404 if server not in global config)
-- Files changed: `backend/app/gateway/routers/mcp.py`
----
-
-## 2026-04-13 - US-007
-- Updated `get_memory_status` to accept `request: Request`, extract user_id via `get_optional_user_id`, and pass to `get_memory_data(user_id)`
-- Files changed: `backend/app/gateway/routers/memory.py`
----
-
-## 2026-04-13 - US-008
-- Updated `_list_assistants` to accept `user_id=None` and pass to `list_custom_agents(user_id=user_id)`
-- Updated `search_assistants`, `get_assistant_compat`, `get_assistant_graph`, `get_assistant_schemas` to accept `request: Request` and extract user_id
-- Files changed: `backend/app/gateway/routers/assistants_compat.py`
+## 2026-04-14 - US-004
+- Enforced owner checks on all thread CRUD and state routes in `backend/app/gateway/routers/threads.py`
+- `POST /api/threads`: calls `bind_thread_to_user` after creation when user is authenticated (anonymous threads still allowed)
+- `GET/PATCH/DELETE /api/threads/{thread_id}`: calls `require_thread_owner` before reading/modifying data
+- `GET/POST /api/threads/{thread_id}/state`, `POST /api/threads/{thread_id}/history`: calls `require_thread_owner` before reading checkpoint data
+- `POST /api/threads/search`: scoped to user's `user_threads_namespace`; unauthenticated callers get empty list (not 401)
+- `GET /api/threads/listByUser`: uses `user_thread_owners_namespace` instead of global `THREAD_OWNERS_NS`
+- `POST /api/threads/bindUser`: delegates to `bind_thread_to_user` from `thread_ownership` module
+- `_store_get`, `_store_put`, `_store_upsert` helpers updated to accept optional `ns` parameter for user-scoped namespaces
+- Files changed: `backend/app/gateway/routers/threads.py`, `backend/tests/test_threads_router_ownership.py`, `backend/tests/test_threads_router.py`
+- **Learnings for future iterations:**
+  - `require_thread_owner` is imported at module level in threads.py; patch at `app.gateway.routers.threads.require_thread_owner` in tests
+  - `get_optional_user_id` is imported at module level; patch at `app.gateway.routers.threads.get_optional_user_id` for search tests
+  - Pre-existing tests that call DELETE without auth needed `require_thread_owner` mock added alongside `get_current_user_id` mock
+  - Store helpers (`_store_get`, `_store_put`, `_store_upsert`) now accept `ns` kwarg — pass `user_threads_namespace(user_id)` for user-scoped writes
+  - `search_threads` no longer does a checkpointer scan — it only reads from the user-scoped Store namespace (simpler and safer)
 ---

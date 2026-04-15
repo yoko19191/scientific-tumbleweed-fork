@@ -169,6 +169,8 @@ export interface Translations {
     reportIssue: string;
     contactUs: string;
     about: string;
+    threadInaccessible: string;
+    startNewChat: string;
   };
 
   // Conversation

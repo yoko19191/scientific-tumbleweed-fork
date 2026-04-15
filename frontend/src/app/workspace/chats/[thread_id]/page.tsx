@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { type PromptInputMessage } from "@/components/ai-elements/prompt-input";
@@ -21,6 +22,7 @@ import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicator";
 import { Welcome } from "@/components/workspace/welcome";
+import { useAuth } from "@/core/auth/AuthProvider";
 import { useI18n } from "@/core/i18n/hooks";
 import { useNotification } from "@/core/notification/hooks";
 import { useThreadSettings } from "@/core/settings";
@@ -31,16 +33,24 @@ import { cn } from "@/lib/utils";
 
 export default function ChatPage() {
   const { t } = useI18n();
+  const router = useRouter();
+  const { user } = useAuth();
   const [showFollowups, setShowFollowups] = useState(false);
   const { threadId, setThreadId, isNewThread, setIsNewThread, isMock } =
     useThreadChat();
   const [settings, setSettings] = useThreadSettings(threadId);
   const [mounted, setMounted] = useState(false);
+  const [threadInaccessible, setThreadInaccessible] = useState(false);
   useSpecificChatMode();
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Reset inaccessible state when thread changes
+  useEffect(() => {
+    setThreadInaccessible(false);
+  }, [threadId]);
 
   const { showNotification } = useNotification();
 
@@ -48,6 +58,7 @@ export default function ChatPage() {
     threadId: isNewThread ? undefined : threadId,
     context: settings.context,
     isMock,
+    userId: user?.id,
     onStart: (createdThreadId) => {
       setThreadId(createdThreadId);
       setIsNewThread(false);
@@ -72,6 +83,21 @@ export default function ChatPage() {
     },
   });
 
+  // Detect 401/403/404 errors from the stream — thread is not accessible to this user
+  useEffect(() => {
+    if (!thread.error || isNewThread) return;
+    const err = thread.error as unknown;
+    const status =
+      typeof err === "object" && err !== null && "status" in err
+        ? (err as { status: number }).status
+        : typeof err === "object" && err !== null && "statusCode" in err
+          ? (err as { statusCode: number }).statusCode
+          : null;
+    if (status === 401 || status === 403 || status === 404) {
+      setThreadInaccessible(true);
+    }
+  }, [thread.error, isNewThread]);
+
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
       void sendMessage(threadId, message);
@@ -86,6 +112,24 @@ export default function ChatPage() {
     ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
       MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
     : undefined;
+
+  // Show inaccessible state when thread is not owned by the current user
+  if (threadInaccessible) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+        <p className="text-muted-foreground text-sm">
+          {t.workspace.threadInaccessible ?? "This conversation is not accessible."}
+        </p>
+        <button
+          type="button"
+          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+          onClick={() => router.push("/workspace/chats/new")}
+        >
+          {t.workspace.startNewChat ?? "Start a new chat"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <ThreadContext.Provider value={{ thread, isMock }}>

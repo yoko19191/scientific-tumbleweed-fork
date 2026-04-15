@@ -237,6 +237,8 @@ export const enUS: Translations = {
     reportIssue: "Report a issue",
     contactUs: "Contact us",
     about: "About",
+    threadInaccessible: "This conversation is not accessible.",
+    startNewChat: "Start a new chat",
   },
 
   // Conversation

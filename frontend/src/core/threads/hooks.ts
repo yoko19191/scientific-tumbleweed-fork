@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
 import { getAPIClient } from "../api";
+import { useAuth } from "../auth/AuthProvider";
 import { fetchWithAuth } from "../auth/fetcher";
 import { getBackendBaseURL } from "../config";
 import { useI18n } from "../i18n/hooks";
@@ -27,6 +28,7 @@ export type ThreadStreamOptions = {
   threadId?: string | null | undefined;
   context: LocalSettings["context"];
   isMock?: boolean;
+  userId?: string | null;
   onStart?: (threadId: string) => void;
   onFinish?: (state: AgentThreadState) => void;
   onToolEnd?: (event: ToolEndEvent) => void;
@@ -80,33 +82,55 @@ function normalizeStoredRunId(runId: string | null): string | null {
   return segments.at(-1) ?? null;
 }
 
-function getRunMetadataStorage(): {
+// Prefix for sessionStorage keys scoped to a specific user.
+// Prevents run IDs from leaking across user sessions in the same browser tab.
+function userScopedKey(userId: string | null | undefined, key: string): string {
+  return userId ? `u:${userId}:${key}` : key;
+}
+
+// Clear all lg:stream:* sessionStorage keys for a given user (or unscoped keys).
+export function clearStreamSessionStorage(userId?: string | null): void {
+  if (typeof window === "undefined") return;
+  const prefix = userId ? `u:${userId}:lg:stream:` : "lg:stream:";
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < window.sessionStorage.length; i++) {
+    const k = window.sessionStorage.key(i);
+    if (k?.startsWith(prefix)) {
+      keysToRemove.push(k);
+    }
+  }
+  keysToRemove.forEach((k) => window.sessionStorage.removeItem(k));
+}
+
+function getRunMetadataStorage(userId?: string | null): {
   getItem(key: `lg:stream:${string}`): string | null;
   setItem(key: `lg:stream:${string}`, value: string): void;
   removeItem(key: `lg:stream:${string}`): void;
 } {
   return {
     getItem(key) {
+      const scopedKey = userScopedKey(userId, key);
       const normalized = normalizeStoredRunId(
-        window.sessionStorage.getItem(key),
+        window.sessionStorage.getItem(scopedKey),
       );
       if (normalized) {
-        window.sessionStorage.setItem(key, normalized);
+        window.sessionStorage.setItem(scopedKey, normalized);
         return normalized;
       }
-      window.sessionStorage.removeItem(key);
+      window.sessionStorage.removeItem(scopedKey);
       return null;
     },
     setItem(key, value) {
+      const scopedKey = userScopedKey(userId, key);
       const normalized = normalizeStoredRunId(value);
       if (normalized) {
-        window.sessionStorage.setItem(key, normalized);
+        window.sessionStorage.setItem(scopedKey, normalized);
         return;
       }
-      window.sessionStorage.removeItem(key);
+      window.sessionStorage.removeItem(scopedKey);
     },
     removeItem(key) {
-      window.sessionStorage.removeItem(key);
+      window.sessionStorage.removeItem(userScopedKey(userId, key));
     },
   };
 }
@@ -138,6 +162,7 @@ export function useThreadStream({
   threadId,
   context,
   isMock,
+  userId,
   onStart,
   onFinish,
   onToolEnd,
@@ -198,7 +223,7 @@ export function useThreadStream({
     typeof window !== "undefined" &&
     runMetadataStorageRef.current === undefined
   ) {
-    runMetadataStorageRef.current = getRunMetadataStorage();
+    runMetadataStorageRef.current = getRunMetadataStorage(userId);
   }
 
   const thread = useStream<AgentThreadState>({
@@ -538,8 +563,10 @@ export function useThreadStream({
 }
 
 export function useThreads() {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   return useQuery<AgentThread[]>({
-    queryKey: ["threads", "search"],
+    queryKey: ["threads", "search", userId],
     queryFn: async () => {
       const response = await fetchWithAuth(
         `${getBackendBaseURL()}/api/threads/listByUser`,

@@ -7,6 +7,8 @@ import {
 
 const queryClient = new QueryClient();
 
+export { queryClient };
+
 export function QueryClientProvider({
   children,
 }: Readonly<{

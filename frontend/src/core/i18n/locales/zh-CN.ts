@@ -225,6 +225,8 @@ export const zhCN: Translations = {
     reportIssue: "反馈问题",
     contactUs: "联系我们",
     about: "关于",
+    threadInaccessible: "此对话不可访问。",
+    startNewChat: "开始新对话",
   },
 
   // Conversation

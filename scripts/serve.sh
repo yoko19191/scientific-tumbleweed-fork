@@ -187,25 +187,20 @@ fi
 
 # ── Sync frontend .env.local ─────────────────────────────────────────────────
 # Next.js .env.local takes precedence over process env vars.
-# The script manages the NEXT_PUBLIC_LANGGRAPH_BASE_URL line to ensure
-# the frontend routes match the active backend mode.
+# /api/langgraph now routes through the authenticated Gateway by default, so
+# the frontend default URL (/api/langgraph) is already the authenticated path.
+# No override is needed in standard mode.  In gateway mode the LangGraph server
+# is not running, but the same /api/langgraph path still works because nginx
+# rewrites it to /api/* on the Gateway.
 
 FRONTEND_ENV_LOCAL="$REPO_ROOT/frontend/.env.local"
 ENV_KEY="NEXT_PUBLIC_LANGGRAPH_BASE_URL"
 
 sync_frontend_env() {
-    if $GATEWAY_MODE; then
-        # Point frontend to Gateway's compat API
-        if [ -f "$FRONTEND_ENV_LOCAL" ] && grep -q "^${ENV_KEY}=" "$FRONTEND_ENV_LOCAL"; then
-            sed -i.bak "s|^${ENV_KEY}=.*|${ENV_KEY}=/api/langgraph-compat|" "$FRONTEND_ENV_LOCAL" && rm -f "${FRONTEND_ENV_LOCAL}.bak"
-        else
-            echo "${ENV_KEY}=/api/langgraph-compat" >> "$FRONTEND_ENV_LOCAL"
-        fi
-    else
-        # Remove override — frontend falls back to /api/langgraph (standard)
-        if [ -f "$FRONTEND_ENV_LOCAL" ] && grep -q "^${ENV_KEY}=" "$FRONTEND_ENV_LOCAL"; then
-            sed -i.bak "/^${ENV_KEY}=/d" "$FRONTEND_ENV_LOCAL" && rm -f "${FRONTEND_ENV_LOCAL}.bak"
-        fi
+    # Remove any stale /api/langgraph-compat override — /api/langgraph is now
+    # the authenticated path in both standard and gateway modes.
+    if [ -f "$FRONTEND_ENV_LOCAL" ] && grep -q "^${ENV_KEY}=" "$FRONTEND_ENV_LOCAL"; then
+        sed -i.bak "/^${ENV_KEY}=/d" "$FRONTEND_ENV_LOCAL" && rm -f "${FRONTEND_ENV_LOCAL}.bak"
     fi
 }
 
@@ -311,10 +306,10 @@ echo "  🌐 http://localhost:2026"
 echo ""
 if $GATEWAY_MODE; then
     echo "  Routing: Frontend → Nginx → Gateway (embedded runtime)"
-    echo "  API:     /api/langgraph-compat/*  →  Gateway agent runtime"
+    echo "  API:     /api/langgraph/*  →  Gateway agent runtime (authenticated)"
 else
-    echo "  Routing: Frontend → Nginx → LangGraph + Gateway"
-    echo "  API:     /api/langgraph/*  →  LangGraph server (2024)"
+    echo "  Routing: Frontend → Nginx → Gateway (auth) + LangGraph (agent)"
+    echo "  API:     /api/langgraph/*  →  Gateway (authenticated, proxies to LangGraph)"
 fi
 echo "           /api/*              →  Gateway REST API (8001)"
 echo ""

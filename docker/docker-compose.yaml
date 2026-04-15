@@ -31,8 +31,11 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf.template:ro
     environment:
-      - LANGGRAPH_UPSTREAM=${LANGGRAPH_UPSTREAM:-langgraph:2024}
-      - LANGGRAPH_REWRITE=${LANGGRAPH_REWRITE:-/}
+      # Default: route /api/langgraph/* through authenticated Gateway (owner checks enforced).
+      # To bypass Gateway and hit LangGraph directly (debugging only):
+      #   LANGGRAPH_UPSTREAM=langgraph:2024 LANGGRAPH_REWRITE=/
+      - LANGGRAPH_UPSTREAM=${LANGGRAPH_UPSTREAM:-gateway:8001}
+      - LANGGRAPH_REWRITE=${LANGGRAPH_REWRITE:-/api/}
     command: >
       sh -c "envsubst '$$LANGGRAPH_UPSTREAM $$LANGGRAPH_REWRITE'
       < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf

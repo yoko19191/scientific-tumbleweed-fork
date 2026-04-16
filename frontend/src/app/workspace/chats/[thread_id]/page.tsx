@@ -29,6 +29,7 @@ import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicato
 import { Welcome } from "@/components/workspace/welcome";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { useI18n } from "@/core/i18n/hooks";
+import { useModels } from "@/core/models/hooks";
 import { useNotification } from "@/core/notification/hooks";
 import { useThreadSettings } from "@/core/settings";
 import { useThreadStream } from "@/core/threads/hooks";
@@ -45,6 +46,7 @@ export default function ChatPage() {
   const [settings, setSettings] = useThreadSettings(threadId);
   const [mounted, setMounted] = useState(false);
   const [threadInaccessible, setThreadInaccessible] = useState(false);
+  const { tokenUsageEnabled } = useModels();
   useSpecificChatMode();
 
   useEffect(() => {
@@ -180,7 +182,10 @@ export default function ChatPage() {
               <ThreadTitle threadId={threadId} thread={thread} />
             </div>
             <div className="flex items-center gap-2">
-              <TokenUsageIndicator messages={thread.messages} />
+              <TokenUsageIndicator
+                enabled={tokenUsageEnabled}
+                messages={thread.messages}
+              />
               <SandboxTrigger />
               <ExportTrigger threadId={threadId} />
               <ArtifactTrigger />
@@ -193,6 +198,7 @@ export default function ChatPage() {
                 threadId={threadId}
                 thread={thread}
                 paddingBottom={messageListPaddingBottom}
+                tokenUsageEnabled={tokenUsageEnabled}
               />
             </div>
             <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4 pb-[6px]">

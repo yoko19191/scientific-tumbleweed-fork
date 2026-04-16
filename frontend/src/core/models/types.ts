@@ -8,3 +8,12 @@ export interface Model {
   supports_reasoning_effort?: boolean;
   supports_vision?: boolean;
 }
+
+export interface TokenUsageSettings {
+  enabled: boolean;
+}
+
+export interface ModelsResponse {
+  models: Model[];
+  token_usage: TokenUsageSettings;
+}

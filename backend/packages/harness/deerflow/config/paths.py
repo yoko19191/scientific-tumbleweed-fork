@@ -343,8 +343,14 @@ class Paths:
         """Host path for the outputs mount source."""
         return _join_host_path(self.host_sandbox_user_data_dir(thread_id, user_id), "outputs")
 
-    def host_acp_workspace_dir(self, thread_id: str) -> str:
-        """Host path for the ACP workspace mount source."""
+    def host_acp_workspace_dir(self, thread_id: str, user_id: str | None = None) -> str:
+        """Host path for the ACP workspace mount source.
+
+        When user_id is given, returns the user-scoped acp-workspace path.
+        Otherwise returns the legacy global thread acp-workspace path.
+        """
+        if user_id:
+            return _join_host_path(self._host_user_thread_dir(user_id, thread_id), "acp-workspace")
         return _join_host_path(self.host_thread_dir(thread_id), "acp-workspace")
 
     def ensure_thread_dirs(self, thread_id: str, user_id: str | None = None) -> None:

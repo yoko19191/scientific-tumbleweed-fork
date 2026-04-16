@@ -132,7 +132,7 @@ def test_discover_or_create_only_unlocks_when_lock_succeeds(tmp_path, monkeypatc
 
     with patch.object(provider, "_create_sandbox", return_value="sandbox-id"):
         with pytest.raises(RuntimeError, match="lock failed"):
-            provider._discover_or_create_with_lock("thread-5", "sandbox-5")
+            provider._discover_or_create_with_lock("thread-5", None, "thread-5", "sandbox-5")
 
     assert unlock_calls == []
 

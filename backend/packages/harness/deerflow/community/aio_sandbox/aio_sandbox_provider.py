@@ -236,12 +236,12 @@ class AioSandboxProvider(SandboxProvider):
 
     # ── Mount helpers ────────────────────────────────────────────────────
 
-    def _get_extra_mounts(self, thread_id: str | None) -> list[tuple[str, str, bool]]:
+    def _get_extra_mounts(self, thread_id: str | None, user_id: str | None = None) -> list[tuple[str, str, bool]]:
         """Collect all extra mounts for a sandbox (thread-specific + skills)."""
         mounts: list[tuple[str, str, bool]] = []
 
         if thread_id:
-            mounts.extend(self._get_thread_mounts(thread_id))
+            mounts.extend(self._get_thread_mounts(thread_id, user_id))
             logger.info(f"Adding thread mounts for thread {thread_id}: {mounts}")
 
         skills_mount = self._get_skills_mount()
@@ -252,23 +252,26 @@ class AioSandboxProvider(SandboxProvider):
         return mounts
 
     @staticmethod
-    def _get_thread_mounts(thread_id: str) -> list[tuple[str, str, bool]]:
+    def _get_thread_mounts(thread_id: str, user_id: str | None = None) -> list[tuple[str, str, bool]]:
         """Get volume mounts for a thread's data directories.
 
         Creates directories if they don't exist (lazy initialization).
         Mount sources use host_base_dir so that when running inside Docker with a
         mounted Docker socket (DooD), the host Docker daemon can resolve the paths.
+
+        When user_id is provided, mounts use user-prefixed host paths so that the
+        same thread_id under two different users maps to distinct host directories.
         """
         paths = get_paths()
-        paths.ensure_thread_dirs(thread_id)
+        paths.ensure_thread_dirs(thread_id, user_id)
 
         return [
-            (paths.host_sandbox_work_dir(thread_id), f"{VIRTUAL_PATH_PREFIX}/workspace", False),
-            (paths.host_sandbox_uploads_dir(thread_id), f"{VIRTUAL_PATH_PREFIX}/uploads", False),
-            (paths.host_sandbox_outputs_dir(thread_id), f"{VIRTUAL_PATH_PREFIX}/outputs", False),
+            (paths.host_sandbox_work_dir(thread_id, user_id), f"{VIRTUAL_PATH_PREFIX}/workspace", False),
+            (paths.host_sandbox_uploads_dir(thread_id, user_id), f"{VIRTUAL_PATH_PREFIX}/uploads", False),
+            (paths.host_sandbox_outputs_dir(thread_id, user_id), f"{VIRTUAL_PATH_PREFIX}/outputs", False),
             # ACP workspace: read-only inside the sandbox (lead agent reads results;
             # the ACP subprocess writes from the host side, not from within the container).
-            (paths.host_acp_workspace_dir(thread_id), "/mnt/acp-workspace", True),
+            (paths.host_acp_workspace_dir(thread_id, user_id), "/mnt/acp-workspace", True),
         ]
 
     @staticmethod
@@ -406,53 +409,60 @@ class AioSandboxProvider(SandboxProvider):
 
     # ── Core: acquire / get / release / shutdown ─────────────────────────
 
-    def acquire(self, thread_id: str | None = None) -> str:
+    def acquire(self, thread_id: str | None = None, user_id: str | None = None) -> str:
         """Acquire a sandbox environment and return its ID.
 
-        For the same thread_id, this method will return the same sandbox_id
-        across multiple turns, multiple processes, and (with shared storage)
-        multiple pods.
+        For the same (user_id, thread_id) pair, this method will return the same
+        sandbox_id across multiple turns, multiple processes, and (with shared
+        storage) multiple pods.
 
         Thread-safe with both in-process and cross-process locking.
 
         Args:
             thread_id: Optional thread ID for thread-specific configurations.
+            user_id: Optional user ID for per-user path isolation.  When provided,
+                     the sandbox cache key and all mount paths are scoped to this
+                     user so that two users sharing the same thread_id get distinct
+                     sandbox environments.
 
         Returns:
             The ID of the acquired sandbox environment.
         """
-        if thread_id:
-            thread_lock = self._get_thread_lock(thread_id)
+        # Use "user_id:thread_id" as the cache key so the same thread_id under
+        # two different users maps to distinct sandboxes with distinct mounts.
+        cache_key = f"{user_id}:{thread_id}" if (thread_id and user_id) else thread_id
+        if cache_key:
+            thread_lock = self._get_thread_lock(cache_key)
             with thread_lock:
-                return self._acquire_internal(thread_id)
+                return self._acquire_internal(thread_id, user_id, cache_key)
         else:
-            return self._acquire_internal(thread_id)
+            return self._acquire_internal(thread_id, user_id, cache_key)
 
-    def _acquire_internal(self, thread_id: str | None) -> str:
+    def _acquire_internal(self, thread_id: str | None, user_id: str | None, cache_key: str | None) -> str:
         """Internal sandbox acquisition with two-layer consistency.
 
         Layer 1: In-process cache (fastest, covers same-process repeated access)
         Layer 2: Backend discovery (covers containers started by other processes;
-                 sandbox_id is deterministic from thread_id so no shared state file
+                 sandbox_id is deterministic from cache_key so no shared state file
                  is needed — any process can derive the same container name)
         """
         # ── Layer 1: In-process cache (fast path) ──
-        if thread_id:
+        if cache_key:
             with self._lock:
-                if thread_id in self._thread_sandboxes:
-                    existing_id = self._thread_sandboxes[thread_id]
+                if cache_key in self._thread_sandboxes:
+                    existing_id = self._thread_sandboxes[cache_key]
                     if existing_id in self._sandboxes:
                         logger.info(f"Reusing in-process sandbox {existing_id} for thread {thread_id}")
                         self._last_activity[existing_id] = time.time()
                         return existing_id
                     else:
-                        del self._thread_sandboxes[thread_id]
+                        del self._thread_sandboxes[cache_key]
 
         # Deterministic ID for thread-specific, random for anonymous
-        sandbox_id = self._deterministic_sandbox_id(thread_id) if thread_id else str(uuid.uuid4())[:8]
+        sandbox_id = self._deterministic_sandbox_id(cache_key) if cache_key else str(uuid.uuid4())[:8]
 
         # ── Layer 1.5: Warm pool (container still running, no cold-start) ──
-        if thread_id:
+        if cache_key:
             with self._lock:
                 if sandbox_id in self._warm_pool:
                     info, _ = self._warm_pool.pop(sandbox_id)
@@ -460,28 +470,34 @@ class AioSandboxProvider(SandboxProvider):
                     self._sandboxes[sandbox_id] = sandbox
                     self._sandbox_infos[sandbox_id] = info
                     self._last_activity[sandbox_id] = time.time()
-                    self._thread_sandboxes[thread_id] = sandbox_id
+                    self._thread_sandboxes[cache_key] = sandbox_id
                     logger.info(f"Reclaimed warm-pool sandbox {sandbox_id} for thread {thread_id} at {info.sandbox_url}")
                     return sandbox_id
 
         # ── Layer 2: Backend discovery + create (protected by cross-process lock) ──
         # Use a file lock so that two processes racing to create the same sandbox
-        # for the same thread_id serialize here: the second process will discover
+        # for the same cache_key serialize here: the second process will discover
         # the container started by the first instead of hitting a name-conflict.
-        if thread_id:
-            return self._discover_or_create_with_lock(thread_id, sandbox_id)
+        if cache_key:
+            return self._discover_or_create_with_lock(thread_id, user_id, cache_key, sandbox_id)
 
-        return self._create_sandbox(thread_id, sandbox_id)
+        return self._create_sandbox(thread_id, user_id, sandbox_id)
 
-    def _discover_or_create_with_lock(self, thread_id: str, sandbox_id: str) -> str:
+    def _discover_or_create_with_lock(self, thread_id: str, user_id: str | None, cache_key: str, sandbox_id: str) -> str:
         """Discover an existing sandbox or create a new one under a cross-process file lock.
 
-        The file lock serializes concurrent sandbox creation for the same thread_id
+        The file lock serializes concurrent sandbox creation for the same cache_key
         across multiple processes, preventing container-name conflicts.
         """
         paths = get_paths()
-        paths.ensure_thread_dirs(thread_id)
-        lock_path = paths.thread_dir(thread_id) / f"{sandbox_id}.lock"
+        paths.ensure_thread_dirs(thread_id, user_id)
+        # Lock file lives in the user-scoped thread dir when user_id is present,
+        # otherwise in the legacy global thread dir.
+        if user_id:
+            lock_dir = paths.user_thread_dir(user_id, thread_id)
+        else:
+            lock_dir = paths.thread_dir(thread_id)
+        lock_path = lock_dir / f"{sandbox_id}.lock"
 
         with open(lock_path, "a", encoding="utf-8") as lock_file:
             locked = False
@@ -491,8 +507,8 @@ class AioSandboxProvider(SandboxProvider):
                 # Re-check in-process caches under the file lock in case another
                 # thread in this process won the race while we were waiting.
                 with self._lock:
-                    if thread_id in self._thread_sandboxes:
-                        existing_id = self._thread_sandboxes[thread_id]
+                    if cache_key in self._thread_sandboxes:
+                        existing_id = self._thread_sandboxes[cache_key]
                         if existing_id in self._sandboxes:
                             logger.info(f"Reusing in-process sandbox {existing_id} for thread {thread_id} (post-lock check)")
                             self._last_activity[existing_id] = time.time()
@@ -503,7 +519,7 @@ class AioSandboxProvider(SandboxProvider):
                         self._sandboxes[sandbox_id] = sandbox
                         self._sandbox_infos[sandbox_id] = info
                         self._last_activity[sandbox_id] = time.time()
-                        self._thread_sandboxes[thread_id] = sandbox_id
+                        self._thread_sandboxes[cache_key] = sandbox_id
                         logger.info(f"Reclaimed warm-pool sandbox {sandbox_id} for thread {thread_id} (post-lock check)")
                         return sandbox_id
 
@@ -515,11 +531,11 @@ class AioSandboxProvider(SandboxProvider):
                         self._sandboxes[discovered.sandbox_id] = sandbox
                         self._sandbox_infos[discovered.sandbox_id] = discovered
                         self._last_activity[discovered.sandbox_id] = time.time()
-                        self._thread_sandboxes[thread_id] = discovered.sandbox_id
+                        self._thread_sandboxes[cache_key] = discovered.sandbox_id
                     logger.info(f"Discovered existing sandbox {discovered.sandbox_id} for thread {thread_id} at {discovered.sandbox_url}")
                     return discovered.sandbox_id
 
-                return self._create_sandbox(thread_id, sandbox_id)
+                return self._create_sandbox(thread_id, user_id, sandbox_id)
             finally:
                 if locked:
                     _unlock_file(lock_file)
@@ -544,11 +560,12 @@ class AioSandboxProvider(SandboxProvider):
             return None
         return oldest_id
 
-    def _create_sandbox(self, thread_id: str | None, sandbox_id: str) -> str:
+    def _create_sandbox(self, thread_id: str | None, user_id: str | None, sandbox_id: str) -> str:
         """Create a new sandbox via the backend.
 
         Args:
             thread_id: Optional thread ID.
+            user_id: Optional user ID for per-user path isolation.
             sandbox_id: The sandbox ID to use.
 
         Returns:
@@ -557,7 +574,7 @@ class AioSandboxProvider(SandboxProvider):
         Raises:
             RuntimeError: If sandbox creation or readiness check fails.
         """
-        extra_mounts = self._get_extra_mounts(thread_id)
+        extra_mounts = self._get_extra_mounts(thread_id, user_id)
 
         # Enforce replicas: only warm-pool containers count toward eviction budget.
         # Active sandboxes are in use by live threads and must not be forcibly stopped.
@@ -582,12 +599,13 @@ class AioSandboxProvider(SandboxProvider):
             raise RuntimeError(f"Sandbox {sandbox_id} failed to become ready within timeout at {info.sandbox_url}")
 
         sandbox = AioSandbox(id=sandbox_id, base_url=info.sandbox_url)
+        cache_key = f"{user_id}:{thread_id}" if (thread_id and user_id) else thread_id
         with self._lock:
             self._sandboxes[sandbox_id] = sandbox
             self._sandbox_infos[sandbox_id] = info
             self._last_activity[sandbox_id] = time.time()
-            if thread_id:
-                self._thread_sandboxes[thread_id] = sandbox_id
+            if cache_key:
+                self._thread_sandboxes[cache_key] = sandbox_id
 
         logger.info(f"Created sandbox {sandbox_id} for thread {thread_id} at {info.sandbox_url}")
         return sandbox_id

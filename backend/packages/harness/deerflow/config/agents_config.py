@@ -115,7 +115,7 @@ def list_custom_agents(user_id: str | None = None) -> list[AgentConfig]:
             continue
 
         try:
-            agent_cfg = load_agent_config(entry.name)
+            agent_cfg = load_agent_config(entry.name, user_id=user_id)
             agents.append(agent_cfg)
         except Exception as e:
             logger.warning(f"Skipping agent '{entry.name}': {e}")

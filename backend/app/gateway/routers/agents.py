@@ -104,7 +104,7 @@ async def list_agents(request: Request) -> AgentsListResponse:
     user_id = get_optional_user_id(request)
     try:
         agents = list_custom_agents(user_id=user_id)
-        return AgentsListResponse(agents=[_agent_config_to_response(a, user_id=user_id) for a in agents])
+        return AgentsListResponse(agents=[_agent_config_to_response(a, include_soul=True, user_id=user_id) for a in agents])
     except Exception as e:
         logger.error(f"Failed to list agents: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")

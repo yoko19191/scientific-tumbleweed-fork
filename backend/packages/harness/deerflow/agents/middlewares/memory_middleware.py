@@ -218,13 +218,22 @@ class MemoryMiddleware(AgentMiddleware[MemoryMiddlewareState]):
             logger.debug("No thread_id in context, skipping memory update")
             return None
 
-        # Extract user_id for per-user memory isolation
+        # Extract user_id for per-user memory isolation.
+        # Only trust server-injected runtime context or run metadata — never
+        # accept user_id from request body, query params, or configurable.
         user_id: str | None = None
         if runtime and runtime.context:
             user_id = runtime.context.get("user_id")
         if user_id is None:
             config_data = get_config()
             user_id = config_data.get("metadata", {}).get("user_id")
+
+        # Strict per-user mode: skip memory update when no trusted user_id is
+        # available.  Writing to global memory when user_id is absent would
+        # allow one user's conversation to leak into another user's context.
+        if user_id is None:
+            logger.debug("No trusted user_id in context, skipping memory update (strict per-user mode)")
+            return None
 
         # Get messages from state
         messages = state.get("messages", [])

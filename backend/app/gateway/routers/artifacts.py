@@ -7,8 +7,8 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
-from app.gateway.deps import get_optional_user_id
 from app.gateway.path_utils import resolve_thread_virtual_path
+from app.gateway.thread_ownership import require_thread_owner
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ async def get_artifact(thread_id: str, path: str, request: Request, download: bo
         skill_file_path = path[: marker_pos + len(".skill")]  # e.g., "mnt/user-data/outputs/my-skill.skill"
         internal_path = path[marker_pos + len(skill_marker) :]  # e.g., "SKILL.md"
 
-        user_id = get_optional_user_id(request)
+        user_id = await require_thread_owner(request, thread_id)
         actual_skill_path = resolve_thread_virtual_path(thread_id, skill_file_path, user_id)
 
         if not actual_skill_path.exists():
@@ -154,7 +154,7 @@ async def get_artifact(thread_id: str, path: str, request: Request, download: bo
         except UnicodeDecodeError:
             return Response(content=content, media_type=mime_type or "application/octet-stream", headers=cache_headers)
 
-    user_id = get_optional_user_id(request)
+    user_id = await require_thread_owner(request, thread_id)
     actual_path = resolve_thread_virtual_path(thread_id, path, user_id)
 
     logger.info(f"Resolving artifact path: thread_id={thread_id}, requested_path={path}, actual_path={actual_path}")

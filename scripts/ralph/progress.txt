@@ -59,3 +59,28 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - Store helpers (`_store_get`, `_store_put`, `_store_upsert`) now accept `ns` kwarg — pass `user_threads_namespace(user_id)` for user-scoped writes
   - `search_threads` no longer does a checkpointer scan — it only reads from the user-scoped Store namespace (simpler and safer)
 ---
+
+## 2026-04-15 - US-006
+- Routed default /api/langgraph/* traffic through authenticated Gateway (owner checks enforced)
+- nginx.local.conf: /api/langgraph/ now rewrites to /api/* on Gateway; added /api/langgraph-direct/ for debugging only
+- docker-compose-dev.yaml + docker-compose.yaml: LANGGRAPH_UPSTREAM defaults to gateway:8001, LANGGRAPH_REWRITE defaults to /api/
+- scripts/serve.sh: removed gateway-mode-only env override; /api/langgraph is now authenticated in both modes
+- frontend/.env.example: updated docs to reflect new default authenticated route
+- Files changed: docker/nginx/nginx.local.conf, docker/nginx/nginx.conf, docker/docker-compose-dev.yaml, docker/docker-compose.yaml, scripts/serve.sh, frontend/.env.example, backend/tests/test_langgraph_routing_isolation.py
+- **Learnings for future iterations:**
+  - nginx.local.conf uses named upstreams (http://gateway, http://langgraph); docker nginx.conf uses variables ($langgraph_upstream) with envsubst
+  - LANGGRAPH_UPSTREAM + LANGGRAPH_REWRITE env vars control docker routing; nginx.local.conf is hardcoded for local dev
+  - The /api/langgraph-compat/ path in nginx.local.conf is now superseded by the default /api/langgraph/ → Gateway routing
+  - Regression test reads nginx.local.conf and docker-compose-dev.yaml directly to assert config correctness
+---
+
+## 2026-04-16 - US-009
+- Made MemoryMiddleware strict per-user: skips queue when no trusted user_id is available (no global fallback)
+- user_id is extracted from runtime.context first, then run metadata — never from request body/query params
+- Lead agent prompt injection already used user_id correctly via `_get_memory_context(user_id)`
+- Files changed: `backend/packages/harness/deerflow/agents/middlewares/memory_middleware.py`, `backend/tests/test_memory_middleware_strict_user.py`
+- **Learnings for future iterations:**
+  - `get_memory_config` and `get_memory_data` are imported inside `_get_memory_context()` (lazy imports); patch at source module level: `deerflow.config.memory_config.get_memory_config` and `deerflow.agents.memory.updater.get_memory_storage`
+  - `test_memory_queue.py::test_process_queue_forwards_reinforcement_flag_to_updater` is a pre-existing failure — uses old `agent_name` field that was replaced by `user_id` in ConversationContext
+  - MemoryMiddleware.after_agent() uses `get_config()` (LangGraph config) for thread_id fallback and metadata.user_id fallback; patch at `deerflow.agents.middlewares.memory_middleware.get_config`
+---

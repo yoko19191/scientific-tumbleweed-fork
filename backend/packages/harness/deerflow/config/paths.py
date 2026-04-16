@@ -225,6 +225,10 @@ class Paths:
         """User-scoped workspace directory: ``{base_dir}/users/{user_id}/threads/{thread_id}/workspace/``."""
         return self.user_thread_dir(user_id, thread_id) / "workspace"
 
+    def user_thread_acp_workspace_dir(self, user_id: str, thread_id: str) -> Path:
+        """User-scoped ACP workspace: ``{base_dir}/users/{user_id}/threads/{thread_id}/acp-workspace/``."""
+        return self.user_thread_dir(user_id, thread_id) / "acp-workspace"
+
     # ── Resolve helpers (thread + user_id=None → sandbox fallback) ────
 
     def resolve_uploads_dir(self, thread_id: str, user_id: str | None = None) -> Path:
@@ -366,7 +370,7 @@ class Paths:
                 self.user_thread_workspace_dir(user_id, thread_id),
                 self.user_thread_uploads_dir(user_id, thread_id),
                 self.user_thread_outputs_dir(user_id, thread_id),
-                self.acp_workspace_dir(thread_id),
+                self.user_thread_acp_workspace_dir(user_id, thread_id),
             ]
         else:
             dirs = [

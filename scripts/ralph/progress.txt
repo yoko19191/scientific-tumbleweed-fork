@@ -174,3 +174,18 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - list_agents endpoint was missing include_soul=True parameter
   - resolve_agent_dir(), resolve_user_md() already support user_id parameter
 ---
+
+## 2026-04-16 - US-016
+- Verified MCP config already implements user-prefixed enabled state
+- GET /api/mcp/config merges global config with user-scoped overrides from users/{user_id}/extensions_config.json
+- PUT /api/mcp/config is disabled (403) - global config is read-only
+- PUT /api/mcp/servers/{name}/enabled writes to user-scoped extensions_config.json
+- Requires authentication (401 if user_id is None)
+- Returns 404 for unknown server names
+- Preserves other user config sections (skills, etc.) when updating MCP settings
+- Files: backend/app/gateway/routers/mcp.py already implements all requirements
+- **Learnings for future iterations:**
+  - MCP config was already fully user-prefixed, no changes needed
+  - Global MCP config is read-only template, users can only toggle enabled state
+  - User overrides stored in mcpServers section of extensions_config.json
+---

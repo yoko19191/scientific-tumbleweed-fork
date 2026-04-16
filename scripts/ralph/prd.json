@@ -269,8 +269,8 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "MCP config already implements user-prefixed enabled state. Global config is read-only, user overrides stored in user-scoped extensions_config.json"
     },
     {
       "id": "US-017",

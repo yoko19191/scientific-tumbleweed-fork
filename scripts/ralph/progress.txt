@@ -109,3 +109,18 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - `_discover_or_create_with_lock` signature changed from `(thread_id, sandbox_id)` to `(thread_id, user_id, cache_key, sandbox_id)`
   - `_create_sandbox` signature changed from `(thread_id, sandbox_id)` to `(thread_id, user_id, sandbox_id)`
 ---
+
+## 2026-04-16 - US-012
+- Updated upload and artifact routers to use `require_thread_owner()` for all endpoints
+- POST /api/threads/{thread_id}/uploads checks owner before writing files
+- GET /api/threads/{thread_id}/uploads/list checks owner before listing files
+- DELETE /api/threads/{thread_id}/uploads/{filename} checks owner before deleting files
+- GET /api/threads/{thread_id}/artifacts/{path} checks owner for normal paths and .skill archives
+- `sandbox_provider.acquire()` now passes `user_id` so mounts use user-prefixed paths
+- All endpoints return 401 when unauthenticated (no valid session cookie)
+- Files changed: `backend/app/gateway/routers/uploads.py`, `backend/app/gateway/routers/artifacts.py`, `backend/tests/test_uploads_router.py`, `backend/tests/test_artifacts_router.py`
+- **Learnings for future iterations:**
+  - Existing tests needed to mock `require_thread_owner` to avoid hitting the Store
+  - Added `_patch_require_owner()` helper in tests to simplify mocking
+  - Added US-012 tests for 401 responses when unauthenticated
+---

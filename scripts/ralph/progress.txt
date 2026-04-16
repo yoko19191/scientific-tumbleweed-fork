@@ -143,3 +143,34 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - All manager helpers accept user_id=None for backward compatibility with global fallback
   - Router tests require proper auth middleware mocking - simpler to test manager layer directly
 ---
+
+## 2026-04-16 - US-014
+- Updated get_skills_prompt_section() to accept user_id parameter
+- When user_id provided, loads skills with user-scoped enablement state via load_skills(enabled_only=True, user_id=user_id)
+- Updated _apply_prompt_via_builder() and legacy apply_prompt_template() to pass user_id to get_skills_prompt_section
+- _load_enabled_skills_sync() now accepts user_id parameter (though not used in current cache implementation)
+- User A disabling a skill no longer affects user B's skill visibility
+- Agent prompt available_skills only includes skills enabled for the run owner
+- Files changed: backend/packages/harness/deerflow/agents/lead_agent/prompt.py, backend/tests/test_skill_enablement_user_prefixed.py
+- **Learnings for future iterations:**
+  - Skill enablement state is read from user-scoped extensions_config.json when user_id provided
+  - load_skills() already supported user_id parameter for reading user-scoped config
+  - get_skills_prompt_section() needed to pass user_id through to load_skills()
+  - Enabled skills cache is global and not user-scoped (future optimization opportunity)
+---
+
+## 2026-04-16 - US-015
+- Fixed list_agents endpoint to include soul content by passing include_soul=True to _agent_config_to_response
+- Fixed list_custom_agents() to pass user_id parameter to load_agent_config() when iterating agents
+- All /api/agents endpoints already use get_optional_user_id() and pass user_id to underlying functions
+- All /api/user-profile endpoints already use get_optional_user_id() and resolve_user_md(user_id)
+- Lead agent factory already loads agent config and SOUL.md using run owner user_id
+- Two users can create agents with same name without conflicts
+- Added comprehensive tests for agent and user profile isolation
+- Files changed: backend/app/gateway/routers/agents.py, backend/packages/harness/deerflow/config/agents_config.py, backend/tests/test_agents_user_prefixed.py
+- **Learnings for future iterations:**
+  - Agent and user profile isolation was mostly implemented, just needed bug fixes
+  - list_custom_agents() was missing user_id parameter when calling load_agent_config()
+  - list_agents endpoint was missing include_soul=True parameter
+  - resolve_agent_dir(), resolve_user_md() already support user_id parameter
+---

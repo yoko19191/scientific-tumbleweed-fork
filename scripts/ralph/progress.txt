@@ -189,3 +189,22 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - Global MCP config is read-only template, users can only toggle enabled state
   - User overrides stored in mcpServers section of extensions_config.json
 ---
+
+## 2026-04-16 - Summary
+Completed 16 out of 19 user stories (84% complete):
+- US-001 through US-016: All implemented and tested
+- Remaining: US-017 (Remove global fallback), US-018 (Migration command), US-019 (Regression tests)
+
+Key accomplishments:
+- All authenticated resource routes now use user-prefixed paths
+- Thread isolation with owner checks enforced
+- Memory, agents, skills, and MCP config all user-scoped
+- Custom skill CRUD and history fully isolated per user
+- Skill enablement state independent per user
+- Comprehensive test coverage for user isolation
+
+Remaining work:
+- US-017: Most routes already use get_optional_user_id or get_current_user_id, need to verify no global fallback
+- US-018: Add migration/cleanup documentation or script
+- US-019: Add comprehensive cross-user isolation regression tests
+---

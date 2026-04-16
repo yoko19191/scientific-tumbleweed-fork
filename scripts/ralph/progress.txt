@@ -95,3 +95,17 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - All user-scoped thread paths live under `{base_dir}/users/{user_id}/threads/{thread_id}/`
   - `resolve_virtual_path` with `user_id` resolves against `user_thread_dir` (no `user-data/` subdirectory) — different from legacy which uses `sandbox_user_data_dir`
 ---
+
+## 2026-04-16 - US-011
+- Updated `AioSandboxProvider.acquire()` to accept `user_id`; uses `"user_id:thread_id"` as in-process cache key
+- Updated `_get_thread_mounts()` and `_get_extra_mounts()` to accept `user_id` and pass through to all host path helpers
+- Added `user_id` parameter to `host_acp_workspace_dir()` in `paths.py`
+- Updated `_discover_or_create_with_lock()` to use user-scoped thread dir for lock file when `user_id` is present
+- Updated `_create_sandbox()` to accept `user_id` and use correct cache key
+- Fixed existing test `test_discover_or_create_only_unlocks_when_lock_succeeds` to use new signature
+- Files changed: `backend/packages/harness/deerflow/community/aio_sandbox/aio_sandbox_provider.py`, `backend/packages/harness/deerflow/config/paths.py`, `backend/tests/test_sandbox_user_prefixed_paths.py`, `backend/tests/test_aio_sandbox_provider.py`
+- **Learnings for future iterations:**
+  - `_thread_sandboxes` dict uses `"user_id:thread_id"` as key when both are present; callers of `acquire()` must pass `user_id` from runtime context
+  - `_discover_or_create_with_lock` signature changed from `(thread_id, sandbox_id)` to `(thread_id, user_id, cache_key, sandbox_id)`
+  - `_create_sandbox` signature changed from `(thread_id, sandbox_id)` to `(thread_id, user_id, sandbox_id)`
+---

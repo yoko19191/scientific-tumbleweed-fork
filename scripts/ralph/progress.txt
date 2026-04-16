@@ -84,3 +84,14 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - `test_memory_queue.py::test_process_queue_forwards_reinforcement_flag_to_updater` is a pre-existing failure — uses old `agent_name` field that was replaced by `user_id` in ConversationContext
   - MemoryMiddleware.after_agent() uses `get_config()` (LangGraph config) for thread_id fallback and metadata.user_id fallback; patch at `deerflow.agents.middlewares.memory_middleware.get_config`
 ---
+
+## 2026-04-16 - US-010
+- Added `user_thread_acp_workspace_dir(user_id, thread_id)` helper to `Paths`
+- Fixed `ensure_thread_dirs(thread_id, user_id)` to use user-prefixed acp-workspace (was using legacy global `acp_workspace_dir`)
+- `resolve_virtual_path` and `delete_thread_dir` already supported `user_id` parameter
+- Files changed: `backend/packages/harness/deerflow/config/paths.py`, `backend/tests/test_user_prefixed_thread_paths.py`
+- **Learnings for future iterations:**
+  - `ensure_thread_dirs` had a bug: used `acp_workspace_dir(thread_id)` (global) even when `user_id` was provided — now fixed to use `user_thread_acp_workspace_dir`
+  - All user-scoped thread paths live under `{base_dir}/users/{user_id}/threads/{thread_id}/`
+  - `resolve_virtual_path` with `user_id` resolves against `user_thread_dir` (no `user-data/` subdirectory) — different from legacy which uses `sandbox_user_data_dir`
+---

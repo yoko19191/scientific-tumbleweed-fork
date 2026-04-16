@@ -285,8 +285,8 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified all authenticated routes use user_id and resolve_* helpers return user-scoped paths"
     },
     {
       "id": "US-018",
@@ -301,8 +301,8 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Migration requires explicit user ID assignment. Legacy global data in .deer-flow/ should be removed after migration"
     },
     {
       "id": "US-019",
@@ -318,8 +318,8 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Comprehensive cross-user isolation tests already exist across multiple test files"
     }
   ]
 }

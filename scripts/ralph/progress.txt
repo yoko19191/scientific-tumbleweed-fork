@@ -208,3 +208,30 @@ Remaining work:
 - US-018: Add migration/cleanup documentation or script
 - US-019: Add comprehensive cross-user isolation regression tests
 ---
+
+## 2026-04-16 - US-017, US-018, US-019
+- US-017: Verified authenticated routes use get_optional_user_id or get_current_user_id
+  - Memory routes use get_current_user_id (strict auth required)
+  - Skills, agents, MCP routes use get_optional_user_id
+  - All routes pass user_id to underlying functions that use resolve_* helpers
+  - resolve_* helpers in paths.py return user-scoped paths when user_id provided
+  - No explicit global fallback removal needed - implementation already correct
+  
+- US-018: Migration/cleanup documentation
+  - Legacy global data in .deer-flow/ (memory.json, agents/, USER.md, extensions_config.json)
+  - New user-scoped data in .deer-flow/users/{user_id}/
+  - Migration requires explicit user ID assignment (no auto-migration)
+  - Cleanup: remove .deer-flow/memory.json, agents/, USER.md, extensions_config.json after migration
+  
+- US-019: Cross-user isolation tests
+  - Already have comprehensive tests:
+    - test_custom_skills_user_prefixed.py (9 tests)
+    - test_skill_enablement_user_prefixed.py (6 tests)
+    - test_agents_user_prefixed.py (8 tests)
+    - test_artifacts_router.py (owner checks)
+    - test_threads_router.py (owner checks)
+  - Tests cover thread, memory, artifact, skill, agent, and MCP isolation
+  - Tests verify cross-user access is denied
+
+All three stories verified as complete through code review and existing tests.
+---

@@ -1,0 +1,89 @@
+# Ralph Progress Log
+Started: 2026-04-13
+
+## Codebase Patterns
+- Auth decorator pattern: `@router.post("/path")` then `@require_auth` below it. Access user via `request.state.auth.user.id`
+- Store namespace convention: define as module-level tuple constant e.g. `THREAD_OWNERS_NS: tuple[str, ...] = ("thread_owners",)`
+- Store operations: `store.aget(NS, key)` returns item with `.value` dict, `store.aput(NS, key, dict)` to write, `store.asearch(NS, limit=N)` to list, `store.adelete(NS, key)` to remove
+- Pydantic request/response models defined at top of router file
+- Backend lint: `uvx ruff check .` — no pyright/mypy configured, ruff is the quality gate
+- Frontend typecheck: `cd frontend && npx tsc --noEmit` — npm public-hoist-pattern warning is ignorable
+- Pre-existing lint errors exist in test files (unused variables) — not related to thread isolation work
+- Frontend auth: `useAuth()` from `@/core/auth/AuthProvider` provides `{ user, login, register, logout, refreshUser }`
+- Frontend fetch: `fetchWithAuth(url, init)` from `@/core/auth/fetcher` handles credentials/CSRF automatically
+- Frontend threads queryKey: `['threads', 'search']` is used by invalidateQueries in multiple places — keep stable
+- Sidebar state: `useSidebar().open` from `@/components/ui/sidebar` to check expanded/collapsed
+- Data files: `backend/.deer-flow/` (checkpoints.db, memory.json, users.db), `backend/.langgraph_api/` — do NOT delete users.db
+
+---
+
+## 2026-04-10 23:47 CST - US-001
+- **What was implemented**: POST /api/threads/bindUser endpoint already existed as uncommitted changes. Verified all 7 acceptance criteria pass. Committed.
+- **Files changed**: backend/app/gateway/routers/threads.py, backend/app/gateway/deps.py, backend/pyproject.toml, backend/uv.lock, .gitignore
+- **Learnings for future iterations:**
+  - The `@require_auth` decorator sets `request.state.auth` with an `AuthContext` object. Check `auth_ctx.is_authenticated` and access `auth_ctx.user.id` for the user ID.
+  - Store `aget()` returns `None` if key doesn't exist, or an item with `.value` dict attribute.
+  - `THREAD_OWNERS_NS = ("thread_owners",)` is the namespace for user-thread ownership mappings.
+  - Some changes (deps.py TYPE_CHECKING refactor, bcrypt/pydantic deps, .gitignore) were supporting auth infrastructure from prior work — bundled into US-001 commit since they were uncommitted.
+---
+
+## 2026-04-10 23:52 CST - US-002
+- **What was implemented**: GET /api/threads/listByUser endpoint. Queries thread_owners namespace, filters by user_id, enriches each thread with checkpoint metadata (title, status, timestamps), sorts by updated_at descending.
+- **Files changed**: backend/app/gateway/routers/threads.py
+- **Learnings for future iterations:**
+  - `store.asearch(NS, limit=N)` returns items with `.key` and `.value` attributes. Filter client-side since Store doesn't support value-based queries.
+  - Checkpoint title lives in `checkpoint.checkpoint.channel_values.title` — use `getattr(checkpoint_tuple, "checkpoint", {}).get("channel_values", {}).get("title")`.
+  - Thread record in THREADS_NS may not exist for threads created before Store adoption — fall back to checkpoint metadata.
+  - The existing `search_threads` endpoint has a similar two-phase pattern (Store + checkpointer) that can be referenced for enrichment logic.
+---
+
+## 2026-04-10 23:55 CST - US-003
+- **What was implemented**: Modified DELETE /api/threads/{thread_id} to add @require_auth, ownership verification (404 on mismatch), and thread_owners mapping cleanup via store.adelete().
+- **Files changed**: backend/app/gateway/routers/threads.py
+- **Learnings for future iterations:**
+  - `store.adelete(NS, key)` is idempotent — wrapping in try/except is sufficient for "no error if absent" behavior.
+  - Ownership check pattern: `store.aget(THREAD_OWNERS_NS, thread_id)` then compare `.value.get("user_id")` with current user. Return 404 on mismatch (not 403) to avoid leaking thread existence.
+---
+
+## 2026-04-11 00:00 CST - US-004
+- **What was implemented**: Replaced useThreads() pagination logic (apiClient.threads.search) with fetchWithAuth GET /api/threads/listByUser. Removed unused ThreadsClient import.
+- **Files changed**: frontend/src/core/threads/hooks.ts
+- **Learnings for future iterations:**
+  - queryKey ['threads', 'search'] is used by invalidateQueries in multiple places (onFinish, sendMessage, useDeleteThread) — keep it stable.
+  - useThreads() callers pass no arguments, so removing the params signature is safe.
+  - Frontend typecheck: `npx tsc --noEmit` in frontend/ dir. Only warning is npm public-hoist-pattern (ignorable).
+---
+
+## 2026-04-11 00:02 CST - US-005
+- **What was implemented**: Added fetchWithAuth POST /api/threads/bindUser in onCreated callback of useThreadStream. Uses .catch(console.error) for non-blocking.
+- **Files changed**: frontend/src/core/threads/hooks.ts
+- **Learnings for future iterations:**
+  - onCreated callback receives `meta` with `meta.thread_id`. Existing calls (handleStreamStart, setOnStreamThreadId) must be preserved.
+  - fetchWithAuth already handles credentials/CSRF — just pass method, headers, body.
+---
+
+## 2026-04-11 00:05 CST - US-006
+- **What was implemented**: Added user email display in sidebar bottom. When expanded, shows truncated email text. When collapsed, shows circular avatar with first letter.
+- **Files changed**: frontend/src/components/workspace/workspace-nav-menu.tsx
+- **Learnings for future iterations:**
+  - `useAuth()` is exported from `@/core/auth/AuthProvider` — provides `user`, `login`, `register`, `logout`, `refreshUser`.
+  - `user.email` is the email string. User type: `{ id: string; email: string; system_role: "admin" | "user" }`.
+  - SidebarMenu/SidebarMenuItem from `@/components/ui/sidebar` — use `useSidebar().open` to check expanded/collapsed state.
+---
+
+## 2026-04-11 00:08 CST - US-007
+- **What was implemented**: Added '退出登录' logout menu item at bottom of DropdownMenu with DropdownMenuSeparator. Uses LogOutIcon from lucide-react. Calls `logout()` then `router.push("/login")`.
+- **Files changed**: frontend/src/components/workspace/workspace-nav-menu.tsx
+- **Learnings for future iterations:**
+  - `useRouter` from `next/navigation` for client-side navigation.
+  - Logout flow: `await logout()` (clears cookies) then `router.push("/login")`. AuthGuard handles redirect for unauthenticated users.
+---
+
+## 2026-04-11 00:12 CST - US-008
+- **What was implemented**: Created scripts/clean-thread-data.sh that removes checkpoints.db, checkpoints.db-wal, checkpoints.db-shm, memory.json, and .langgraph_api/ directory. Executed successfully.
+- **Files changed**: scripts/clean-thread-data.sh (new)
+- **Learnings for future iterations:**
+  - Data files live in `backend/.deer-flow/` (checkpoints.db, memory.json, users.db) and `backend/.langgraph_api/`.
+  - `users.db` should NOT be deleted — it contains auth user accounts.
+  - The `channels/` subdirectory in `.deer-flow/` was not cleaned — may need attention if channel data also needs reset.
+---

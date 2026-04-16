@@ -78,7 +78,27 @@
       "Bash(docker network:*)",
       "Bash(docker ps:*)",
       "Bash(docker stop:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Skill(planning-with-files)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm build:*)",
+      "Bash(npx eslint:*)",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_snapshot",
+      "mcp__chrome-devtools__click",
+      "mcp__chrome-devtools__fill_form",
+      "mcp__chrome-devtools__wait_for",
+      "Bash(cat /Users/guchen/repo_own/scientific-tumbleweed-fork/frontend/.env*)",
+      "Bash(pkill -f \"next dev\")",
+      "mcp__chrome-devtools__evaluate_script",
+      "Bash(docker-compose ps:*)",
+      "Bash(find /Users/guchen/repo_own/scientific-tumbleweed-fork -name docker-compose*.yml -o -name compose*.yml)",
+      "Bash(docker -c desktop-linux compose -f docker/docker-compose-dev.yaml ps)",
+      "Bash(docker -c desktop-linux compose -f docker/docker-compose.yaml ps)",
+      "Bash(docker exec:*)",
+      "Bash(docker restart:*)",
+      "mcp__chrome-devtools__new_page",
+      "Bash(docker rm:*)"
     ]
   }
 }

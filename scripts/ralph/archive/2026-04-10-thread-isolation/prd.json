@@ -1,0 +1,138 @@
+{
+  "project": "DeerFlow Thread Isolation",
+  "branchName": "ralph/thread-isolation",
+  "description": "Multi-tenant thread isolation via Gateway mapping layer + user info/logout UI in sidebar",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Backend: Add bindUser endpoint to Gateway",
+      "description": "As a backend developer, I want a POST /api/threads/bindUser endpoint that registers a user_id <-> thread_id mapping in the Store, so that thread ownership can be tracked.",
+      "acceptanceCriteria": [
+        "POST /api/threads/bindUser endpoint exists on the threads router",
+        "Endpoint uses @require_auth decorator to extract user_id from JWT cookie",
+        "Mapping is written to Store with namespace (\"thread_owners\",), key=thread_id, value={\"user_id\": ..., \"created_at\": ...}",
+        "Endpoint is idempotent: if mapping already exists with same user_id, returns success",
+        "Returns {\"success\": true} on success",
+        "Returns 401 if no valid auth cookie",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Backend: Add listByUser endpoint to Gateway",
+      "description": "As a backend developer, I want a GET /api/threads/listByUser endpoint that returns only threads owned by the current user, with metadata from the checkpointer.",
+      "acceptanceCriteria": [
+        "GET /api/threads/listByUser endpoint exists on the threads router",
+        "Endpoint uses @require_auth decorator to extract user_id from JWT cookie",
+        "Queries Store namespace (\"thread_owners\",) and filters by user_id",
+        "For each owned thread_id, reads latest checkpoint from checkpointer to get title, updated_at, status",
+        "Returns Thread[] array compatible with LangGraph threads.search format (thread_id, status, created_at, updated_at, metadata, values with title)",
+        "Results sorted by updated_at descending",
+        "Returns empty array for users with no threads",
+        "Returns 401 if no valid auth cookie",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Backend: Add mapping cleanup to DELETE endpoint",
+      "description": "As a backend developer, I want the existing DELETE /api/threads/{thread_id} endpoint to also delete the thread_owners mapping record and verify ownership.",
+      "acceptanceCriteria": [
+        "DELETE /api/threads/{thread_id} now also calls store.adelete((\"thread_owners\",), thread_id)",
+        "Endpoint has @require_auth decorator added",
+        "Endpoint verifies the mapping's user_id matches the current user before deleting (returns 404 if mismatch or not found)",
+        "Mapping deletion is idempotent (no error if mapping doesn't exist)",
+        "Existing local thread data cleanup (filesystem, checkpointer, store threads namespace) still works",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Frontend: Switch useThreads to call Gateway listByUser",
+      "description": "As a frontend developer, I want useThreads() to fetch the thread list from Gateway's /api/threads/listByUser instead of LangGraph's threads.search, so that only the current user's threads are shown.",
+      "acceptanceCriteria": [
+        "useThreads() in frontend/src/core/threads/hooks.ts calls fetchWithAuth(getBackendBaseURL() + '/api/threads/listByUser') instead of apiClient.threads.search()",
+        "Response is parsed as AgentThread[] and returned to the component",
+        "TanStack Query queryKey remains ['threads', 'search'] so existing invalidateQueries calls still work",
+        "refetchOnWindowFocus remains false",
+        "Sidebar shows empty list for new users with no threads",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Frontend: Register thread ownership on creation",
+      "description": "As a frontend developer, I want the useThreadStream onCreated callback to register the new thread with Gateway's bindUser endpoint, so that newly created threads appear in the user's list.",
+      "acceptanceCriteria": [
+        "onCreated callback in useThreadStream (frontend/src/core/threads/hooks.ts) calls fetchWithAuth POST /api/threads/bindUser with {thread_id: meta.thread_id}",
+        "The bindUser call uses .catch(console.error) so failures don't block the conversation",
+        "Existing handleStreamStart and setOnStreamThreadId calls are preserved",
+        "After creating a thread and sending a message, the thread appears in the sidebar on refresh",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Frontend: Show user email in sidebar bottom",
+      "description": "As a logged-in user, I want to see my email address displayed at the bottom of the sidebar so I know which account I'm using.",
+      "acceptanceCriteria": [
+        "workspace-nav-menu.tsx imports and uses useAuth() hook to get user.email",
+        "When sidebar is expanded, user email is displayed above or near the 'Settings and More' trigger",
+        "Email is truncated with ellipsis if too long",
+        "When sidebar is collapsed, a circular avatar with the first letter of the email is shown",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Frontend: Add logout button to sidebar menu",
+      "description": "As a logged-in user, I want a logout button in the sidebar dropdown menu so I can sign out of my account.",
+      "acceptanceCriteria": [
+        "A 'Logout' / '退出登录' menu item is added to the DropdownMenu in workspace-nav-menu.tsx",
+        "It appears at the bottom of the menu, separated from other items by a DropdownMenuSeparator",
+        "It uses the LogOut icon from lucide-react",
+        "Clicking it calls useAuth().logout() then navigates to /login via router.push",
+        "After logout, accessing /workspace redirects to /login (AuthGuard)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Data cleanup: Clear historical thread data",
+      "description": "As a developer, I want to clear existing thread data that has no user_id mapping, so we start fresh with the isolation system.",
+      "acceptanceCriteria": [
+        "backend/.deer-flow/checkpoints.db, checkpoints.db-wal, checkpoints.db-shm are deleted if they exist",
+        "backend/.deer-flow/memory.json is deleted if it exists",
+        "backend/.langgraph_api/ directory is deleted if it exists",
+        "A shell script or documented commands exist for this cleanup",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "This is a one-time operation before deploying the isolation feature. Can be a simple script in scripts/ or documented in the PRD."
+    }
+  ]
+}

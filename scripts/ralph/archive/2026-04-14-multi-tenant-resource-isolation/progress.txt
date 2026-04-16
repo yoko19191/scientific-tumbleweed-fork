@@ -1,0 +1,13 @@
+## Codebase Patterns
+- Existing strict auth is available through `@require_auth`, but many resource routes currently only call `get_optional_user_id(request)` and therefore fall back to global paths when `request.state.auth` is not populated.
+- `Paths` is the central path registry for memory, USER.md, custom agents, user directories, and thread user-data paths.
+- Current code contains `user_id=None -> global fallback` behavior in several lower-level helpers; this PRD requires removing that fallback for authenticated resource paths.
+- Current thread owner mapping uses Store namespaces such as `("thread_owners",)`; this PRD requires strict owner checks on direct thread/runs/state/history/upload/artifact access, not only list views.
+- Default nginx standard mode routes `/api/langgraph/*` directly to LangGraph Server; strict isolation requires routing main chat traffic through Gateway owner checks or adding equivalent LangGraph auth.
+- Skill prompt injection currently has a global enabled skills cache; this PRD requires user-scoped skill loading/cache.
+
+---
+
+# Ralph Progress Log
+Started: 2026-04-13
+---

@@ -1,0 +1,77 @@
+## Codebase Patterns
+- Paths class in `backend/packages/harness/deerflow/config/paths.py` is the central path registry; add new path methods there
+- User-scoped paths follow pattern: `{base_dir}/users/{user_id}/...`; thread-scoped: `{base_dir}/threads/{thread_id}/user-data/...`
+- Resolve helpers use `user_id=None` fallback pattern: if user_id given → user-scoped, else → sandbox/global path
+- `_validate_user_id` and `_validate_thread_id` must be called for any user/thread input used in paths
+- Pre-existing test failure: `test_feishu_parser.py` and `test_channels.py::TestFeishuChannel` fail due to missing `app.channels.commands` module (unrelated to this PRD)
+- `get_optional_user_id(request)` is the standard way to extract user_id from a FastAPI Request in app/gateway routers
+- MemoryMiddleware pattern for extracting user_id: `runtime.context.get('user_id')` first, then `config.metadata` as fallback (guard with try/except RuntimeError for get_config() calls)
+- When adding `request: Request` to existing router endpoints, update tests that call the function directly to pass a mock request
+- Test lambda mocks for path resolution functions need `_user_id=None` default arg when the function signature gains a user_id param
+- Pre-existing test failures in `test_gateway_services.py` (3 tests about build_run_config) are unrelated to this PRD
+
+---
+
+# Ralph Progress Log
+Started: 2026年 4月13日 星期一 21时10分22秒 CST
+---
+
+## 2026-04-13 - US-001
+- Added user-scoped thread directory methods to `Paths` class in `backend/packages/harness/deerflow/config/paths.py`
+- New methods: `user_thread_dir`, `user_thread_uploads_dir`, `user_thread_outputs_dir`, `user_thread_workspace_dir`
+- New resolve helpers: `resolve_uploads_dir`, `resolve_outputs_dir`, `resolve_workspace_dir`, `resolve_thread_user_data_dir` (all with `user_id=None` fallback)
+- Files changed: `backend/packages/harness/deerflow/config/paths.py`
+- **Learnings for future iterations:**
+  - User-scoped thread paths go under `users/{user_id}/threads/{thread_id}/` (flat subdirs, not `user-data/` nesting)
+  - Sandbox paths use `threads/{thread_id}/user-data/{workspace,uploads,outputs}` — different structure from user-scoped
+  - All resolve helpers follow the same pattern: `if user_id: return user_scoped else: return sandbox_fallback`
+---
+
+## 2026-04-13 - US-002
+- Extended `ensure_thread_dirs`, `delete_thread_dir`, `resolve_virtual_path` to accept `user_id=None`
+- Extended `host_sandbox_user_data_dir`, `host_sandbox_work_dir`, `host_sandbox_uploads_dir`, `host_sandbox_outputs_dir` to accept `user_id=None`
+- Added `_host_user_thread_dir` private helper for Windows-safe user-scoped host paths
+- Files changed: `backend/packages/harness/deerflow/config/paths.py`
+- **Learnings for future iterations:**
+  - `resolve_virtual_path` with user_id uses `user_thread_dir` as base instead of `sandbox_user_data_dir`
+  - `host_sandbox_user_data_dir` with user_id returns the user thread dir directly (no `user-data/` suffix)
+---
+
+## 2026-04-13 - US-003
+- Updated `ThreadDataMiddleware.before_agent` to extract user_id and pass to `_get_thread_paths`/`_create_thread_directories`
+- Updated `UploadsMiddleware.before_agent` to extract user_id and use `resolve_uploads_dir` instead of `sandbox_uploads_dir`
+- Both use the MemoryMiddleware pattern: `runtime.context.get('user_id')` first, then `get_config().get('metadata', {}).get('user_id')` with try/except RuntimeError
+- Files changed: `backend/packages/harness/deerflow/agents/middlewares/thread_data_middleware.py`, `backend/packages/harness/deerflow/agents/middlewares/uploads_middleware.py`
+---
+
+## 2026-04-13 - US-004
+- Updated `get_uploads_dir` and `ensure_uploads_dir` in `uploads/manager.py` to accept `user_id=None` and delegate to `resolve_uploads_dir`
+- Updated all three upload endpoints (POST, GET /list, DELETE) to accept `request: Request`, call `get_optional_user_id`, and pass `user_id` to path functions
+- Updated `test_uploads_router.py` to pass mock request objects to all direct function calls
+- Files changed: `backend/packages/harness/deerflow/uploads/manager.py`, `backend/app/gateway/routers/uploads.py`, `backend/tests/test_uploads_router.py`
+---
+
+## 2026-04-13 - US-005
+- Updated `resolve_thread_virtual_path` in `path_utils.py` to accept `user_id=None` and pass to `Paths.resolve_virtual_path`
+- Updated `get_artifact` endpoint to call `get_optional_user_id(request)` and pass `user_id` to both normal and `.skill/` archive path resolution
+- Updated `test_artifacts_router.py` lambda mocks to accept `_user_id=None` default arg
+- Files changed: `backend/app/gateway/path_utils.py`, `backend/app/gateway/routers/artifacts.py`, `backend/tests/test_artifacts_router.py`
+---
+
+## 2026-04-13 - US-006
+- Made `PUT /api/mcp/config` return 403 with message directing to new per-user endpoint
+- Updated `GET /api/mcp/config` to accept `request: Request`, extract user_id, and merge per-user enabled overrides from `users/{user_id}/extensions_config.json`
+- Added `PUT /api/mcp/servers/{name}/enabled` endpoint requiring auth (401 if not logged in, 404 if server not in global config)
+- Files changed: `backend/app/gateway/routers/mcp.py`
+---
+
+## 2026-04-13 - US-007
+- Updated `get_memory_status` to accept `request: Request`, extract user_id via `get_optional_user_id`, and pass to `get_memory_data(user_id)`
+- Files changed: `backend/app/gateway/routers/memory.py`
+---
+
+## 2026-04-13 - US-008
+- Updated `_list_assistants` to accept `user_id=None` and pass to `list_custom_agents(user_id=user_id)`
+- Updated `search_assistants`, `get_assistant_compat`, `get_assistant_graph`, `get_assistant_schemas` to accept `request: Request` and extract user_id
+- Files changed: `backend/app/gateway/routers/assistants_compat.py`
+---

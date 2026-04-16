@@ -26,8 +26,8 @@ _enabled_skills_refresh_version = 0
 _enabled_skills_refresh_event = threading.Event()
 
 
-def _load_enabled_skills_sync() -> list[Skill]:
-    return list(load_skills(enabled_only=True))
+def _load_enabled_skills_sync(user_id: str | None = None) -> list[Skill]:
+    return list(load_skills(enabled_only=True, user_id=user_id))
 
 
 def _start_enabled_skills_refresh_thread() -> None:
@@ -459,9 +459,17 @@ You have access to skills that provide optimized workflows for specific tasks. E
 </skill_system>"""
 
 
-def get_skills_prompt_section(available_skills: set[str] | None = None) -> str:
-    """Generate the skills prompt section with available skills list."""
-    skills = _get_enabled_skills()
+def get_skills_prompt_section(available_skills: set[str] | None = None, user_id: str | None = None) -> str:
+    """Generate the skills prompt section with available skills list.
+
+    Args:
+        available_skills: Optional set of skill names to filter by.
+        user_id: If provided, loads skills with user-scoped enablement state.
+
+    Returns:
+        Formatted skills prompt section string.
+    """
+    skills = list(load_skills(enabled_only=True, user_id=user_id))
 
     try:
         from deerflow.config import get_app_config
@@ -591,7 +599,7 @@ def _apply_prompt_via_builder(
         builder.with_memory(memory)
 
     # Skills
-    skills = get_skills_prompt_section(available_skills)
+    skills = get_skills_prompt_section(available_skills, user_id=user_id)
     if skills:
         builder.with_skills(skills)
 
@@ -719,7 +727,7 @@ def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent
     )
 
     # Get skills section
-    skills_section = get_skills_prompt_section(available_skills)
+    skills_section = get_skills_prompt_section(available_skills, user_id=user_id)
 
     # Get deferred tools section (tool_search)
     deferred_tools_section = get_deferred_tools_prompt_section()

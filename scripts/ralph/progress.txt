@@ -124,3 +124,22 @@ Started: 2026年 4月14日 星期二 14时00分23秒 CST
   - Added `_patch_require_owner()` helper in tests to simplify mocking
   - Added US-012 tests for 401 responses when unauthenticated
 ---
+
+## 2026-04-16 - US-013
+- Updated custom skill manager helpers to accept user_id parameter
+- get_custom_skills_dir(), get_custom_skill_dir(), get_custom_skill_file(), get_skill_history_file() now accept optional user_id
+- When user_id provided, paths resolve to {base_dir}/users/{user_id}/skills/custom/
+- Updated all custom skill router endpoints to use get_optional_user_id() and pass to manager helpers
+- list_custom_skills(), get_custom_skill(), update_custom_skill(), delete_custom_skill() now user-scoped
+- get_custom_skill_history() and rollback_custom_skill() use user-scoped history files
+- install_skill_from_archive() installs to user-scoped directory when user_id provided
+- Two users can now have custom skills with same name without conflicts
+- Files changed: backend/packages/harness/deerflow/skills/manager.py, backend/app/gateway/routers/skills.py, backend/tests/test_custom_skills_user_prefixed.py
+- **Learnings for future iterations:**
+  - Custom skill manager helpers follow same pattern as other user-scoped resources (memory, agents, etc.)
+  - get_optional_user_id() extracts user from request.state.auth.user.id (not a function call to mock)
+  - User-scoped custom skills path: {base_dir}/users/{user_id}/skills/custom/{skill_name}/
+  - History files stored in .history subdirectory: {base_dir}/users/{user_id}/skills/custom/.history/{skill_name}.jsonl
+  - All manager helpers accept user_id=None for backward compatibility with global fallback
+  - Router tests require proper auth middleware mocking - simpler to test manager layer directly
+---

@@ -5,9 +5,12 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.gateway.deps import get_current_user_id
 from app.gateway.routers import skills as skills_router
 from deerflow.skills.manager import get_skill_history_file
 from deerflow.skills.types import Skill
+
+_TEST_USER_ID = "test-user-001"
 
 
 def _skill_content(name: str, description: str = "Demo skill") -> str:
@@ -34,17 +37,32 @@ def _make_skill(name: str, *, enabled: bool) -> Skill:
     )
 
 
-def test_custom_skills_router_lifecycle(monkeypatch, tmp_path):
+def _setup_skills_test(monkeypatch, tmp_path, *, skill_name="demo-skill", skill_content=None):
+    """Common setup for skills router tests: creates user-scoped skill dirs and patches."""
+    from deerflow.config.paths import Paths
+
+    paths_instance = Paths(base_dir=tmp_path)
     skills_root = tmp_path / "skills"
-    custom_dir = skills_root / "custom" / "demo-skill"
-    custom_dir.mkdir(parents=True, exist_ok=True)
-    (custom_dir / "SKILL.md").write_text(_skill_content("demo-skill"), encoding="utf-8")
+    skills_root.mkdir(parents=True, exist_ok=True)
+    # User-scoped custom skill directory
+    user_custom_dir = paths_instance.user_skills_custom_dir(_TEST_USER_ID)
+    skill_dir = user_custom_dir / skill_name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    content = skill_content or _skill_content(skill_name)
+    (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+
     config = SimpleNamespace(
         skills=SimpleNamespace(get_skills_path=lambda: skills_root, container_path="/mnt/skills"),
         skill_evolution=SimpleNamespace(enabled=True, moderation_model_name=None),
     )
     monkeypatch.setattr("deerflow.config.get_app_config", lambda: config)
     monkeypatch.setattr("deerflow.skills.manager.get_app_config", lambda: config)
+    monkeypatch.setattr("deerflow.config.paths.get_paths", lambda: paths_instance)
+    return paths_instance, skills_root, skill_dir
+
+
+def test_custom_skills_router_lifecycle(monkeypatch, tmp_path):
+    paths_instance, skills_root, custom_dir = _setup_skills_test(monkeypatch, tmp_path)
     monkeypatch.setattr("app.gateway.routers.skills.scan_skill_content", lambda *args, **kwargs: _async_scan("allow", "ok"))
     refresh_calls = []
 
@@ -55,6 +73,7 @@ def test_custom_skills_router_lifecycle(monkeypatch, tmp_path):
 
     app = FastAPI()
     app.include_router(skills_router.router)
+    app.dependency_overrides[get_current_user_id] = lambda: _TEST_USER_ID
 
     with TestClient(app) as client:
         response = client.get("/api/skills/custom")
@@ -83,19 +102,11 @@ def test_custom_skills_router_lifecycle(monkeypatch, tmp_path):
 
 
 def test_custom_skill_rollback_blocked_by_scanner(monkeypatch, tmp_path):
-    skills_root = tmp_path / "skills"
-    custom_dir = skills_root / "custom" / "demo-skill"
-    custom_dir.mkdir(parents=True, exist_ok=True)
+    paths_instance, skills_root, custom_dir = _setup_skills_test(monkeypatch, tmp_path, skill_content=_skill_content("demo-skill", "Edited skill"))
     original_content = _skill_content("demo-skill")
     edited_content = _skill_content("demo-skill", "Edited skill")
-    (custom_dir / "SKILL.md").write_text(edited_content, encoding="utf-8")
-    config = SimpleNamespace(
-        skills=SimpleNamespace(get_skills_path=lambda: skills_root, container_path="/mnt/skills"),
-        skill_evolution=SimpleNamespace(enabled=True, moderation_model_name=None),
-    )
-    monkeypatch.setattr("deerflow.config.get_app_config", lambda: config)
-    monkeypatch.setattr("deerflow.skills.manager.get_app_config", lambda: config)
-    get_skill_history_file("demo-skill").write_text(
+    get_skill_history_file("demo-skill", user_id=_TEST_USER_ID).parent.mkdir(parents=True, exist_ok=True)
+    get_skill_history_file("demo-skill", user_id=_TEST_USER_ID).write_text(
         '{"action":"human_edit","prev_content":' + json.dumps(original_content) + ',"new_content":' + json.dumps(edited_content) + "}\n",
         encoding="utf-8",
     )
@@ -114,6 +125,7 @@ def test_custom_skill_rollback_blocked_by_scanner(monkeypatch, tmp_path):
 
     app = FastAPI()
     app.include_router(skills_router.router)
+    app.dependency_overrides[get_current_user_id] = lambda: _TEST_USER_ID
 
     with TestClient(app) as client:
         rollback_response = client.post("/api/skills/custom/demo-skill/rollback", json={"history_index": -1})
@@ -126,17 +138,8 @@ def test_custom_skill_rollback_blocked_by_scanner(monkeypatch, tmp_path):
 
 
 def test_custom_skill_delete_preserves_history_and_allows_restore(monkeypatch, tmp_path):
-    skills_root = tmp_path / "skills"
-    custom_dir = skills_root / "custom" / "demo-skill"
-    custom_dir.mkdir(parents=True, exist_ok=True)
+    paths_instance, skills_root, custom_dir = _setup_skills_test(monkeypatch, tmp_path)
     original_content = _skill_content("demo-skill")
-    (custom_dir / "SKILL.md").write_text(original_content, encoding="utf-8")
-    config = SimpleNamespace(
-        skills=SimpleNamespace(get_skills_path=lambda: skills_root, container_path="/mnt/skills"),
-        skill_evolution=SimpleNamespace(enabled=True, moderation_model_name=None),
-    )
-    monkeypatch.setattr("deerflow.config.get_app_config", lambda: config)
-    monkeypatch.setattr("deerflow.skills.manager.get_app_config", lambda: config)
     monkeypatch.setattr("app.gateway.routers.skills.scan_skill_content", lambda *args, **kwargs: _async_scan("allow", "ok"))
     refresh_calls = []
 
@@ -147,6 +150,7 @@ def test_custom_skill_delete_preserves_history_and_allows_restore(monkeypatch, t
 
     app = FastAPI()
     app.include_router(skills_router.router)
+    app.dependency_overrides[get_current_user_id] = lambda: _TEST_USER_ID
 
     with TestClient(app) as client:
         delete_response = client.delete("/api/skills/custom/demo-skill")
@@ -165,11 +169,15 @@ def test_custom_skill_delete_preserves_history_and_allows_restore(monkeypatch, t
 
 
 def test_update_skill_refreshes_prompt_cache_before_return(monkeypatch, tmp_path):
-    config_path = tmp_path / "extensions_config.json"
+    from deerflow.config.paths import Paths
+
+    paths_instance = Paths(base_dir=tmp_path)
+    config_path = paths_instance.user_extensions_config_file(_TEST_USER_ID)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     enabled_state = {"value": True}
     refresh_calls = []
 
-    def _load_skills(*, enabled_only: bool):
+    def _load_skills(*, enabled_only: bool, user_id: str | None = None):
         skill = _make_skill("demo-skill", enabled=enabled_state["value"])
         if enabled_only and not skill.enabled:
             return []
@@ -180,13 +188,12 @@ def test_update_skill_refreshes_prompt_cache_before_return(monkeypatch, tmp_path
         enabled_state["value"] = False
 
     monkeypatch.setattr("app.gateway.routers.skills.load_skills", _load_skills)
-    monkeypatch.setattr("app.gateway.routers.skills.get_extensions_config", lambda: SimpleNamespace(mcp_servers={}, skills={}))
-    monkeypatch.setattr("app.gateway.routers.skills.reload_extensions_config", lambda: None)
-    monkeypatch.setattr(skills_router.ExtensionsConfig, "resolve_config_path", staticmethod(lambda: config_path))
+    monkeypatch.setattr("deerflow.config.paths.get_paths", lambda: paths_instance)
     monkeypatch.setattr("app.gateway.routers.skills.refresh_skills_system_prompt_cache_async", _refresh)
 
     app = FastAPI()
     app.include_router(skills_router.router)
+    app.dependency_overrides[get_current_user_id] = lambda: _TEST_USER_ID
 
     with TestClient(app) as client:
         response = client.put("/api/skills/demo-skill", json={"enabled": False})
@@ -194,4 +201,4 @@ def test_update_skill_refreshes_prompt_cache_before_return(monkeypatch, tmp_path
     assert response.status_code == 200
     assert response.json()["enabled"] is False
     assert refresh_calls == ["refresh"]
-    assert json.loads(config_path.read_text(encoding="utf-8")) == {"mcpServers": {}, "skills": {"demo-skill": {"enabled": False}}}
+    assert json.loads(config_path.read_text(encoding="utf-8")) == {"skills": {"demo-skill": {"enabled": False}}}

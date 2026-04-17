@@ -3,13 +3,12 @@ import logging
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.gateway.deps import get_optional_user_id
+from app.gateway.deps import get_current_user_id
 from app.gateway.path_utils import resolve_thread_virtual_path
 from deerflow.agents.lead_agent.prompt import refresh_skills_system_prompt_cache_async
-from deerflow.config.extensions_config import ExtensionsConfig, reload_extensions_config
 from deerflow.skills import Skill, load_skills
 from deerflow.skills.installer import SkillAlreadyExistsError, install_skill_from_archive
 from deerflow.skills.manager import (
@@ -101,8 +100,7 @@ def _skill_to_response(skill: Skill) -> SkillResponse:
     summary="List All Skills",
     description="Retrieve a list of all available skills from both public and custom directories.",
 )
-async def list_skills(request: Request) -> SkillsListResponse:
-    user_id = get_optional_user_id(request)
+async def list_skills(user_id: str = Depends(get_current_user_id)) -> SkillsListResponse:
     try:
         skills = load_skills(enabled_only=False, user_id=user_id)
         return SkillsListResponse(skills=[_skill_to_response(skill) for skill in skills])
@@ -112,8 +110,7 @@ async def list_skills(request: Request) -> SkillsListResponse:
 
 
 @router.get("/skills/custom", response_model=SkillsListResponse, summary="List Custom Skills")
-async def list_custom_skills(request: Request) -> SkillsListResponse:
-    user_id = get_optional_user_id(request)
+async def list_custom_skills(user_id: str = Depends(get_current_user_id)) -> SkillsListResponse:
     try:
         skills = [skill for skill in load_skills(enabled_only=False, user_id=user_id) if skill.category == "custom"]
         return SkillsListResponse(skills=[_skill_to_response(skill) for skill in skills])
@@ -123,8 +120,7 @@ async def list_custom_skills(request: Request) -> SkillsListResponse:
 
 
 @router.get("/skills/custom/{skill_name}", response_model=CustomSkillContentResponse, summary="Get Custom Skill Content")
-async def get_custom_skill(skill_name: str, request: Request) -> CustomSkillContentResponse:
-    user_id = get_optional_user_id(request)
+async def get_custom_skill(skill_name: str, user_id: str = Depends(get_current_user_id)) -> CustomSkillContentResponse:
     try:
         skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name and s.category == "custom"), None)
@@ -139,8 +135,7 @@ async def get_custom_skill(skill_name: str, request: Request) -> CustomSkillCont
 
 
 @router.put("/skills/custom/{skill_name}", response_model=CustomSkillContentResponse, summary="Edit Custom Skill")
-async def update_custom_skill(skill_name: str, req: Request, request: CustomSkillUpdateRequest) -> CustomSkillContentResponse:
-    user_id = get_optional_user_id(req)
+async def update_custom_skill(skill_name: str, request: CustomSkillUpdateRequest, user_id: str = Depends(get_current_user_id)) -> CustomSkillContentResponse:
     try:
         ensure_custom_skill_is_editable(skill_name, user_id)
         validate_skill_markdown_content(skill_name, request.content)
@@ -164,7 +159,7 @@ async def update_custom_skill(skill_name: str, req: Request, request: CustomSkil
             user_id,
         )
         await refresh_skills_system_prompt_cache_async()
-        return await get_custom_skill(skill_name, req)
+        return await get_custom_skill(skill_name, user_id)
     except HTTPException:
         raise
     except FileNotFoundError as e:
@@ -177,8 +172,7 @@ async def update_custom_skill(skill_name: str, req: Request, request: CustomSkil
 
 
 @router.delete("/skills/custom/{skill_name}", summary="Delete Custom Skill")
-async def delete_custom_skill(skill_name: str, request: Request) -> dict[str, bool]:
-    user_id = get_optional_user_id(request)
+async def delete_custom_skill(skill_name: str, user_id: str = Depends(get_current_user_id)) -> dict[str, bool]:
     try:
         ensure_custom_skill_is_editable(skill_name, user_id)
         skill_dir = get_custom_skill_dir(skill_name, user_id)
@@ -209,8 +203,7 @@ async def delete_custom_skill(skill_name: str, request: Request) -> dict[str, bo
 
 
 @router.get("/skills/custom/{skill_name}/history", response_model=CustomSkillHistoryResponse, summary="Get Custom Skill History")
-async def get_custom_skill_history(skill_name: str, request: Request) -> CustomSkillHistoryResponse:
-    user_id = get_optional_user_id(request)
+async def get_custom_skill_history(skill_name: str, user_id: str = Depends(get_current_user_id)) -> CustomSkillHistoryResponse:
     try:
         if not custom_skill_exists(skill_name, user_id) and not get_skill_history_file(skill_name, user_id).exists():
             raise HTTPException(status_code=404, detail=f"Custom skill '{skill_name}' not found")
@@ -223,8 +216,7 @@ async def get_custom_skill_history(skill_name: str, request: Request) -> CustomS
 
 
 @router.post("/skills/custom/{skill_name}/rollback", response_model=CustomSkillContentResponse, summary="Rollback Custom Skill")
-async def rollback_custom_skill(skill_name: str, req: Request, request: SkillRollbackRequest) -> CustomSkillContentResponse:
-    user_id = get_optional_user_id(req)
+async def rollback_custom_skill(skill_name: str, request: SkillRollbackRequest, user_id: str = Depends(get_current_user_id)) -> CustomSkillContentResponse:
     try:
         if not custom_skill_exists(skill_name, user_id) and not get_skill_history_file(skill_name, user_id).exists():
             raise HTTPException(status_code=404, detail=f"Custom skill '{skill_name}' not found")
@@ -255,7 +247,7 @@ async def rollback_custom_skill(skill_name: str, req: Request, request: SkillRol
         atomic_write(skill_file, target_content)
         append_history(skill_name, history_entry, user_id)
         await refresh_skills_system_prompt_cache_async()
-        return await get_custom_skill(skill_name, req)
+        return await get_custom_skill(skill_name, user_id)
     except HTTPException:
         raise
     except IndexError:
@@ -275,8 +267,7 @@ async def rollback_custom_skill(skill_name: str, req: Request, request: SkillRol
     summary="Get Skill Details",
     description="Retrieve detailed information about a specific skill by its name.",
 )
-async def get_skill(skill_name: str, request: Request) -> SkillResponse:
-    user_id = get_optional_user_id(request)
+async def get_skill(skill_name: str, user_id: str = Depends(get_current_user_id)) -> SkillResponse:
     try:
         skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name), None)
@@ -298,8 +289,7 @@ async def get_skill(skill_name: str, request: Request) -> SkillResponse:
     summary="Update Skill",
     description="Update a skill's enabled status by modifying the extensions_config.json file.",
 )
-async def update_skill(skill_name: str, request: Request, body: SkillUpdateRequest) -> SkillResponse:
-    user_id = get_optional_user_id(request)
+async def update_skill(skill_name: str, body: SkillUpdateRequest, user_id: str = Depends(get_current_user_id)) -> SkillResponse:
     try:
         skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name), None)
@@ -307,16 +297,9 @@ async def update_skill(skill_name: str, request: Request, body: SkillUpdateReque
         if skill is None:
             raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
 
-        # Determine config path: user-scoped when authenticated, global otherwise
-        if user_id:
-            from deerflow.config.paths import get_paths
-            config_path = get_paths().user_extensions_config_file(user_id)
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-        else:
-            config_path = ExtensionsConfig.resolve_config_path()
-            if config_path is None:
-                config_path = Path.cwd().parent / "extensions_config.json"
-                logger.info(f"No existing extensions config found. Creating new config at: {config_path}")
+        from deerflow.config.paths import get_paths
+        config_path = get_paths().user_extensions_config_file(user_id)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Load existing config from the target path, or create empty
         if config_path.exists():
@@ -337,12 +320,7 @@ async def update_skill(skill_name: str, request: Request, body: SkillUpdateReque
             json.dump(existing_data, f, indent=2)
 
         logger.info(f"Skills configuration updated and saved to: {config_path}")
-        reload_extensions_config()
         await refresh_skills_system_prompt_cache_async()
-
-        # Reload to pick up changes (only for global config singleton)
-        if not user_id:
-            reload_extensions_config()
 
         skills = load_skills(enabled_only=False, user_id=user_id)
         updated_skill = next((s for s in skills if s.name == skill_name), None)
@@ -366,8 +344,7 @@ async def update_skill(skill_name: str, request: Request, body: SkillUpdateReque
     summary="Install Skill",
     description="Install a skill from a .skill file (ZIP archive) located in the thread's user-data directory.",
 )
-async def install_skill(request: Request, body: SkillInstallRequest) -> SkillInstallResponse:
-    user_id = get_optional_user_id(request)
+async def install_skill(body: SkillInstallRequest, user_id: str = Depends(get_current_user_id)) -> SkillInstallResponse:
     try:
         skill_file_path = resolve_thread_virtual_path(body.thread_id, body.path)
         result = install_skill_from_archive(skill_file_path, user_id=user_id)

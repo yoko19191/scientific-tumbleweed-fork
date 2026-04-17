@@ -42,9 +42,9 @@ class SandboxMiddleware(AgentMiddleware[SandboxMiddlewareState]):
         super().__init__()
         self._lazy_init = lazy_init
 
-    def _acquire_sandbox(self, thread_id: str) -> str:
+    def _acquire_sandbox(self, thread_id: str, user_id: str | None = None) -> str:
         provider = get_sandbox_provider()
-        sandbox_id = provider.acquire(thread_id)
+        sandbox_id = provider.acquire(thread_id, user_id)
         logger.info(f"Acquiring sandbox {sandbox_id}")
         return sandbox_id
 
@@ -59,7 +59,10 @@ class SandboxMiddleware(AgentMiddleware[SandboxMiddlewareState]):
             thread_id = (runtime.context or {}).get("thread_id")
             if thread_id is None:
                 return super().before_agent(state, runtime)
-            sandbox_id = self._acquire_sandbox(thread_id)
+            user_id: str | None = (runtime.context or {}).get("user_id")
+            if user_id is None:
+                user_id = (runtime.config or {}).get("metadata", {}).get("user_id")
+            sandbox_id = self._acquire_sandbox(thread_id, user_id)
             logger.info(f"Assigned sandbox {sandbox_id} to thread {thread_id}")
             return {"sandbox": {"sandbox_id": sandbox_id}}
         return super().before_agent(state, runtime)

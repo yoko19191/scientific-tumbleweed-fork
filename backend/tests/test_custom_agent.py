@@ -373,14 +373,19 @@ class TestMemoryFilePath:
 # ===========================================================================
 
 
+_TEST_USER_ID = "test-user-001"
+
+
 def _make_test_app(tmp_path: Path):
     """Create a FastAPI app with the agents router, patching paths to tmp_path."""
     from fastapi import FastAPI
 
+    from app.gateway.deps import get_current_user_id
     from app.gateway.routers.agents import router
 
     app = FastAPI()
     app.include_router(router)
+    app.dependency_overrides[get_current_user_id] = lambda: _TEST_USER_ID
     return app
 
 
@@ -388,6 +393,10 @@ def _make_test_app(tmp_path: Path):
 def agent_client(tmp_path):
     """TestClient with agents router, using tmp_path as base_dir."""
     paths_instance = _make_paths(tmp_path)
+
+    # User-scoped agents dir must exist for the test user
+    user_agents_dir = tmp_path / "users" / _TEST_USER_ID / "agents"
+    user_agents_dir.mkdir(parents=True, exist_ok=True)
 
     with patch("deerflow.config.agents_config.get_paths", return_value=paths_instance), patch("app.gateway.routers.agents.get_paths", return_value=paths_instance):
         app = _make_test_app(tmp_path)
@@ -510,7 +519,7 @@ class TestAgentsAPI:
     def test_create_persists_files_on_disk(self, agent_client, tmp_path):
         agent_client.post("/api/agents", json={"name": "disk-check", "soul": "disk soul"})
 
-        agent_dir = tmp_path / "agents" / "disk-check"
+        agent_dir = tmp_path / "users" / _TEST_USER_ID / "agents" / "disk-check"
         assert agent_dir.exists()
         assert (agent_dir / "config.yaml").exists()
         assert (agent_dir / "SOUL.md").exists()
@@ -518,7 +527,7 @@ class TestAgentsAPI:
 
     def test_delete_removes_files_from_disk(self, agent_client, tmp_path):
         agent_client.post("/api/agents", json={"name": "remove-me", "soul": "bye"})
-        agent_dir = tmp_path / "agents" / "remove-me"
+        agent_dir = tmp_path / "users" / _TEST_USER_ID / "agents" / "remove-me"
         assert agent_dir.exists()
 
         agent_client.delete("/api/agents/remove-me")
@@ -542,8 +551,8 @@ class TestUserProfileAPI:
         assert response.status_code == 200
         assert response.json()["content"] == content
 
-        # File should be written to disk
-        user_md = tmp_path / "USER.md"
+        # File should be written to disk (user-scoped path)
+        user_md = tmp_path / "users" / _TEST_USER_ID / "USER.md"
         assert user_md.exists()
         assert user_md.read_text(encoding="utf-8") == content
 

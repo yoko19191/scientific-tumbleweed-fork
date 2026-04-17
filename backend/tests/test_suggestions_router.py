@@ -1,7 +1,14 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.gateway.routers import suggestions
+
+
+def _run_generate(monkeypatch, req, thread_id="t1"):
+    """Call generate_suggestions with require_thread_owner mocked out."""
+    fake_request = MagicMock()
+    with patch("app.gateway.routers.suggestions.require_thread_owner", new_callable=AsyncMock):
+        return asyncio.run(suggestions.generate_suggestions(thread_id, fake_request, req))
 
 
 def test_strip_markdown_code_fence_removes_wrapping():
@@ -46,7 +53,7 @@ def test_generate_suggestions_parses_and_limits(monkeypatch):
     fake_model.ainvoke = AsyncMock(return_value=MagicMock(content='```json\n["Q1", "Q2", "Q3", "Q4"]\n```'))
     monkeypatch.setattr(suggestions, "create_chat_model", lambda **kwargs: fake_model)
 
-    result = asyncio.run(suggestions.generate_suggestions("t1", req))
+    result = _run_generate(monkeypatch, req)
 
     assert result.suggestions == ["Q1", "Q2", "Q3"]
 
@@ -64,7 +71,7 @@ def test_generate_suggestions_parses_list_block_content(monkeypatch):
     fake_model.ainvoke = AsyncMock(return_value=MagicMock(content=[{"type": "text", "text": '```json\n["Q1", "Q2"]\n```'}]))
     monkeypatch.setattr(suggestions, "create_chat_model", lambda **kwargs: fake_model)
 
-    result = asyncio.run(suggestions.generate_suggestions("t1", req))
+    result = _run_generate(monkeypatch, req)
 
     assert result.suggestions == ["Q1", "Q2"]
 
@@ -82,7 +89,7 @@ def test_generate_suggestions_parses_output_text_block_content(monkeypatch):
     fake_model.ainvoke = AsyncMock(return_value=MagicMock(content=[{"type": "output_text", "text": '```json\n["Q1", "Q2"]\n```'}]))
     monkeypatch.setattr(suggestions, "create_chat_model", lambda **kwargs: fake_model)
 
-    result = asyncio.run(suggestions.generate_suggestions("t1", req))
+    result = _run_generate(monkeypatch, req)
 
     assert result.suggestions == ["Q1", "Q2"]
 
@@ -97,6 +104,6 @@ def test_generate_suggestions_returns_empty_on_model_error(monkeypatch):
     fake_model.ainvoke = AsyncMock(side_effect=RuntimeError("boom"))
     monkeypatch.setattr(suggestions, "create_chat_model", lambda **kwargs: fake_model)
 
-    result = asyncio.run(suggestions.generate_suggestions("t1", req))
+    result = _run_generate(monkeypatch, req)
 
     assert result.suggestions == []

@@ -1,10 +1,11 @@
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from app.gateway.thread_ownership import require_thread_owner
 from deerflow.models import create_chat_model
 
 logger = logging.getLogger(__name__)
@@ -98,12 +99,14 @@ def _format_conversation(messages: list[SuggestionMessage]) -> str:
     summary="Generate Follow-up Questions",
     description="Generate short follow-up questions a user might ask next, based on recent conversation context.",
 )
-async def generate_suggestions(thread_id: str, request: SuggestionsRequest) -> SuggestionsResponse:
-    if not request.messages:
+async def generate_suggestions(thread_id: str, request: Request, body: SuggestionsRequest) -> SuggestionsResponse:
+    await require_thread_owner(request, thread_id)
+
+    if not body.messages:
         return SuggestionsResponse(suggestions=[])
 
-    n = request.n
-    conversation = _format_conversation(request.messages)
+    n = body.n
+    conversation = _format_conversation(body.messages)
     if not conversation:
         return SuggestionsResponse(suggestions=[])
 
@@ -120,7 +123,7 @@ async def generate_suggestions(thread_id: str, request: SuggestionsRequest) -> S
     user_content = f"Conversation Context:\n{conversation}\n\nGenerate {n} follow-up questions"
 
     try:
-        model = create_chat_model(name=request.model_name, thinking_enabled=False)
+        model = create_chat_model(name=body.model_name, thinking_enabled=False)
         response = await model.ainvoke([SystemMessage(content=system_instruction), HumanMessage(content=user_content)])
         raw = _extract_response_text(response.content)
         suggestions = _parse_json_string_list(raw) or []

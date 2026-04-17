@@ -159,7 +159,7 @@ def build_run_config(
 # ---------------------------------------------------------------------------
 
 
-async def _upsert_thread_in_store(store, thread_id: str, metadata: dict | None) -> None:
+async def _upsert_thread_in_store(store, thread_id: str, metadata: dict | None, user_id: str | None) -> None:
     """Create or refresh the thread record in the Store.
 
     Called from :func:`start_run` so that threads created via the stateless
@@ -168,9 +168,11 @@ async def _upsert_thread_in_store(store, thread_id: str, metadata: dict | None) 
     """
     # Deferred import to avoid circular import with the threads router module.
     from app.gateway.routers.threads import _store_upsert
+    from app.gateway.user_prefix import user_threads_namespace
 
     try:
-        await _store_upsert(store, thread_id, metadata=metadata)
+        threads_ns = user_threads_namespace(user_id) if user_id else ("threads",)
+        await _store_upsert(store, thread_id, metadata=metadata, ns=threads_ns)
     except Exception:
         logger.warning("Failed to upsert thread %s in store (non-fatal)", thread_id)
 
@@ -180,6 +182,7 @@ async def _sync_thread_title_after_run(
     thread_id: str,
     checkpointer: Any,
     store: Any,
+    user_id: str | None = None,
 ) -> None:
     """Wait for *run_task* to finish, then persist the generated title to the Store.
 
@@ -199,8 +202,11 @@ async def _sync_thread_title_after_run(
 
     # Deferred import to avoid circular import with the threads router module.
     from app.gateway.routers.threads import _store_get, _store_put
+    from app.gateway.user_prefix import user_threads_namespace
 
     try:
+        threads_ns = user_threads_namespace(user_id) if user_id else ("threads",)
+
         ckpt_config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
         ckpt_tuple = await checkpointer.aget_tuple(ckpt_config)
         if ckpt_tuple is None:
@@ -211,14 +217,14 @@ async def _sync_thread_title_after_run(
         if not title:
             return
 
-        existing = await _store_get(store, thread_id)
+        existing = await _store_get(store, thread_id, ns=threads_ns)
         if existing is None:
             return
 
         updated = dict(existing)
         updated.setdefault("values", {})["title"] = title
         updated["updated_at"] = time.time()
-        await _store_put(store, updated)
+        await _store_put(store, updated, ns=threads_ns)
         logger.debug("Synced title %r for thread %s", title, thread_id)
     except Exception:
         logger.debug("Failed to sync title for thread %s (non-fatal)", thread_id, exc_info=True)
@@ -262,19 +268,16 @@ async def start_run(
     except UnsupportedStrategyError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
-    # Ensure the thread is visible in /threads/search, even for threads that
-    # were never explicitly created via POST /threads (e.g. stateless runs).
-    store = get_store(request)
-    if store is not None:
-        await _upsert_thread_in_store(store, thread_id, body.metadata)
-
-    agent_factory = resolve_agent_factory(body.assistant_id)
-    graph_input = normalize_input(body.input)
-
     # Inject authenticated user_id into metadata for per-user isolation.
     # Memory middleware and agent factory read user_id from config["metadata"].
     from app.gateway.deps import get_optional_user_id
     user_id = get_optional_user_id(request)
+
+    # Ensure the thread is visible in /threads/search, even for threads that
+    # were never explicitly created via POST /threads (e.g. stateless runs).
+    store = get_store(request)
+    if store is not None:
+        await _upsert_thread_in_store(store, thread_id, body.metadata, user_id)
     if user_id:
         run_metadata = dict(body.metadata) if body.metadata else {}
         run_metadata["user_id"] = user_id
@@ -327,7 +330,7 @@ async def start_run(
     # the checkpointer into the Store record so that /threads/search returns the
     # correct title instead of an empty values dict.
     if store is not None:
-        asyncio.create_task(_sync_thread_title_after_run(task, thread_id, checkpointer, store))
+        asyncio.create_task(_sync_thread_title_after_run(task, thread_id, checkpointer, store, user_id))
 
     return record
 

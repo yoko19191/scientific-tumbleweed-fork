@@ -5,10 +5,10 @@ import re
 import shutil
 
 import yaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.gateway.deps import get_optional_user_id
+from app.gateway.deps import get_current_user_id
 from deerflow.config.agents_config import AgentConfig, list_custom_agents, load_agent_config, load_agent_soul
 from deerflow.config.paths import get_paths
 
@@ -95,13 +95,12 @@ def _agent_config_to_response(agent_cfg: AgentConfig, include_soul: bool = False
     summary="List Custom Agents",
     description="List all custom agents available in the agents directory, including their soul content.",
 )
-async def list_agents(request: Request) -> AgentsListResponse:
+async def list_agents(user_id: str = Depends(get_current_user_id)) -> AgentsListResponse:
     """List all custom agents.
 
     Returns:
         List of all custom agents with their metadata and soul content.
     """
-    user_id = get_optional_user_id(request)
     try:
         agents = list_custom_agents(user_id=user_id)
         return AgentsListResponse(agents=[_agent_config_to_response(a, include_soul=True, user_id=user_id) for a in agents])
@@ -115,11 +114,10 @@ async def list_agents(request: Request) -> AgentsListResponse:
     summary="Check Agent Name",
     description="Validate an agent name and check if it is available (case-insensitive).",
 )
-async def check_agent_name(name: str, request: Request) -> dict:
+async def check_agent_name(name: str, user_id: str = Depends(get_current_user_id)) -> dict:
     """Check whether an agent name is valid and not yet taken."""
     _validate_agent_name(name)
     normalized = _normalize_agent_name(name)
-    user_id = get_optional_user_id(request)
     available = not get_paths().resolve_agent_dir(normalized, user_id).exists()
     return {"available": available, "name": normalized}
 
@@ -130,11 +128,10 @@ async def check_agent_name(name: str, request: Request) -> dict:
     summary="Get Custom Agent",
     description="Retrieve details and SOUL.md content for a specific custom agent.",
 )
-async def get_agent(name: str, request: Request) -> AgentResponse:
+async def get_agent(name: str, user_id: str = Depends(get_current_user_id)) -> AgentResponse:
     """Get a specific custom agent by name."""
     _validate_agent_name(name)
     name = _normalize_agent_name(name)
-    user_id = get_optional_user_id(request)
 
     try:
         agent_cfg = load_agent_config(name, user_id=user_id)
@@ -153,11 +150,10 @@ async def get_agent(name: str, request: Request) -> AgentResponse:
     summary="Create Custom Agent",
     description="Create a new custom agent with its config and SOUL.md.",
 )
-async def create_agent_endpoint(request: Request, body: AgentCreateRequest) -> AgentResponse:
+async def create_agent_endpoint(body: AgentCreateRequest, user_id: str = Depends(get_current_user_id)) -> AgentResponse:
     """Create a new custom agent."""
     _validate_agent_name(body.name)
     normalized_name = _normalize_agent_name(body.name)
-    user_id = get_optional_user_id(request)
 
     agent_dir = get_paths().resolve_agent_dir(normalized_name, user_id)
 
@@ -205,11 +201,10 @@ async def create_agent_endpoint(request: Request, body: AgentCreateRequest) -> A
     summary="Update Custom Agent",
     description="Update an existing custom agent's config and/or SOUL.md.",
 )
-async def update_agent(name: str, request: Request, body: AgentUpdateRequest) -> AgentResponse:
+async def update_agent(name: str, body: AgentUpdateRequest, user_id: str = Depends(get_current_user_id)) -> AgentResponse:
     """Update an existing custom agent."""
     _validate_agent_name(name)
     name = _normalize_agent_name(name)
-    user_id = get_optional_user_id(request)
 
     try:
         agent_cfg = load_agent_config(name, user_id=user_id)
@@ -274,9 +269,8 @@ class UserProfileUpdateRequest(BaseModel):
     summary="Get User Profile",
     description="Read the global USER.md file that is injected into all custom agents.",
 )
-async def get_user_profile(request: Request) -> UserProfileResponse:
+async def get_user_profile(user_id: str = Depends(get_current_user_id)) -> UserProfileResponse:
     """Return the current USER.md content."""
-    user_id = get_optional_user_id(request)
     try:
         user_md_path = get_paths().resolve_user_md(user_id)
         if not user_md_path.exists():
@@ -294,9 +288,8 @@ async def get_user_profile(request: Request) -> UserProfileResponse:
     summary="Update User Profile",
     description="Write the global USER.md file that is injected into all custom agents.",
 )
-async def update_user_profile(request: Request, body: UserProfileUpdateRequest) -> UserProfileResponse:
+async def update_user_profile(body: UserProfileUpdateRequest, user_id: str = Depends(get_current_user_id)) -> UserProfileResponse:
     """Create or overwrite USER.md."""
-    user_id = get_optional_user_id(request)
     try:
         paths = get_paths()
         user_md_path = paths.resolve_user_md(user_id)
@@ -315,11 +308,10 @@ async def update_user_profile(request: Request, body: UserProfileUpdateRequest) 
     summary="Delete Custom Agent",
     description="Delete a custom agent and all its files (config, SOUL.md, memory).",
 )
-async def delete_agent(name: str, request: Request) -> None:
+async def delete_agent(name: str, user_id: str = Depends(get_current_user_id)) -> None:
     """Delete a custom agent."""
     _validate_agent_name(name)
     name = _normalize_agent_name(name)
-    user_id = get_optional_user_id(request)
 
     agent_dir = get_paths().resolve_agent_dir(name, user_id)
 

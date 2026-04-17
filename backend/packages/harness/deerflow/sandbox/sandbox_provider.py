@@ -9,8 +9,12 @@ class SandboxProvider(ABC):
     """Abstract base class for sandbox providers"""
 
     @abstractmethod
-    def acquire(self, thread_id: str | None = None) -> str:
+    def acquire(self, thread_id: str | None = None, user_id: str | None = None) -> str:
         """Acquire a sandbox environment and return its ID.
+
+        Args:
+            thread_id: Optional thread ID for thread-scoped sandboxes.
+            user_id: Optional user ID for user-scoped path isolation.
 
         Returns:
             The ID of the acquired sandbox environment.

@@ -1,5 +1,9 @@
 """Memory updater for reading, writing, and updating memory data."""
 
+import asyncio
+import atexit
+import concurrent.futures
+import copy
 import json
 import logging
 import math
@@ -268,6 +272,117 @@ class MemoryUpdater:
         config = get_memory_config()
         model_name = self._model_name or config.model_name
         return create_chat_model(name=model_name, thinking_enabled=False)
+
+    def _build_correction_hint(
+        self,
+        correction_detected: bool,
+        reinforcement_detected: bool,
+    ) -> str:
+        """Build optional prompt hints for correction and reinforcement signals."""
+        correction_hint = ""
+        if correction_detected:
+            correction_hint = (
+                "IMPORTANT: Explicit correction signals were detected in this conversation. "
+                "Pay special attention to what the agent got wrong, what the user corrected, "
+                "and record the correct approach as a fact with category "
+                '"correction" and confidence >= 0.95 when appropriate.'
+            )
+        if reinforcement_detected:
+            reinforcement_hint = (
+                "IMPORTANT: Positive reinforcement signals were detected in this conversation. "
+                "The user explicitly confirmed the agent's approach was correct or helpful. "
+                "Record the confirmed approach, style, or preference as a fact with category "
+                '"preference" or "behavior" and confidence >= 0.9 when appropriate.'
+            )
+            correction_hint = (correction_hint + "\n" + reinforcement_hint).strip() if correction_hint else reinforcement_hint
+
+        return correction_hint
+
+    def _prepare_update_prompt(
+        self,
+        messages: list[Any],
+        user_id: str | None,
+        correction_detected: bool,
+        reinforcement_detected: bool,
+    ) -> tuple[dict[str, Any], str] | None:
+        """Load memory and build the update prompt for a conversation."""
+        config = get_memory_config()
+        if not config.enabled or not messages:
+            return None
+
+        current_memory = get_memory_data(user_id)
+        conversation_text = format_conversation_for_update(messages)
+        if not conversation_text.strip():
+            return None
+
+        correction_hint = self._build_correction_hint(
+            correction_detected=correction_detected,
+            reinforcement_detected=reinforcement_detected,
+        )
+        prompt = MEMORY_UPDATE_PROMPT.format(
+            current_memory=json.dumps(current_memory, indent=2),
+            conversation=conversation_text,
+            correction_hint=correction_hint,
+        )
+        return current_memory, prompt
+
+    def _finalize_update(
+        self,
+        current_memory: dict[str, Any],
+        response_content: Any,
+        thread_id: str | None,
+        user_id: str | None,
+    ) -> bool:
+        """Parse the model response, apply updates, and persist memory."""
+        response_text = _extract_text(response_content).strip()
+
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            response_text = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+        update_data = json.loads(response_text)
+        # Deep-copy before in-place mutation so a subsequent save() failure
+        # cannot corrupt the still-cached original object reference.
+        updated_memory = self._apply_updates(copy.deepcopy(current_memory), update_data, thread_id)
+        updated_memory = _strip_upload_mentions_from_memory(updated_memory)
+        return get_memory_storage().save(updated_memory, user_id)
+
+    async def aupdate_memory(
+        self,
+        messages: list[Any],
+        thread_id: str | None = None,
+        user_id: str | None = None,
+        correction_detected: bool = False,
+        reinforcement_detected: bool = False,
+    ) -> bool:
+        """Update memory asynchronously based on conversation messages."""
+        try:
+            prepared = await asyncio.to_thread(
+                self._prepare_update_prompt,
+                messages=messages,
+                user_id=user_id,
+                correction_detected=correction_detected,
+                reinforcement_detected=reinforcement_detected,
+            )
+            if prepared is None:
+                return False
+
+            current_memory, prompt = prepared
+            model = self._get_model()
+            response = await model.ainvoke(prompt)
+            return await asyncio.to_thread(
+                self._finalize_update,
+                current_memory=current_memory,
+                response_content=response.content,
+                thread_id=thread_id,
+                user_id=user_id,
+            )
+        except json.JSONDecodeError as e:
+            logger.warning("Failed to parse LLM response for memory update: %s", e)
+            return False
+        except Exception as e:
+            logger.exception("Memory update failed: %s", e)
+            return False
 
     def update_memory(
         self,

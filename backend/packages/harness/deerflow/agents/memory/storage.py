@@ -65,7 +65,8 @@ class FileMemoryStorage(MemoryStorage):
         # Memory cache: keyed by user_id (None = global)
         # Value: (memory_data, file_mtime)
         self._memory_cache: dict[str | None, tuple[dict[str, Any], float | None]] = {}
-        self._lock = threading.Lock()
+        # Guards all reads and writes to _memory_cache across concurrent callers.
+        self._cache_lock = threading.Lock()
 
     def _get_memory_file_path(self, user_id: str | None = None) -> Path:
         """Get the path to the memory file.
@@ -107,15 +108,17 @@ class FileMemoryStorage(MemoryStorage):
         except OSError:
             current_mtime = None
 
-        with self._lock:
+        with self._cache_lock:
             cached = self._memory_cache.get(user_id)
+            if cached is not None and cached[1] == current_mtime:
+                return cached[0]
 
-            if cached is None or cached[1] != current_mtime:
-                memory_data = self._load_memory_from_file(user_id)
-                self._memory_cache[user_id] = (memory_data, current_mtime)
-                return memory_data
+        memory_data = self._load_memory_from_file(user_id)
 
-            return cached[0]
+        with self._cache_lock:
+            self._memory_cache[user_id] = (memory_data, current_mtime)
+
+        return memory_data
 
     def reload(self, user_id: str | None = None) -> dict[str, Any]:
         """Reload memory data from file, forcing cache invalidation."""
@@ -127,7 +130,7 @@ class FileMemoryStorage(MemoryStorage):
         except OSError:
             mtime = None
 
-        with self._lock:
+        with self._cache_lock:
             self._memory_cache[user_id] = (memory_data, mtime)
         return memory_data
 
@@ -137,7 +140,10 @@ class FileMemoryStorage(MemoryStorage):
 
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            memory_data["lastUpdated"] = utc_now_iso_z()
+            # Shallow-copy before adding lastUpdated so the caller's dict is not
+            # mutated as a side-effect, and the cache reference is not silently
+            # updated before the file write succeeds.
+            memory_data = {**memory_data, "lastUpdated": utc_now_iso_z()}
 
             temp_path = file_path.with_suffix(".tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
@@ -150,7 +156,7 @@ class FileMemoryStorage(MemoryStorage):
             except OSError:
                 mtime = None
 
-            with self._lock:
+            with self._cache_lock:
                 self._memory_cache[user_id] = (memory_data, mtime)
             logger.info("Memory saved to %s", file_path)
             return True

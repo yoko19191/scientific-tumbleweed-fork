@@ -390,6 +390,21 @@ tool_search:
 #   # trusted, single-user local workflows.
 #   allow_host_bash: false
 
+uploads:
+  # Automatic Office/PDF conversion runs on the backend host before sandbox
+  # isolation applies. Keep this disabled unless uploads come from a fully
+  # trusted source and you intentionally accept host-side parser risk.
+  auto_convert_documents: false
+  # Controls which PDF-to-Markdown converter is used whenever PDF conversion
+  # runs. Automatic upload conversion is gated separately by
+  # auto_convert_documents.
+  # auto        — prefer pymupdf4llm when installed; fall back to MarkItDown for
+  #               image-based or encrypted PDFs (recommended default).
+  # pymupdf4llm — always use pymupdf4llm (must be installed: uv add pymupdf4llm).
+  #               Better heading/table extraction; faster on most files.
+  # markitdown  — always use MarkItDown (original behaviour, no extra dependency).
+  pdf_converter: auto
+
 #   # Tool output truncation limits (characters).
 #   # bash uses middle-truncation (head + tail) since errors can appear anywhere in the output.
 #   # read_file uses head-truncation since source code context is front-loaded.

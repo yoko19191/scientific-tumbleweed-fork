@@ -27,18 +27,30 @@ def generate_csrf_token() -> str:
     return secrets.token_urlsafe(CSRF_TOKEN_LENGTH)
 
 
+_CSRF_EXEMPT_PREFIXES: tuple[str, ...] = (
+    "/api/threads",
+    "/api/runs",
+    "/api/assistants",
+)
+
+
 def should_check_csrf(request: Request) -> bool:
     """Determine if a request needs CSRF validation.
 
     CSRF is checked for state-changing methods (POST, PUT, DELETE, PATCH).
     GET, HEAD, OPTIONS, and TRACE are exempt per RFC 7231.
+
+    LangGraph SDK paths are exempt because the SDK's internal HTTP client
+    cannot attach CSRF headers; these paths are already protected by
+    AuthMiddleware (JWT cookie).
     """
     if request.method not in ("POST", "PUT", "DELETE", "PATCH"):
         return False
 
     path = request.url.path.rstrip("/")
-    # Exempt /api/v1/auth/me endpoint
     if path == "/api/v1/auth/me":
+        return False
+    if any(path.startswith(prefix) for prefix in _CSRF_EXEMPT_PREFIXES):
         return False
     return True
 

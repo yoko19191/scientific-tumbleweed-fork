@@ -268,10 +268,14 @@ async def start_run(
     except UnsupportedStrategyError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
+    agent_factory = resolve_agent_factory(body.assistant_id)
+    graph_input = normalize_input(body.input)
+
     # Inject authenticated user_id into metadata for per-user isolation.
     # Memory middleware and agent factory read user_id from config["metadata"].
-    from app.gateway.deps import get_optional_user_id
-    user_id = get_optional_user_id(request)
+    from app.gateway.deps import get_optional_user_from_request
+    user = await get_optional_user_from_request(request)
+    user_id = str(user.id) if user else None
 
     # Ensure the thread is visible in /threads/search, even for threads that
     # were never explicitly created via POST /threads (e.g. stateless runs).

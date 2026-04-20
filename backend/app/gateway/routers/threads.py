@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.authz import require_auth
-from app.gateway.deps import get_checkpointer, get_optional_user_id, get_store
+from app.gateway.deps import get_checkpointer, get_optional_user_from_request, get_optional_user_id, get_store
 from app.gateway.thread_ownership import bind_thread_to_user, require_thread_owner
 from app.gateway.user_prefix import user_thread_owners_namespace, user_threads_namespace
 from deerflow.config.paths import Paths, get_paths
@@ -393,7 +393,8 @@ async def create_thread(body: ThreadCreateRequest, request: Request) -> ThreadRe
     now = time.time()
 
     # Resolve optional user identity (anonymous threads are allowed)
-    user_id = get_optional_user_id(request)
+    user = await get_optional_user_from_request(request)
+    user_id = str(user.id) if user else None
     threads_ns = user_threads_namespace(user_id) if user_id else THREADS_NS
 
     # Idempotency: return existing record from Store when already present

@@ -29,6 +29,7 @@ Architecture (docker-compose-dev):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -491,7 +492,7 @@ async def create_sandbox(req: CreateSandboxRequest):
         node_port = _get_node_port(sandbox_id)
         if node_port:
             break
-        time.sleep(0.5)
+        await asyncio.sleep(0.5)
 
     if not node_port:
         raise HTTPException(

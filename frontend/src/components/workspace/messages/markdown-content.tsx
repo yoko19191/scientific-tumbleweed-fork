@@ -43,6 +43,21 @@ export function MarkdownContent({
             return <CitationLink {...props}>{text}</CitationLink>;
           }
         }
+        // Sanitize href — block dangerous protocols
+        const href = props.href?.trim().toLowerCase();
+        if (
+          href &&
+          !href.startsWith("http://") &&
+          !href.startsWith("https://") &&
+          !href.startsWith("mailto:") &&
+          !href.startsWith("#") &&
+          !href.startsWith("/")
+        ) {
+          // Strip dangerous protocols (javascript:, data:, vbscript:, etc.)
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { href: _blocked, ...safeProps } = props;
+          return <span {...safeProps} />;
+        }
         const { className, target, rel, ...rest } = props;
         const external = isExternalUrl(props.href);
         return (

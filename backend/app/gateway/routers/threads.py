@@ -277,10 +277,15 @@ async def list_by_user(request: Request) -> list[ThreadResponse]:
     if not owned_thread_ids:
         return []
 
+    user_threads_ns = user_threads_namespace(user_id)
     results: list[ThreadResponse] = []
     for thread_id in owned_thread_ids:
-        # Read thread metadata from the threads namespace
-        thread_record = await _store_get(store, thread_id)
+        # Read thread metadata from the user-scoped namespace; fall back to the
+        # legacy global namespace for thread records written before the
+        # user-isolation migration.
+        thread_record = await _store_get(store, thread_id, ns=user_threads_ns)
+        if thread_record is None:
+            thread_record = await _store_get(store, thread_id)
 
         # Read latest checkpoint for status and title
         config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}

@@ -68,6 +68,7 @@ class SubagentResult:
 # Global storage for background task results
 _background_tasks: dict[str, SubagentResult] = {}
 _background_tasks_lock = threading.Lock()
+_BACKGROUND_TASK_TTL_SECONDS = 900  # 15 minutes
 
 # Thread pool for background task scheduling and orchestration
 _scheduler_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-scheduler-")
@@ -550,6 +551,35 @@ def request_cancel_background_task(task_id: str) -> None:
             logger.info("Requested cancellation for background task %s", task_id)
 
 
+def _sweep_stale_background_tasks() -> None:
+    """Remove terminal tasks older than _BACKGROUND_TASK_TTL_SECONDS.
+
+    Called opportunistically during task lookup to bound memory growth when
+    the normal ``cleanup_background_task`` path is skipped (e.g. parent agent
+    crash, disconnected client).
+    """
+    terminal_statuses = (
+        SubagentStatus.COMPLETED,
+        SubagentStatus.FAILED,
+        SubagentStatus.TIMED_OUT,
+        SubagentStatus.CANCELLED,
+    )
+    now = datetime.now()
+    stale_ids: list[str] = []
+    for task_id, result in _background_tasks.items():
+        if result.status not in terminal_statuses:
+            continue
+        completed_at = result.completed_at
+        if completed_at is None:
+            continue
+        if (now - completed_at).total_seconds() > _BACKGROUND_TASK_TTL_SECONDS:
+            stale_ids.append(task_id)
+    for task_id in stale_ids:
+        _background_tasks.pop(task_id, None)
+    if stale_ids:
+        logger.info("Swept %d stale background tasks", len(stale_ids))
+
+
 def get_background_task_result(task_id: str) -> SubagentResult | None:
     """Get the result of a background task.
 
@@ -560,6 +590,7 @@ def get_background_task_result(task_id: str) -> SubagentResult | None:
         SubagentResult if found, None otherwise.
     """
     with _background_tasks_lock:
+        _sweep_stale_background_tasks()
         return _background_tasks.get(task_id)
 
 

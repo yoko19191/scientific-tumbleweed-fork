@@ -239,20 +239,31 @@ def require_permission(
 
                 # Get thread and verify ownership
                 from app.gateway.routers.threads import _store_get, get_store
+                from app.gateway.user_prefix import user_threads_namespace
 
                 store = get_store(request)
                 if store is not None:
-                    record = await _store_get(store, thread_id)
-                    if record:
-                        owner_id = record.get("metadata", {}).get(owner_filter_key)
-                        if owner_id and owner_id != str(auth.user.id):
-                            raise HTTPException(
-                                status_code=404,
-                                detail=f"Thread {thread_id} not found",
-                            )
-                        # Inject record if requested
-                        if inject_record:
-                            kwargs["thread_record"] = record
+                    # Try user-scoped namespace first, then fall back to legacy global
+                    record = await _store_get(
+                        store, thread_id,
+                        ns=user_threads_namespace(str(auth.user.id)),
+                    )
+                    if record is None:
+                        record = await _store_get(store, thread_id)
+                    if record is None:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Thread {thread_id} not found",
+                        )
+                    owner_id = record.get("metadata", {}).get(owner_filter_key)
+                    if owner_id and owner_id != str(auth.user.id):
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Thread {thread_id} not found",
+                        )
+                    # Inject record if requested
+                    if inject_record:
+                        kwargs["thread_record"] = record
 
             return await func(*args, **kwargs)
 

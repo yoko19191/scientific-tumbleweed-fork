@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Self
@@ -269,6 +270,7 @@ _app_config_mtime: float | None = None
 _app_config_is_custom = False
 _current_app_config: ContextVar[AppConfig | None] = ContextVar("deerflow_current_app_config", default=None)
 _current_app_config_stack: ContextVar[tuple[AppConfig | None, ...]] = ContextVar("deerflow_current_app_config_stack", default=())
+_app_config_lock = threading.Lock()
 
 
 def _get_config_mtime(config_path: Path) -> float | None:
@@ -305,22 +307,23 @@ def get_app_config() -> AppConfig:
     if runtime_override is not None:
         return runtime_override
 
-    if _app_config is not None and _app_config_is_custom:
+    with _app_config_lock:
+        if _app_config is not None and _app_config_is_custom:
+            return _app_config
+
+        resolved_path = AppConfig.resolve_config_path()
+        current_mtime = _get_config_mtime(resolved_path)
+
+        should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_mtime != current_mtime
+        if should_reload:
+            if _app_config_path == resolved_path and _app_config_mtime is not None and current_mtime is not None and _app_config_mtime != current_mtime:
+                logger.info(
+                    "Config file has been modified (mtime: %s -> %s), reloading AppConfig",
+                    _app_config_mtime,
+                    current_mtime,
+                )
+            _load_and_cache_app_config(str(resolved_path))
         return _app_config
-
-    resolved_path = AppConfig.resolve_config_path()
-    current_mtime = _get_config_mtime(resolved_path)
-
-    should_reload = _app_config is None or _app_config_path != resolved_path or _app_config_mtime != current_mtime
-    if should_reload:
-        if _app_config_path == resolved_path and _app_config_mtime is not None and current_mtime is not None and _app_config_mtime != current_mtime:
-            logger.info(
-                "Config file has been modified (mtime: %s -> %s), reloading AppConfig",
-                _app_config_mtime,
-                current_mtime,
-            )
-        _load_and_cache_app_config(str(resolved_path))
-    return _app_config
 
 
 def reload_app_config(config_path: str | None = None) -> AppConfig:

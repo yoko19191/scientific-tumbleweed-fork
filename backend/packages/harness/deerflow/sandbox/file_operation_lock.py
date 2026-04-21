@@ -1,12 +1,9 @@
 import threading
-import weakref
 
 from deerflow.sandbox.sandbox import Sandbox
 
-# Use WeakValueDictionary to prevent memory leak in long-running processes.
-# Locks are automatically removed when no longer referenced by any thread.
 _LockKey = tuple[str, str]
-_FILE_OPERATION_LOCKS: weakref.WeakValueDictionary[_LockKey, threading.Lock] = weakref.WeakValueDictionary()
+_FILE_OPERATION_LOCKS: dict[_LockKey, threading.Lock] = {}
 _FILE_OPERATION_LOCKS_GUARD = threading.Lock()
 
 

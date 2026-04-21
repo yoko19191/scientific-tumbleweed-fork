@@ -165,6 +165,12 @@ class MemoryUpdateQueue:
 
         self._process_queue()
 
+        # Process any items that were added during the flush
+        with self._lock:
+            has_remaining = bool(self._queue)
+        if has_remaining:
+            self._process_queue()
+
     def clear(self) -> None:
         """Clear the queue without processing.
 

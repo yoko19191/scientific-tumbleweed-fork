@@ -53,6 +53,13 @@ async def stateless_stream(body: RunCreateRequest, request: Request) -> Streamin
     else:
         # Auto-generate a new thread and bind it to the authenticated user
         thread_id = str(uuid.uuid4())
+        # Ensure auth state is populated before reading user_id
+        from app.gateway.authz import _authenticate
+        if not getattr(request.state, "auth", None):
+            try:
+                request.state.auth = await _authenticate(request)
+            except Exception:
+                pass
         user_id = get_optional_user_id(request)
         if store is not None and user_id is not None:
             try:
@@ -93,6 +100,13 @@ async def stateless_wait(body: RunCreateRequest, request: Request) -> dict:
         thread_id = str(caller_thread_id)
     else:
         thread_id = str(uuid.uuid4())
+        # Ensure auth state is populated before reading user_id
+        from app.gateway.authz import _authenticate
+        if not getattr(request.state, "auth", None):
+            try:
+                request.state.auth = await _authenticate(request)
+            except Exception:
+                pass
         user_id = get_optional_user_id(request)
         if store is not None and user_id is not None:
             try:

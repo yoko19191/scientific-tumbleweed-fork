@@ -69,18 +69,7 @@ class SandboxMiddleware(AgentMiddleware[SandboxMiddlewareState]):
 
     @override
     def after_agent(self, state: SandboxMiddlewareState, runtime: Runtime) -> dict | None:
-        sandbox = state.get("sandbox")
-        if sandbox is not None:
-            sandbox_id = sandbox["sandbox_id"]
-            logger.info(f"Releasing sandbox {sandbox_id}")
-            get_sandbox_provider().release(sandbox_id)
-            return None
-
-        if (runtime.context or {}).get("sandbox_id") is not None:
-            sandbox_id = runtime.context.get("sandbox_id")
-            logger.info(f"Releasing sandbox {sandbox_id} from context")
-            get_sandbox_provider().release(sandbox_id)
-            return None
-
-        # No sandbox to release
+        # Sandbox is NOT released after each agent call to avoid wasteful
+        # recreation — cleanup happens at application shutdown via
+        # SandboxProvider.shutdown(). See class docstring.
         return super().after_agent(state, runtime)

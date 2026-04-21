@@ -1,7 +1,7 @@
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
@@ -48,11 +48,12 @@ function normalizeStoredRunId(runId: string | null): string | null {
     return null;
   }
 
+  // Extract from query parameters
   const queryIndex = trimmed.indexOf("?");
   if (queryIndex >= 0) {
     const params = new URLSearchParams(trimmed.slice(queryIndex + 1));
     const queryRunId = params.get("run_id")?.trim();
-    if (queryRunId) {
+    if (queryRunId && isValidRunId(queryRunId)) {
       return queryRunId;
     }
   }
@@ -62,6 +63,7 @@ function normalizeStoredRunId(runId: string | null): string | null {
     return null;
   }
 
+  // Extract from /runs/{id} path pattern
   const runsMarker = "/runs/";
   const runsIndex = pathWithoutQueryOrHash.lastIndexOf(runsMarker);
   if (runsIndex >= 0) {
@@ -69,17 +71,27 @@ function normalizeStoredRunId(runId: string | null): string | null {
       .slice(runsIndex + runsMarker.length)
       .split("/", 1)[0]
       ?.trim();
-    if (runIdAfterMarker) {
+    if (runIdAfterMarker && isValidRunId(runIdAfterMarker)) {
       return runIdAfterMarker;
     }
     return null;
   }
 
+  // Last path segment as fallback
   const segments = pathWithoutQueryOrHash
     .split("/")
     .map((segment) => segment.trim())
     .filter(Boolean);
-  return segments.at(-1) ?? null;
+  const lastSegment = segments.at(-1) ?? null;
+  if (lastSegment && isValidRunId(lastSegment)) {
+    return lastSegment;
+  }
+  return null;
+}
+
+/** Validate that a string looks like a UUID run ID. */
+function isValidRunId(id: string): boolean {
+  return /^[a-f0-9-]{8,}$/i.test(id);
 }
 
 // Prefix for sessionStorage keys scoped to a specific user.
@@ -214,7 +226,8 @@ export function useThreadStream({
   );
 
   const queryClient = useQueryClient();
-  const updateSubtask = useUpdateSubtask();
+  const updateSubtaskRef = useRef(useUpdateSubtask());
+  updateSubtaskRef.current = useUpdateSubtask();
   const runMetadataStorageRef = useRef<
     ReturnType<typeof getRunMetadataStorage> | undefined
   >(undefined);
@@ -225,6 +238,18 @@ export function useThreadStream({
   ) {
     runMetadataStorageRef.current = getRunMetadataStorage(userId);
   }
+
+  // Memoize context to prevent unnecessary re-renders of useStream
+  const stableContext = useMemo(
+    () => context,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      context.model_name,
+      context.mode,
+      context.reasoning_effort,
+      context.agent_name,
+    ],
+  );
 
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
@@ -301,7 +326,7 @@ export function useThreadStream({
           task_id: string;
           message: AIMessage;
         };
-        updateSubtask({ id: e.task_id, latestMessage: e.message });
+        updateSubtaskRef.current({ id: e.task_id, latestMessage: e.message });
         return;
       }
 
@@ -367,6 +392,10 @@ export function useThreadStream({
       }
       sendInFlightRef.current = true;
 
+      // Abort controller to cancel uploads if the component unmounts or
+      // a new send is triggered before the previous one completes.
+      const abortController = new AbortController();
+
       const text = message.text.trim();
 
       // Capture current count before showing optimistic messages
@@ -422,6 +451,8 @@ export function useThreadStream({
         if (message.files && message.files.length > 0) {
           setIsUploading(true);
           try {
+            if (abortController.signal.aborted) throw new Error("Cancelled");
+
             const filePromises = message.files.map((fileUIPart) =>
               promptInputFilePartToFile(fileUIPart),
             );
@@ -441,6 +472,8 @@ export function useThreadStream({
             if (!threadId) {
               throw new Error("Thread is not ready for file upload.");
             }
+
+            if (abortController.signal.aborted) throw new Error("Cancelled");
 
             if (files.length > 0) {
               const uploadResponse = await uploadFiles(threadId, files);
@@ -547,7 +580,8 @@ export function useThreadStream({
         sendInFlightRef.current = false;
       }
     },
-    [thread, _handleOnStart, t.uploads.uploadingFiles, context, queryClient],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [thread, _handleOnStart, t.uploads.uploadingFiles, stableContext, queryClient],
   );
 
   // Merge thread with optimistic messages for display

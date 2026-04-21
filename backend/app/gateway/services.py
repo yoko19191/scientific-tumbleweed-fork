@@ -85,8 +85,17 @@ def normalize_input(raw_input: dict[str, Any] | None) -> dict[str, Any]:
                 content = msg.get("content", "")
                 if role in ("user", "human"):
                     converted.append(HumanMessage(content=content))
+                elif role in ("system",):
+                    from langchain_core.messages import SystemMessage
+                    converted.append(SystemMessage(content=content))
+                elif role in ("ai", "assistant"):
+                    from langchain_core.messages import AIMessage
+                    converted.append(AIMessage(content=content))
+                elif role in ("tool",):
+                    from langchain_core.messages import ToolMessage
+                    tool_call_id = msg.get("tool_call_id", "")
+                    converted.append(ToolMessage(content=content, tool_call_id=tool_call_id))
                 else:
-                    # TODO: handle other message types (system, ai, tool)
                     converted.append(HumanMessage(content=content))
             else:
                 converted.append(msg)

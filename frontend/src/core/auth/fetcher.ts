@@ -36,11 +36,20 @@ export async function fetchWithAuth(
     }
   }
 
-  return fetch(url, {
+  const response = await fetch(url, {
     ...init,
     headers,
     credentials: "include",
   });
+
+  if (response.status === 401 && typeof window !== "undefined") {
+    const isAuthEndpoint = url.includes("/auth/me") || url.includes("/auth/login");
+    if (!isAuthEndpoint) {
+      window.location.href = "/login";
+    }
+  }
+
+  return response;
 }
 
 /**
@@ -49,7 +58,7 @@ export async function fetchWithAuth(
  */
 export function getCsrfToken(): string | null {
   if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  const match = /(?:^|;\s*)csrf_token=([^;]*)/.exec(document.cookie);
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 

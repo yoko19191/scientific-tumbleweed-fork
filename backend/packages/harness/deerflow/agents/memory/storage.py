@@ -65,6 +65,7 @@ class FileMemoryStorage(MemoryStorage):
         # Memory cache: keyed by user_id (None = global)
         # Value: (memory_data, file_mtime)
         self._memory_cache: dict[str | None, tuple[dict[str, Any], float | None]] = {}
+        self._lock = threading.Lock()
 
     def _get_memory_file_path(self, user_id: str | None = None) -> Path:
         """Get the path to the memory file.
@@ -106,14 +107,15 @@ class FileMemoryStorage(MemoryStorage):
         except OSError:
             current_mtime = None
 
-        cached = self._memory_cache.get(user_id)
+        with self._lock:
+            cached = self._memory_cache.get(user_id)
 
-        if cached is None or cached[1] != current_mtime:
-            memory_data = self._load_memory_from_file(user_id)
-            self._memory_cache[user_id] = (memory_data, current_mtime)
-            return memory_data
+            if cached is None or cached[1] != current_mtime:
+                memory_data = self._load_memory_from_file(user_id)
+                self._memory_cache[user_id] = (memory_data, current_mtime)
+                return memory_data
 
-        return cached[0]
+            return cached[0]
 
     def reload(self, user_id: str | None = None) -> dict[str, Any]:
         """Reload memory data from file, forcing cache invalidation."""
@@ -125,7 +127,8 @@ class FileMemoryStorage(MemoryStorage):
         except OSError:
             mtime = None
 
-        self._memory_cache[user_id] = (memory_data, mtime)
+        with self._lock:
+            self._memory_cache[user_id] = (memory_data, mtime)
         return memory_data
 
     def save(self, memory_data: dict[str, Any], user_id: str | None = None) -> bool:
@@ -147,7 +150,8 @@ class FileMemoryStorage(MemoryStorage):
             except OSError:
                 mtime = None
 
-            self._memory_cache[user_id] = (memory_data, mtime)
+            with self._lock:
+                self._memory_cache[user_id] = (memory_data, mtime)
             logger.info("Memory saved to %s", file_path)
             return True
         except OSError as e:

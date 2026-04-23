@@ -28,6 +28,7 @@ def _reset_subagents_config(
     timeout_seconds: int = 900,
     *,
     max_turns: int | None = None,
+    model: str | None = None,
     agents: dict | None = None,
 ) -> None:
     """Reset global subagents config to a known state."""
@@ -35,6 +36,7 @@ def _reset_subagents_config(
         {
             "timeout_seconds": timeout_seconds,
             "max_turns": max_turns,
+            "model": model,
             "agents": agents or {},
         }
     )
@@ -50,6 +52,7 @@ class TestSubagentOverrideConfig:
         override = SubagentOverrideConfig()
         assert override.timeout_seconds is None
         assert override.max_turns is None
+        assert override.model is None
 
     def test_explicit_value(self):
         override = SubagentOverrideConfig(timeout_seconds=300, max_turns=42)
@@ -73,6 +76,16 @@ class TestSubagentOverrideConfig:
         assert override.timeout_seconds == 1
         assert override.max_turns == 1
 
+    def test_model_explicit_value(self):
+        override = SubagentOverrideConfig(model="gpt-4")
+        assert override.model == "gpt-4"
+
+    def test_model_with_other_fields(self):
+        override = SubagentOverrideConfig(timeout_seconds=300, max_turns=42, model="claude-sonnet-4-20250514")
+        assert override.timeout_seconds == 300
+        assert override.max_turns == 42
+        assert override.model == "claude-sonnet-4-20250514"
+
 
 # ---------------------------------------------------------------------------
 # SubagentsAppConfig – defaults and validation
@@ -91,6 +104,10 @@ class TestSubagentsAppConfigDefaults:
     def test_default_agents_empty(self):
         config = SubagentsAppConfig()
         assert config.agents == {}
+
+    def test_default_model_is_none(self):
+        config = SubagentsAppConfig()
+        assert config.model is None
 
     def test_custom_global_runtime_overrides(self):
         config = SubagentsAppConfig(timeout_seconds=1800, max_turns=120)
@@ -167,6 +184,44 @@ class TestRuntimeResolution:
 
 
 # ---------------------------------------------------------------------------
+# SubagentsAppConfig – model resolution
+# ---------------------------------------------------------------------------
+
+
+class TestModelResolution:
+    def test_returns_builtin_default_when_no_override(self):
+        config = SubagentsAppConfig()
+        assert config.get_model_for("general-purpose", "inherit") == "inherit"
+        assert config.get_model_for("bash", "inherit") == "inherit"
+
+    def test_returns_global_model_when_set(self):
+        config = SubagentsAppConfig(model="gpt-4")
+        assert config.get_model_for("general-purpose", "inherit") == "gpt-4"
+        assert config.get_model_for("bash", "inherit") == "gpt-4"
+
+    def test_per_agent_model_overrides_global(self):
+        config = SubagentsAppConfig(
+            model="gpt-4",
+            agents={"bash": SubagentOverrideConfig(model="claude-sonnet-4-20250514")},
+        )
+        assert config.get_model_for("bash", "inherit") == "claude-sonnet-4-20250514"
+        assert config.get_model_for("general-purpose", "inherit") == "gpt-4"
+
+    def test_per_agent_none_falls_back_to_global(self):
+        config = SubagentsAppConfig(
+            model="gpt-4",
+            agents={"bash": SubagentOverrideConfig(model=None)},
+        )
+        assert config.get_model_for("bash", "inherit") == "gpt-4"
+
+    def test_no_global_no_per_agent_returns_builtin(self):
+        config = SubagentsAppConfig(
+            agents={"bash": SubagentOverrideConfig(timeout_seconds=300)},
+        )
+        assert config.get_model_for("bash", "inherit") == "inherit"
+
+
+# ---------------------------------------------------------------------------
 # load_subagents_config_from_dict / get_subagents_app_config singleton
 # ---------------------------------------------------------------------------
 
@@ -230,6 +285,21 @@ class TestLoadSubagentsConfig:
     def test_singleton_returns_same_instance_between_calls(self):
         load_subagents_config_from_dict({"timeout_seconds": 777, "max_turns": 123})
         assert get_subagents_app_config() is get_subagents_app_config()
+
+    def test_load_with_model_overrides(self):
+        load_subagents_config_from_dict(
+            {
+                "timeout_seconds": 900,
+                "model": "gpt-4",
+                "agents": {
+                    "bash": {"model": "claude-sonnet-4-20250514"},
+                },
+            }
+        )
+        cfg = get_subagents_app_config()
+        assert cfg.model == "gpt-4"
+        assert cfg.get_model_for("bash", "inherit") == "claude-sonnet-4-20250514"
+        assert cfg.get_model_for("general-purpose", "inherit") == "gpt-4"
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +396,44 @@ class TestRegistryGetSubagentConfig:
         assert overridden.model == original.model
         assert overridden.tools == original.tools
         assert overridden.disallowed_tools == original.disallowed_tools
+
+    def test_global_model_override_applied(self):
+        from deerflow.subagents.registry import get_subagent_config
+
+        _reset_subagents_config(model="gpt-4")
+        config = get_subagent_config("general-purpose")
+        assert config.model == "gpt-4"
+
+    def test_per_agent_model_override_applied(self):
+        from deerflow.subagents.registry import get_subagent_config
+
+        load_subagents_config_from_dict(
+            {
+                "timeout_seconds": 900,
+                "agents": {"bash": {"model": "claude-sonnet-4-20250514"}},
+            }
+        )
+        bash_config = get_subagent_config("bash")
+        assert bash_config.model == "claude-sonnet-4-20250514"
+
+    def test_model_override_does_not_affect_other_agents(self):
+        from deerflow.subagents.registry import get_subagent_config
+
+        load_subagents_config_from_dict(
+            {
+                "timeout_seconds": 900,
+                "agents": {"bash": {"model": "claude-sonnet-4-20250514"}},
+            }
+        )
+        gp_config = get_subagent_config("general-purpose")
+        assert gp_config.model == "inherit"
+
+    def test_no_model_override_preserves_builtin(self):
+        from deerflow.subagents.registry import get_subagent_config
+
+        _reset_subagents_config(timeout_seconds=900)
+        config = get_subagent_config("general-purpose")
+        assert config.model == "inherit"
 
 
 # ---------------------------------------------------------------------------

@@ -111,7 +111,9 @@
       "Bash(PYTHONPATH=. uv run pytest tests/ --ignore=tests/test_feishu_parser.py --ignore=tests/test_channels.py --ignore=tests/test_client.py -q)",
       "Bash(PYTHONPATH=. uv run *)",
       "Bash(grep -E \"\\\\.\\(py|json|yaml|yml|txt|md\\)$\")",
-      "Bash(grep -E \"\\\\.\\(py|toml|txt|yaml|yml\\)$\")"
+      "Bash(grep -E \"\\\\.\\(py|toml|txt|yaml|yml\\)$\")",
+      "Bash(uvx ruff *)",
+      "Bash(PYTHONPATH=. python3 *)"
     ]
   }
 }

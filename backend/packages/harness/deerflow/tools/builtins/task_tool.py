@@ -37,8 +37,16 @@ async def task_tool(
 
     Available subagent types depend on the active sandbox configuration:
     - **general-purpose**: A capable agent for complex, multi-step tasks that require
-      both exploration and action. Use when the task requires complex reasoning,
-      multiple dependent steps, or would benefit from isolated context.
+      both exploration and action. Use for complex reasoning, literature synthesis,
+      data analysis, research execution, or multi-step implementation.
+    - **explore**: A fast, read-only exploration and research specialist. Use for
+      codebase exploration, literature survey, background research, or source comparison.
+      Cannot modify any files.
+    - **plan**: A read-only planning and research design specialist. Use for
+      implementation plans, experimental design, hypothesis decomposition, or
+      architectural decisions. Cannot modify any files.
+    - **verification**: An adversarial verification specialist. Use for code testing,
+      statistical review, research claim verification, or reproducibility checks.
     - **bash**: Command execution specialist for running bash commands. This is only
       available when host bash is explicitly allowed or when using an isolated shell
       sandbox such as `AioSandboxProvider`.

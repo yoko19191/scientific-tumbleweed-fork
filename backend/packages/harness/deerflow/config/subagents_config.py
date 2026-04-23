@@ -20,6 +20,10 @@ class SubagentOverrideConfig(BaseModel):
         ge=1,
         description="Maximum turns for this subagent (None = use global or builtin default)",
     )
+    model: str | None = Field(
+        default=None,
+        description="Model name override for this subagent (None = use global or builtin default)",
+    )
 
 
 class SubagentsAppConfig(BaseModel):
@@ -34,6 +38,10 @@ class SubagentsAppConfig(BaseModel):
         default=None,
         ge=1,
         description="Optional default max-turn override for all subagents (None = keep builtin defaults)",
+    )
+    model: str | None = Field(
+        default=None,
+        description="Optional default model override for all subagents (None = keep builtin defaults)",
     )
     agents: dict[str, SubagentOverrideConfig] = Field(
         default_factory=dict,
@@ -63,6 +71,18 @@ class SubagentsAppConfig(BaseModel):
             return self.max_turns
         return builtin_default
 
+    def get_model_for(self, agent_name: str, builtin_default: str) -> str:
+        """Get the effective model for a specific agent.
+
+        Resolution priority: per-agent override > global subagents model > builtin default.
+        """
+        override = self.agents.get(agent_name)
+        if override is not None and override.model is not None:
+            return override.model
+        if self.model is not None:
+            return self.model
+        return builtin_default
+
 
 _subagents_config: SubagentsAppConfig = SubagentsAppConfig()
 
@@ -84,19 +104,23 @@ def load_subagents_config_from_dict(config_dict: dict) -> None:
             parts.append(f"timeout={override.timeout_seconds}s")
         if override.max_turns is not None:
             parts.append(f"max_turns={override.max_turns}")
+        if override.model is not None:
+            parts.append(f"model={override.model}")
         if parts:
             overrides_summary[name] = ", ".join(parts)
 
     if overrides_summary:
         logger.info(
-            "Subagents config loaded: default timeout=%ss, default max_turns=%s, per-agent overrides=%s",
+            "Subagents config loaded: default timeout=%ss, default max_turns=%s, default model=%s, per-agent overrides=%s",
             _subagents_config.timeout_seconds,
             _subagents_config.max_turns,
+            _subagents_config.model,
             overrides_summary,
         )
     else:
         logger.info(
-            "Subagents config loaded: default timeout=%ss, default max_turns=%s, no per-agent overrides",
+            "Subagents config loaded: default timeout=%ss, default max_turns=%s, default model=%s, no per-agent overrides",
             _subagents_config.timeout_seconds,
             _subagents_config.max_turns,
+            _subagents_config.model,
         )

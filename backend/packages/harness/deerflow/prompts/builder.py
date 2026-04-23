@@ -20,7 +20,6 @@ from deerflow.prompts.sections import (
     DEFAULT_AGENT_NAME,
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
     actions_section,
-    code_citing_section,
     collaboration_mechanics_section,
     conversation_craft_section,
     environment_section,
@@ -28,8 +27,8 @@ from deerflow.prompts.sections import (
     intro_section,
     linter_section,
     making_code_changes_section,
-    output_efficiency_section,
     platform_persona_section,
+    scientific_method_section,
     session_guidance_section,
     system_rules_section,
     task_philosophy_section,
@@ -142,6 +141,7 @@ class SystemPromptBuilder:
         sections.append(platform_persona_section(self._agent_name))
         sections.append(conversation_craft_section())
         sections.append(collaboration_mechanics_section())
+        sections.append(scientific_method_section())
         sections.append(system_rules_section())
         sections.append(task_philosophy_section())
         sections.append(actions_section())
@@ -150,8 +150,6 @@ class SystemPromptBuilder:
         sections.append(making_code_changes_section())
         sections.append(linter_section())
         sections.append(tone_style_section())
-        sections.append(output_efficiency_section())
-        sections.append(code_citing_section())
         for extra in self._extra_static:
             sections.append(extra)
 

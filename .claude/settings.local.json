@@ -98,7 +98,20 @@
       "Bash(docker exec:*)",
       "Bash(docker restart:*)",
       "mcp__chrome-devtools__new_page",
-      "Bash(docker rm:*)"
+      "Bash(docker rm:*)",
+      "Bash(find:*)",
+      "Bash(grep -rn \"class.*Middleware\" backend/packages/harness/deerflow/agents/middlewares/*.py)",
+      "Bash(pip show:*)",
+      "Bash(PYTHONPATH=. uv run pytest tests/ -k \"csrf\" -v)",
+      "Bash(grep -E \"app/gateway|app\\\\.py$\")",
+      "Bash(PYTHONPATH=. uv run pytest tests/test_thread_ownership.py tests/test_threads_router.py -v --timeout=30)",
+      "Bash(PYTHONPATH=. uv run pytest tests/test_thread_ownership.py tests/test_threads_router.py -v)",
+      "Bash(PYTHONPATH=. uv run pytest tests/ --ignore=tests/test_feishu_parser.py -x -q)",
+      "Bash(PYTHONPATH=. uv run pytest tests/ --ignore=tests/test_feishu_parser.py --ignore=tests/test_channels.py -x -q)",
+      "Bash(PYTHONPATH=. uv run pytest tests/ --ignore=tests/test_feishu_parser.py --ignore=tests/test_channels.py --ignore=tests/test_client.py -q)",
+      "Bash(PYTHONPATH=. uv run *)",
+      "Bash(grep -E \"\\\\.\\(py|json|yaml|yml|txt|md\\)$\")",
+      "Bash(grep -E \"\\\\.\\(py|toml|txt|yaml|yml\\)$\")"
     ]
   }
 }

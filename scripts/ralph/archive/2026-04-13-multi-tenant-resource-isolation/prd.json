@@ -1,5 +1,5 @@
 {
-  "project": "DeerFlow Multi-Tenant Resource Isolation",
+  "project": "Scientific Tumbleweed Multi-Tenant Resource Isolation",
   "branchName": "ralph/multi-tenant-resource-isolation",
   "description": "Extend per-user filesystem isolation to uploads, artifacts, thread directories, MCP config, and fix minor user_id leaks in memory/status and assistants_compat.",
   "userStories": [

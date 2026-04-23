@@ -1,4 +1,4 @@
-"""Authentication configuration for DeerFlow."""
+"""Authentication configuration for Scientific Tumbleweed."""
 
 import logging
 import os

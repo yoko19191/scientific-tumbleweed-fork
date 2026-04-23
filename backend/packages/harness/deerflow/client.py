@@ -1,6 +1,6 @@
-"""DeerFlowClient — Embedded Python client for DeerFlow agent system.
+"""DeerFlowClient — Embedded Python client for Scientific Tumbleweed agent system.
 
-Provides direct programmatic access to DeerFlow's agent capabilities
+Provides direct programmatic access to Scientific Tumbleweed's agent capabilities
 without requiring LangGraph Server or Gateway API processes.
 
 Usage:
@@ -77,9 +77,9 @@ class StreamEvent:
 
 
 class DeerFlowClient:
-    """Embedded Python client for DeerFlow agent system.
+    """Embedded Python client for Scientific Tumbleweed agent system.
 
-    Provides direct programmatic access to DeerFlow's agent capabilities
+    Provides direct programmatic access to Scientific Tumbleweed's agent capabilities
     without requiring LangGraph Server or Gateway API processes.
 
     Note:

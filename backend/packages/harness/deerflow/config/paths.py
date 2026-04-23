@@ -18,7 +18,7 @@ def _validate_user_id(user_id: str) -> str:
 
 
 def _default_local_base_dir() -> Path:
-    """Return the repo-local DeerFlow state directory without relying on cwd."""
+    """Return the repo-local Scientific Tumbleweed state directory without relying on cwd."""
     backend_dir = Path(__file__).resolve().parents[4]
     return backend_dir / ".deer-flow"
 
@@ -60,7 +60,7 @@ def join_host_path(base: str, *parts: str) -> str:
 
 class Paths:
     """
-    Centralized path configuration for DeerFlow application data.
+    Centralized path configuration for Scientific Tumbleweed application data.
 
     Directory layout (host side):
         {base_dir}/

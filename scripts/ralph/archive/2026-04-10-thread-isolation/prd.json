@@ -1,5 +1,5 @@
 {
-  "project": "DeerFlow Thread Isolation",
+  "project": "Scientific Tumbleweed Thread Isolation",
   "branchName": "ralph/thread-isolation",
   "description": "Multi-tenant thread isolation via Gateway mapping layer + user info/logout UI in sidebar",
   "userStories": [

@@ -101,11 +101,11 @@ def create_app() -> FastAPI:
     """
 
     app = FastAPI(
-        title="DeerFlow API Gateway",
+        title="Scientific Tumbleweed API Gateway",
         description="""
-## DeerFlow API Gateway
+## Scientific Tumbleweed API Gateway
 
-API Gateway for DeerFlow - A LangGraph-based AI agent backend with sandbox execution capabilities.
+API Gateway for Scientific Tumbleweed - A LangGraph-based AI agent backend with sandbox execution capabilities.
 
 ### Features
 
@@ -153,7 +153,7 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
             },
             {
                 "name": "threads",
-                "description": "Manage DeerFlow thread-local filesystem data",
+                "description": "Manage Scientific Tumbleweed thread-local filesystem data",
             },
             {
                 "name": "agents",

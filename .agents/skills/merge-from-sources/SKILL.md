@@ -1,6 +1,6 @@
 ---
 name: merge-from-sources
-description: Plan demand-driven synchronization from DeerFlow upstream/main and AntFlow into this repository's customized main branch. Use when the user wants to decide which new DeerFlow or AntFlow features/fixes should be brought into main, compare source/deerflow or source/antflow with main, account for docs/merge history and manual ports, estimate conflict risk, or prepare a /prd prompt for Ralph Loop to implement the selected sync.
+description: Plan demand-driven synchronization from Scientific Tumbleweed upstream/main and AntFlow into this repository's customized main branch. Use when the user wants to decide which new Scientific Tumbleweed or AntFlow features/fixes should be brought into main, compare source/deerflow or source/antflow with main, account for docs/merge history and manual ports, estimate conflict risk, or prepare a /prd prompt for Ralph Loop to implement the selected sync.
 ---
 
 # Merge From Sources
@@ -8,12 +8,12 @@ description: Plan demand-driven synchronization from DeerFlow upstream/main and 
 Use this skill for this repository's two-source customization workflow:
 
 - `main` is the customized product branch.
-- `source/deerflow` is the clean DeerFlow source line, tracking `upstream/main` from `bytedance/deer-flow`.
+- `source/deerflow` is the clean Scientific Tumbleweed source line, tracking `upstream/main` from `bytedance/deer-flow`.
 - `source/antflow` is the clean AntFlow source line, tracking `antflow/main`.
-- The user wants to selectively bring new DeerFlow or AntFlow features, fixes, architecture changes, or security updates into `main`.
+- The user wants to selectively bring new Scientific Tumbleweed or AntFlow features, fixes, architecture changes, or security updates into `main`.
 - Ralph Loop may perform the final implementation after a PRD is prepared.
 
-This skill is not a generic "keep my fork up to date" workflow. Its job is to help decide what to synchronize from DeerFlow and AntFlow according to the customized product's needs, then produce a precise plan or `/prd` prompt.
+This skill is not a generic "keep my fork up to date" workflow. Its job is to help decide what to synchronize from Scientific Tumbleweed and AntFlow according to the customized product's needs, then produce a precise plan or `/prd` prompt.
 
 ## Default stance
 
@@ -22,8 +22,8 @@ Prefer planning before merging:
 - Reply in the same language the user used for the merge request, including discussion, recommendations, and the `/prd` trigger text unless the user asks otherwise.
 - Inspect first, discuss second, merge later.
 - Treat `source/*` as read-only source references.
-- Treat `source/deerflow` and `source/antflow` as independent sources with different roles; DeerFlow is usually the primary upstream baseline, while AntFlow may be a feature or architecture source.
-- Treat remote-tracking refs as the freshness authority: DeerFlow is `upstream/main`; AntFlow is `antflow/main`. Local `source/*` branches are convenient mirrors and may be stale.
+- Treat `source/deerflow` and `source/antflow` as independent sources with different roles; Scientific Tumbleweed is usually the primary upstream baseline, while AntFlow may be a feature or architecture source.
+- Treat remote-tracking refs as the freshness authority: Scientific Tumbleweed is `upstream/main`; AntFlow is `antflow/main`. Local `source/*` branches are convenient mirrors and may be stale.
 - Keep `main` as the customized product line.
 - Use merge commits for long-lived integration work.
 - Do not rebase `main` or `source/*`.
@@ -34,7 +34,7 @@ Prefer planning before merging:
 
 ## Global merge strategy
 
-Default classification when deciding how to apply upstream changes into `main` (applies to DeerFlow and AntFlow unless the user overrides):
+Default classification when deciding how to apply upstream changes into `main` (applies to Scientific Tumbleweed and AntFlow unless the user overrides):
 
 - **安全修复 / bug fix** → 直接应用（apply as-is).
 - **新功能（不与 custom 冲突）** → 直接应用（apply as-is).
@@ -77,7 +77,7 @@ main
   Customized product branch.
 
 source/deerflow
-  Clean DeerFlow source branch, usually tracking upstream/main.
+  Clean Scientific Tumbleweed source branch, usually tracking upstream/main.
 
 source/antflow
   Clean AntFlow source branch, usually tracking antflow/main.
@@ -99,8 +99,8 @@ Adapt names if the repository already uses a clearly equivalent convention.
 Use these refs unless the user specifies otherwise:
 
 ```text
-DeerFlow source branch: source/deerflow
-DeerFlow freshness ref: upstream/main
+Scientific Tumbleweed source branch: source/deerflow
+Scientific Tumbleweed freshness ref: upstream/main
 
 AntFlow source branch: source/antflow
 AntFlow freshness ref: antflow/main
@@ -127,7 +127,7 @@ If the second number is greater than zero, the local `source/*` mirror is stale.
 
 Before discovery, decide which ref represents the source:
 
-- Use `upstream/main` for latest DeerFlow analysis.
+- Use `upstream/main` for latest Scientific Tumbleweed analysis.
 - Use `antflow/main` for latest AntFlow analysis.
 - Use `source/deerflow` or `source/antflow` only when they are confirmed equal to the remote-tracking ref or when the user explicitly wants the local mirror state.
 

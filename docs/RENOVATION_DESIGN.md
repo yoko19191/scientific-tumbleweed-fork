@@ -1,8 +1,8 @@
-# DeerFlow 深度改造设计文档 —— 引入 Claude Code 先进架构
+# 科学风滚草深度改造设计文档 —— 引入 Claude Code 先进架构
 
 ## 一、改造背景
 
-本次改造基于对 Claude Code 泄露源码（claw-code 项目）和《Claude Code 源码深度研究报告》的系统分析，将 Claude Code 中被验证有效的 Agent Operating System 级设计引入 DeerFlow。
+本次改造基于对 Claude Code 泄露源码（claw-code 项目）和《Claude Code 源码深度研究报告》的系统分析，将 Claude Code 中被验证有效的 Agent Operating System 级设计引入科学风滚草。
 
 Claude Code 的真正优势不是一段 system prompt，而是一整套把 prompt architecture、tool runtime governance、permission model、agent orchestration、skill packaging、plugin system、hooks governance、MCP integration、context hygiene 和 product engineering 全部统一起来的系统。
 

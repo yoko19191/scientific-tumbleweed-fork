@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This document lists common issues encountered during DeerFlow smoke testing and how to resolve them.
+This document lists common issues encountered during Scientific Tumbleweed smoke testing and how to resolve them.
 
 ## Code Update Issues
 
@@ -160,7 +160,7 @@ Error: listen EADDRINUSE: address already in use :::2026
    taskkill /PID <PID> /F  # Windows
    ```
 
-3. Or stop DeerFlow services first:
+3. Or stop Scientific Tumbleweed services first:
    ```bash
    make stop
    ```
@@ -587,7 +587,7 @@ docker stats
 docker exec -it deer-flow-gateway sh
 ```
 
-#### Clean Up All DeerFlow-Related Containers and Images
+#### Clean Up All Scientific Tumbleweed-Related Containers and Images
 ```bash
 make docker-stop
 cd docker && docker compose -p deer-flow-dev -f docker-compose-dev.yaml down -v

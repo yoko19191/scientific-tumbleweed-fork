@@ -1,10 +1,10 @@
-# DeerFlow 深度改造全面总结
+# 科学风滚草深度改造全面总结
 
 ## 一、项目概述
 
 ### 1.1 改造目标
 
-将 Claude Code（泄露源码经 claw-code 项目重构）中被验证有效的 **Agent Operating System** 级设计引入 DeerFlow 2.0，使其从一个"agent harness"升级为具备完整治理能力的 agent 操作系统。
+将 Claude Code（泄露源码经 claw-code 项目重构）中被验证有效的 **Agent Operating System** 级设计引入科学风滚草，使其从一个"agent harness"升级为具备完整治理能力的 agent 操作系统。
 
 ### 1.2 参考来源
 
@@ -173,7 +173,7 @@ Permission Check → PreToolUse Hooks → Execute → PostToolUse Hooks → Merg
 
 ```python
 prompt = (
-    SystemPromptBuilder(agent_name="DeerFlow 2.0")
+    SystemPromptBuilder(agent_name="科学风滚草")
     .with_memory(memory_text)
     .with_skills(skills_section)
     .with_environment(cwd="/workspace", date_str="2026-04-01")
@@ -365,7 +365,7 @@ hooks:
 
 ### 5.3 运行时验证
 
-DeerFlow 完整应用（LangGraph + Gateway + Frontend + Nginx）在启用所有新模块后正常启动，Claude Sonnet 4.6 模型正常响应，前端交互正常。
+科学风滚草完整应用（LangGraph + Gateway + Frontend + Nginx）在启用所有新模块后正常启动，Claude Sonnet 4.6 模型正常响应，前端交互正常。
 
 ---
 

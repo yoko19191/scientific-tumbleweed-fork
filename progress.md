@@ -6,3 +6,5 @@
 - Inspected auth middleware/deps/authz and main resource routers.
 - Inspected harness path helpers, memory storage/middleware, custom agent config, skill loader/prompt injection, MCP config, uploads/artifacts, nginx routing, and LangGraph config.
 - Completed analysis summary.
+- Rechecked current code for tenant isolation and view isolation on 2026-04-16.
+- Updated findings: thread/run/upload/artifact/memory isolation is stronger now; agent/skill/MCP/profile and sandbox acquisition remain inconsistent.

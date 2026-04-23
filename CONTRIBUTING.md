@@ -1,6 +1,6 @@
-# Contributing to DeerFlow
+# Contributing to Scientific Tumbleweed
 
-Thank you for your interest in contributing to DeerFlow! This guide will help you set up your development environment and understand our development workflow.
+Thank you for your interest in contributing to Scientific Tumbleweed! This guide will help you set up your development environment and understand our development workflow.
 
 ## Development Environment Setup
 
@@ -83,11 +83,11 @@ Use these as practical starting points for development and review environments:
 
 | Scenario | Starting point | Recommended | Notes |
 |---------|-----------|------------|-------|
-| `make dev` on one machine | 4 vCPU, 8 GB RAM | 8 vCPU, 16 GB RAM | Best when DeerFlow uses hosted model APIs. |
+| `make dev` on one machine | 4 vCPU, 8 GB RAM | 8 vCPU, 16 GB RAM | Best when Scientific Tumbleweed uses hosted model APIs. |
 | `make docker-start` review environment | 4 vCPU, 8 GB RAM | 8 vCPU, 16 GB RAM | Docker image builds and sandbox containers need extra headroom. |
 | Shared Linux test server | 8 vCPU, 16 GB RAM | 16 vCPU, 32 GB RAM | Prefer this for heavier multi-agent runs or multiple reviewers. |
 
-`2 vCPU / 4 GB` environments often fail to start reliably or become unresponsive under normal DeerFlow workloads.
+`2 vCPU / 4 GB` environments often fail to start reliably or become unresponsive under normal Scientific Tumbleweed workloads.
 
 #### Linux: Docker daemon permission denied
 
@@ -115,7 +115,7 @@ Recommended fix: add your current user to the `docker` group so Docker commands 
    ```bash
    docker ps
    ```
-5. Retry the DeerFlow command:
+5. Retry the Scientific Tumbleweed command:
    ```bash
    make docker-stop
    make docker-start
@@ -332,4 +332,4 @@ Every pull request runs the backend regression workflow at [.github/workflows/ba
 
 ## License
 
-By contributing to DeerFlow, you agree that your contributions will be licensed under the [MIT License](./LICENSE).
+By contributing to Scientific Tumbleweed, you agree that your contributions will be licensed under the [MIT License](./LICENSE).

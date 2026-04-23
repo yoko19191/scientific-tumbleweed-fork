@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DeerFlow Audit Hook — logs every tool call to a local file.
+# 科学风滚草 Audit Hook — logs every tool call to a local file.
 # Protocol: stdin=JSON, env=HOOK_EVENT/HOOK_TOOL_NAME/HOOK_TOOL_INPUT
 # exit 0 = allow, exit 2 = deny
 

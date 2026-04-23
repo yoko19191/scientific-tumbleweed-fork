@@ -1,4 +1,4 @@
-"""Authentication module for DeerFlow.
+"""Authentication module for Scientific Tumbleweed.
 
 This module provides:
 - JWT-based authentication

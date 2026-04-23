@@ -345,7 +345,7 @@ async def list_by_user(request: Request) -> list[ThreadResponse]:
 async def delete_thread_data(thread_id: str, request: Request) -> ThreadDeleteResponse:
     """Delete local persisted filesystem data for a thread.
 
-    Cleans DeerFlow-managed thread directories, removes checkpoint data,
+    Cleans Scientific Tumbleweed-managed thread directories, removes checkpoint data,
     removes the thread record from the Store, and removes the ownership
     mapping from thread_owners.  Verifies the caller owns the thread.
     """

@@ -1,10 +1,10 @@
 # Setup Guide
 
-Quick setup instructions for DeerFlow.
+Quick setup instructions for Scientific Tumbleweed.
 
 ## Configuration Setup
 
-DeerFlow uses a YAML configuration file that should be placed in the **project root directory**.
+Scientific Tumbleweed uses a YAML configuration file that should be placed in the **project root directory**.
 
 ### Steps
 

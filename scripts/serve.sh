@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# serve.sh — Unified DeerFlow service launcher
+# serve.sh — Unified Scientific Tumbleweed service launcher
 #
 # Usage:
 #   ./scripts/serve.sh [--dev|--prod] [--gateway] [--daemon] [--stop|--restart]
@@ -167,7 +167,7 @@ if ! { \
         [ -f backend/config.yaml ] || \
         [ -f config.yaml ]; \
     }; then
-    echo "✗ No DeerFlow config file found."
+    echo "✗ No config file found."
     echo "  Run 'make setup' (recommended) or 'make config' to generate config.yaml."
     exit 1
 fi
@@ -210,7 +210,7 @@ sync_frontend_env
 
 echo ""
 echo "=========================================="
-echo "  Starting DeerFlow"
+echo "  Starting Scientific Tumbleweed"
 echo "=========================================="
 echo ""
 echo "  Mode: $MODE_LABEL"
@@ -299,7 +299,7 @@ run_service "Nginx" \
 
 echo ""
 echo "=========================================="
-echo "  ✓ DeerFlow is running!  [$MODE_LABEL]"
+echo "  ✓ Scientific Tumbleweed is running!  [$MODE_LABEL]"
 echo "=========================================="
 echo ""
 echo "  🌐 http://localhost:2026"

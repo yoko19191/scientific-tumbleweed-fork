@@ -1,0 +1,47 @@
+{
+  "academic_defense": {
+    "label": "Academic Defense Template",
+    "summary": "A standard template for academic defenses, research presentations, and project proposals",
+    "keywords": ["Academic", "Defense", "Research", "Standard"]
+  },
+  "ai_ops": {
+    "label": "Enterprise Digital Intelligence Template",
+    "summary": "For high-density scenarios such as telecom AI operations architecture, IT system overview, and digital transformation plans",
+    "keywords": ["Telecom", "AI operations", "Digital intelligence", "High density", "Architecture view"]
+  },
+  "anthropic": {
+    "label": "Anthropic Style Template",
+    "summary": "A tech-oriented template for AI/LLM knowledge sharing and product launches",
+    "keywords": ["AI", "LLM", "Developer", "Technology"]
+  },
+  "exhibit": {
+    "label": "Exhibit Style Template",
+    "summary": "Conclusion-first layout with Exhibit takeaway bars for data-driven strategic reports and executive presentations",
+    "keywords": ["Exhibit", "Board", "Executive", "Strategy", "Conclusion-first"]
+  },
+  "google_style": {
+    "label": "Google Style Template",
+    "summary": "A Google-branded template for annual reports and technical sharing",
+    "keywords": ["Google", "Brand style", "Technical sharing", "Annual report"]
+  },
+  "mckinsey": {
+    "label": "McKinsey Style Template",
+    "summary": "A McKinsey-style template for strategic consulting and investment analysis",
+    "keywords": ["McKinsey", "Consulting", "Structured", "Executive presentation"]
+  },
+  "medical_university": {
+    "label": "Hospital/Medical University Template",
+    "summary": "A professional template for medical reports, case discussions, and research presentations",
+    "keywords": ["Medical", "Hospital", "Case study", "Research"]
+  },
+  "科技蓝商务": {
+    "label": "Tech Blue Business Template",
+    "summary": "A tech-business template for corporate reports and solution proposals",
+    "keywords": ["Tech blue", "Business", "Solution proposal", "Corporate report"]
+  },
+  "重庆大学": {
+    "label": "Chongqing University Template",
+    "summary": "A university-exclusive template for academic defenses and research presentations",
+    "keywords": ["Chongqing University", "Academic", "Defense", "University"]
+  }
+}

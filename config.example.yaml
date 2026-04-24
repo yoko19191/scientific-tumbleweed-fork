@@ -131,6 +131,7 @@ models:
 
 tool_groups:
   - name: web
+  - name: academic_search
   - name: file:read
   - name: file:write
   - name: bash
@@ -193,6 +194,51 @@ tools:
   #   image_search_time_range: 10
   #   # Image size filter. Options: "l" (large), "m" (medium), "i" (icon).
   #   image_size: "i"
+
+  # Academic search tools (Semantic Scholar Graph + Recommendations API)
+  - name: academic_search_papers
+    group: academic_search
+    use: deerflow.community.semantic_scholar.tools:academic_search_papers_tool
+    max_results: 10
+    timeout_seconds: 20
+    cache_db_path: cache/academic_search.db
+    cache_hot_max_entries: 256
+    search_ttl_seconds: 43200
+    paper_detail_ttl_seconds: 604800
+    recommend_ttl_seconds: 86400
+    references_preview_limit: 10
+    citations_preview_limit: 10
+    max_retry_attempts: 4
+    # api_key: $SEMANTIC_SCHOLAR_API_KEY
+
+  - name: academic_get_paper
+    group: academic_search
+    use: deerflow.community.semantic_scholar.tools:academic_get_paper_tool
+    timeout_seconds: 20
+    cache_db_path: cache/academic_search.db
+    cache_hot_max_entries: 256
+    search_ttl_seconds: 43200
+    paper_detail_ttl_seconds: 604800
+    recommend_ttl_seconds: 86400
+    references_preview_limit: 10
+    citations_preview_limit: 10
+    max_retry_attempts: 4
+    # api_key: $SEMANTIC_SCHOLAR_API_KEY
+
+  - name: academic_recommend_papers
+    group: academic_search
+    use: deerflow.community.semantic_scholar.tools:academic_recommend_papers_tool
+    max_results: 10
+    timeout_seconds: 20
+    cache_db_path: cache/academic_search.db
+    cache_hot_max_entries: 256
+    search_ttl_seconds: 43200
+    paper_detail_ttl_seconds: 604800
+    recommend_ttl_seconds: 86400
+    references_preview_limit: 10
+    citations_preview_limit: 10
+    max_retry_attempts: 4
+    # api_key: $SEMANTIC_SCHOLAR_API_KEY
 
   # File operations tools
   - name: ls

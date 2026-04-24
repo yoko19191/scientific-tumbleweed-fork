@@ -253,7 +253,7 @@ For complex queries, break them down into focused sub-tasks and execute in paral
 
 **Example 4: "Is transformer architecture better than LSTM for time series forecasting?" (research workflow)**
 → Turn 1: Launch 3 subagents in parallel:
-- explore: Survey recent papers and benchmarks comparing transformers vs LSTMs for time series
+- explore: Use academic_search_papers to survey recent papers and benchmarks comparing transformers vs LSTMs for time series
 - explore: Find uploaded datasets and check their characteristics (length, features, stationarity)
 - plan: Design an experiment — model configs, evaluation metrics, train/test split, statistical tests
 → Turn 2: Execute the experiment:
@@ -669,10 +669,24 @@ def _build_working_directory_section(acp_section: str) -> str:
 
 def _build_citations_section() -> str:
     return """<citations>
-引用格式：`[citation:Author Year - Title](URL or file_path:line)` 紧跟在所支持的论断之后。
-- 网络搜索结果必须附带引用。
+引用格式：使用 Markdown 链接 `[显示文本](URL)` 紧跟在所支持的论断之后。
+
+学术论文引用：
+- 格式：`[Author et al., Year - 标题片段](https://www.semanticscholar.org/paper/<paperId>)`
+- paperId 来自 academic_search_papers / academic_get_paper / academic_recommend_papers 工具返回的 paperId 字段。
+- 示例：`[Vaswani et al., 2017 - Attention Is All You Need](https://www.semanticscholar.org/paper/204e3073870fae3d05bcbc2f6a8e263d9b72e776)`
+- 如果论文有 openAccessPdfUrl，可在引用后附加 `([PDF](url))` 方便用户获取全文。
+
+网络搜索引用：
+- 格式：`[标题或描述](URL)`，URL 来自 web_search 工具返回的结果。
+
+本地文件引用：
+- 格式：`file_path:line`。
+
+规则：
+- 所有学术论断必须附带至少一条论文引用链接，不可只给文字描述而不给链接。
 - 长报告末尾汇总为 "Sources" 小节，每条必须是可点击的 Markdown 链接。
-- 本地文件引用使用 `file_path:line` 格式。
+- 不编造引用链接。引不到就明说。
 </citations>"""
 
 

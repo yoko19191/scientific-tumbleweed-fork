@@ -212,6 +212,9 @@ export interface Translations {
     clickToViewContent: string;
     writeTodos: string;
     skillInstallTooltip: string;
+    searchAcademicPapers: string;
+    searchAcademicPapersFor: (query: string) => string;
+    academicPaperCitations: (count: number) => string;
   };
 
   // Uploads

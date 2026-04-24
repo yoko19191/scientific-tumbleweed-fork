@@ -4,6 +4,7 @@ import {
   ChevronUp,
   FolderOpenIcon,
   GlobeIcon,
+  GraduationCapIcon,
   LightbulbIcon,
   ListTodoIcon,
   MessageCircleQuestionMarkIcon,
@@ -204,7 +205,93 @@ function ToolCall({
   const { setOpen, autoOpen, autoSelect, selectedArtifact, select } =
     useArtifacts();
 
-  if (name === "web_search") {
+  if (
+    name === "academic_search_papers" ||
+    name === "academic_recommend_papers"
+  ) {
+    let label: React.ReactNode = t.toolCalls.searchAcademicPapers;
+    if (typeof args.query === "string") {
+      label = t.toolCalls.searchAcademicPapersFor(args.query);
+    }
+    const parsed = result as {
+      results?: {
+        paperId: string;
+        title: string;
+        authors: string[];
+        year: number | null;
+        venue: string | null;
+        citationCount: number | null;
+        openAccessPdfUrl: string | null;
+      }[];
+    };
+    const papers = parsed?.results;
+    return (
+      <ChainOfThoughtStep key={id} label={label} icon={GraduationCapIcon}>
+        {Array.isArray(papers) && papers.length > 0 && (
+          <ChainOfThoughtSearchResults>
+            {papers.map((paper) => (
+              <ChainOfThoughtSearchResult key={paper.paperId}>
+                <a
+                  href={`https://www.semanticscholar.org/paper/${paper.paperId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <span>{paper.title}</span>
+                  <span className="text-muted-foreground ml-1 text-xs">
+                    {[
+                      paper.authors?.slice(0, 2).join(", "),
+                      paper.year,
+                      paper.venue,
+                      paper.citationCount != null
+                        ? t.toolCalls.academicPaperCitations(paper.citationCount)
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </a>
+              </ChainOfThoughtSearchResult>
+            ))}
+          </ChainOfThoughtSearchResults>
+        )}
+      </ChainOfThoughtStep>
+    );
+  } else if (name === "academic_get_paper") {
+    const parsed = result as {
+      paper?: {
+        paperId: string;
+        title: string;
+        authors: string[];
+        year: number | null;
+        venue: string | null;
+      };
+    };
+    const paper = parsed?.paper;
+    const paperLabel = paper?.title
+      ? `${paper.title}`
+      : t.toolCalls.useTool(name);
+    return (
+      <ChainOfThoughtStep key={id} label={paperLabel} icon={GraduationCapIcon}>
+        {paper?.paperId && (
+          <ChainOfThoughtSearchResult>
+            <a
+              href={`https://www.semanticscholar.org/paper/${paper.paperId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {[
+                paper.authors?.slice(0, 3).join(", "),
+                paper.year,
+                paper.venue,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </a>
+          </ChainOfThoughtSearchResult>
+        )}
+      </ChainOfThoughtStep>
+    );
+  } else if (name === "web_search") {
     let label: React.ReactNode = t.toolCalls.searchForRelatedInfo;
     if (typeof args.query === "string") {
       label = t.toolCalls.searchOnWebFor(args.query);

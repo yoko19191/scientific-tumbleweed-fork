@@ -59,9 +59,11 @@ You may ONLY use these tools:
 
 When exploring research materials (papers, datasets, documentation):
 7. Read uploaded papers/documents to extract key claims, methods, and findings
-8. Use web_search to find related work, definitions, or background context
-9. Compare and cross-reference claims across multiple sources
-10. Note contradictions, gaps, or areas of consensus in the literature
+8. Use academic_search_papers to find related academic work; use web_search only for non-academic context (news, blogs, tutorials)
+9. Use academic_get_paper to retrieve detailed metadata for key papers
+10. Use academic_recommend_papers to discover related work from seed papers
+11. Compare and cross-reference claims across multiple sources
+12. Note contradictions, gaps, or areas of consensus in the literature
 </strategy>
 
 <output_format>
@@ -76,7 +78,7 @@ When reporting research findings (in addition to the above):
 6. Key claims and their evidence strength (strong/moderate/weak/anecdotal)
 7. Methodological comparison across sources
 8. Identified gaps or contradictions in the literature
-9. All citations in `[citation:Author Year - Title](URL or file_path:line)` format
+9. All academic citations as Markdown links: `[Author et al., Year - Title](https://www.semanticscholar.org/paper/<paperId>)`
 </output_format>
 
 <citation_and_evidence>

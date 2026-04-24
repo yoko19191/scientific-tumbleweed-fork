@@ -268,6 +268,9 @@ export const zhCN: Translations = {
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
     skillInstallTooltip: "安装技能并使其可在科学风滚草中使用",
+    searchAcademicPapers: "搜索学术论文",
+    searchAcademicPapersFor: (query: string) => `搜索学术论文 "${query}"`,
+    academicPaperCitations: (count: number) => `${count} 次引用`,
   },
 
   uploads: {

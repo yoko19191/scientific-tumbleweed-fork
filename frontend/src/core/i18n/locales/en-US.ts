@@ -281,6 +281,9 @@ export const enUS: Translations = {
     clickToViewContent: "Click to view file content",
     writeTodos: "Update to-do list",
     skillInstallTooltip: "Install skill and make it available to Scientific Tumbleweed",
+    searchAcademicPapers: "Search academic papers",
+    searchAcademicPapersFor: (query: string) => `Search academic papers for "${query}"`,
+    academicPaperCitations: (count: number) => `${count} citations`,
   },
 
   // Subtasks

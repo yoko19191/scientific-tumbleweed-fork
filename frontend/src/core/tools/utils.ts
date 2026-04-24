@@ -15,6 +15,13 @@ export function explainLastToolCall(message: AIMessage, t: Translations) {
 export function explainToolCall(toolCall: ToolCall, t: Translations) {
   if (toolCall.name === "web_search" || toolCall.name === "image_search") {
     return t.toolCalls.searchFor(toolCall.args.query);
+  } else if (toolCall.name === "academic_search_papers") {
+    return t.toolCalls.searchAcademicPapersFor(toolCall.args.query);
+  } else if (
+    toolCall.name === "academic_get_paper" ||
+    toolCall.name === "academic_recommend_papers"
+  ) {
+    return t.toolCalls.searchAcademicPapers;
   } else if (toolCall.name === "web_fetch") {
     return t.toolCalls.viewWebPage;
   } else if (toolCall.name === "present_files") {

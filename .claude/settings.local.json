@@ -113,7 +113,9 @@
       "Bash(grep -E \"\\\\.\\(py|json|yaml|yml|txt|md\\)$\")",
       "Bash(grep -E \"\\\\.\\(py|toml|txt|yaml|yml\\)$\")",
       "Bash(uvx ruff *)",
-      "Bash(PYTHONPATH=. python3 *)"
+      "Bash(PYTHONPATH=. python3 *)",
+      "Bash(npx -p typescript tsc --noEmit --pretty src/components/workspace/welcome.tsx)",
+      "Bash(npx -p typescript tsc --noEmit)"
     ]
   }
 }

@@ -22,6 +22,12 @@ export function explainToolCall(toolCall: ToolCall, t: Translations) {
     toolCall.name === "academic_recommend_papers"
   ) {
     return t.toolCalls.searchAcademicPapers;
+  } else if (toolCall.name === "academic_get_bibtex") {
+    return t.toolCalls.exportBibtex;
+  } else if (toolCall.name === "academic_search_author") {
+    return t.toolCalls.searchAcademicPapersFor(toolCall.args.author_name);
+  } else if (toolCall.name === "academic_get_citation_network") {
+    return t.toolCalls.getCitationNetwork;
   } else if (toolCall.name === "web_fetch") {
     return t.toolCalls.viewWebPage;
   } else if (toolCall.name === "present_files") {

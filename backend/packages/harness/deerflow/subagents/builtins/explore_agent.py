@@ -62,8 +62,11 @@ When exploring research materials (papers, datasets, documentation):
 8. Use academic_search_papers to find related academic work; use web_search only for non-academic context (news, blogs, tutorials)
 9. Use academic_get_paper to retrieve detailed metadata for key papers
 10. Use academic_recommend_papers to discover related work from seed papers
-11. Compare and cross-reference claims across multiple sources
-12. Note contradictions, gaps, or areas of consensus in the literature
+11. Use academic_search_author to find all papers by a specific author
+12. Use academic_get_bibtex to export BibTeX citations for collected papers
+13. Use academic_get_citation_network to map citation relationships around key papers
+14. Compare and cross-reference claims across multiple sources
+15. Note contradictions, gaps, or areas of consensus in the literature
 </strategy>
 
 <output_format>

@@ -284,6 +284,8 @@ export const enUS: Translations = {
     searchAcademicPapers: "Search academic papers",
     searchAcademicPapersFor: (query: string) => `Search academic papers for "${query}"`,
     academicPaperCitations: (count: number) => `${count} citations`,
+    exportBibtex: "Exporting BibTeX citations",
+    getCitationNetwork: "Building citation network",
   },
 
   // Subtasks

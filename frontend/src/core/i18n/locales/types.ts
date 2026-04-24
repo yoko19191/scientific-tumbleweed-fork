@@ -215,6 +215,8 @@ export interface Translations {
     searchAcademicPapers: string;
     searchAcademicPapersFor: (query: string) => string;
     academicPaperCitations: (count: number) => string;
+    exportBibtex: string;
+    getCitationNetwork: string;
   };
 
   // Uploads

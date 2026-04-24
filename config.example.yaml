@@ -43,8 +43,13 @@ models:
     timeout: 30
     supports_thinking: true
     supports_vision: false
+    supports_reasoning_effort: true
     max_tokens: 131072
     temperature: 0.7
+    when_thinking_enabled:
+      extra_body:
+        thinking:
+          type: enabled
 
   - name: DeepSeek-V4-Pro
     display_name: DeepSeek V4 Pro
@@ -55,8 +60,13 @@ models:
     timeout: 30
     supports_thinking: true
     supports_vision: false
+    supports_reasoning_effort: true
     max_tokens: 131072
     temperature: 0.7
+    when_thinking_enabled:
+      extra_body:
+        thinking:
+          type: enabled
 
   - name: Kimi-K2.6
     display_name: Kimi K2.6
@@ -109,6 +119,7 @@ models:
     timeout: 30
     supports_thinking: true
     supports_vision: true
+    supports_reasoning_effort: true
     max_tokens: 131072
     temperature: 1.0
     when_thinking_enabled:
@@ -125,10 +136,13 @@ models:
     max_tokens: 128000
     supports_vision: true
     supports_thinking: true
+    supports_reasoning_effort: true
     when_thinking_enabled:
       thinking:
         type: enabled
         budget_tokens: 10000
+      output_config:
+        effort: high
 
   - name: claude-opus-4-6
     display_name: Claude Opus 4.6
@@ -139,10 +153,13 @@ models:
     max_tokens: 128000
     supports_vision: true
     supports_thinking: true
+    supports_reasoning_effort: true
     when_thinking_enabled:
       thinking:
         type: enabled
         budget_tokens: 10000
+      output_config:
+        effort: high
           
 
 
@@ -217,10 +234,10 @@ tools:
   #   # Image size filter. Options: "l" (large), "m" (medium), "i" (icon).
   #   image_size: "i"
 
-  # Academic search tools (Semantic Scholar Graph + Recommendations API)
+  # Academic search tools (OpenAlex + Semantic Scholar with aggregator fallback)
   - name: academic_search_papers
     group: academic_search
-    use: deerflow.community.semantic_scholar.tools:academic_search_papers_tool
+    use: deerflow.community.academic_search.tools:academic_search_papers_tool
     max_results: 10
     timeout_seconds: 20
     cache_db_path: cache/academic_search.db
@@ -228,28 +245,32 @@ tools:
     search_ttl_seconds: 43200
     paper_detail_ttl_seconds: 604800
     recommend_ttl_seconds: 86400
+    citation_network_ttl_seconds: 86400
     references_preview_limit: 10
     citations_preview_limit: 10
     max_retry_attempts: 4
     api_key: $SEMANTIC_SCHOLAR_API_KEY
+    openalex_email: $OPENALEX_EMAIL
 
   - name: academic_get_paper
     group: academic_search
-    use: deerflow.community.semantic_scholar.tools:academic_get_paper_tool
+    use: deerflow.community.academic_search.tools:academic_get_paper_tool
     timeout_seconds: 20
     cache_db_path: cache/academic_search.db
     cache_hot_max_entries: 256
     search_ttl_seconds: 43200
     paper_detail_ttl_seconds: 604800
     recommend_ttl_seconds: 86400
+    citation_network_ttl_seconds: 86400
     references_preview_limit: 10
     citations_preview_limit: 10
     max_retry_attempts: 4
     api_key: $SEMANTIC_SCHOLAR_API_KEY
+    openalex_email: $OPENALEX_EMAIL
 
   - name: academic_recommend_papers
     group: academic_search
-    use: deerflow.community.semantic_scholar.tools:academic_recommend_papers_tool
+    use: deerflow.community.academic_search.tools:academic_recommend_papers_tool
     max_results: 10
     timeout_seconds: 20
     cache_db_path: cache/academic_search.db
@@ -257,10 +278,48 @@ tools:
     search_ttl_seconds: 43200
     paper_detail_ttl_seconds: 604800
     recommend_ttl_seconds: 86400
+    citation_network_ttl_seconds: 86400
     references_preview_limit: 10
     citations_preview_limit: 10
     max_retry_attempts: 4
     api_key: $SEMANTIC_SCHOLAR_API_KEY
+    openalex_email: $OPENALEX_EMAIL
+
+  - name: academic_get_bibtex
+    group: academic_search
+    use: deerflow.community.academic_search.tools:academic_get_bibtex_tool
+    timeout_seconds: 20
+    cache_db_path: cache/academic_search.db
+    cache_hot_max_entries: 256
+    paper_detail_ttl_seconds: 604800
+    max_retry_attempts: 4
+    api_key: $SEMANTIC_SCHOLAR_API_KEY
+    openalex_email: $OPENALEX_EMAIL
+
+  - name: academic_search_author
+    group: academic_search
+    use: deerflow.community.academic_search.tools:academic_search_author_tool
+    max_results: 20
+    timeout_seconds: 20
+    cache_db_path: cache/academic_search.db
+    cache_hot_max_entries: 256
+    search_ttl_seconds: 43200
+    paper_detail_ttl_seconds: 604800
+    max_retry_attempts: 4
+    api_key: $SEMANTIC_SCHOLAR_API_KEY
+    openalex_email: $OPENALEX_EMAIL
+
+  - name: academic_get_citation_network
+    group: academic_search
+    use: deerflow.community.academic_search.tools:academic_get_citation_network_tool
+    timeout_seconds: 30
+    cache_db_path: cache/academic_search.db
+    cache_hot_max_entries: 256
+    paper_detail_ttl_seconds: 604800
+    citation_network_ttl_seconds: 86400
+    max_retry_attempts: 4
+    api_key: $SEMANTIC_SCHOLAR_API_KEY
+    openalex_email: $OPENALEX_EMAIL
 
   # File operations tools
   - name: ls

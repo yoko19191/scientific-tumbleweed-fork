@@ -271,6 +271,8 @@ export const zhCN: Translations = {
     searchAcademicPapers: "搜索学术论文",
     searchAcademicPapersFor: (query: string) => `搜索学术论文 "${query}"`,
     academicPaperCitations: (count: number) => `${count} 次引用`,
+    exportBibtex: "导出 BibTeX 引用",
+    getCitationNetwork: "构建引用网络",
   },
 
   uploads: {

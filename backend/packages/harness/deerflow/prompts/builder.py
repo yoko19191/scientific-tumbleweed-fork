@@ -19,6 +19,7 @@ from __future__ import annotations
 from deerflow.prompts.sections import (
     DEFAULT_AGENT_NAME,
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    ToneStyle,
     actions_section,
     collaboration_mechanics_section,
     conversation_craft_section,
@@ -54,6 +55,7 @@ class SystemPromptBuilder:
         self._citations_section: str | None = None
         self._extra_static: list[str] = []
         self._extra_dynamic: list[str] = []
+        self._tone_style: ToneStyle = "normal"
 
         self._cwd: str | None = None
         self._date_str: str | None = None
@@ -66,6 +68,10 @@ class SystemPromptBuilder:
 
     def with_soul(self, soul: str) -> SystemPromptBuilder:
         self._soul = soul
+        return self
+
+    def with_tone_style(self, tone_style: ToneStyle = "normal") -> SystemPromptBuilder:
+        self._tone_style = tone_style
         return self
 
     def with_memory(self, memory: str) -> SystemPromptBuilder:
@@ -149,7 +155,6 @@ class SystemPromptBuilder:
         sections.append(tool_usage_section())
         sections.append(making_code_changes_section())
         sections.append(linter_section())
-        sections.append(tone_style_section())
         for extra in self._extra_static:
             sections.append(extra)
 
@@ -164,6 +169,8 @@ class SystemPromptBuilder:
             sections.append(self._memory)
 
         sections.append(environment_section(self._cwd, self._date_str))
+
+        sections.append(tone_style_section(self._tone_style))
 
         guidance = session_guidance_section(
             subagent_enabled=self._subagent_enabled,

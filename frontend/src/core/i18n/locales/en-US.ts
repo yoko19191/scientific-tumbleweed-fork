@@ -115,6 +115,17 @@ export const enUS: Translations = {
     followupConfirmAppend: "Append & send",
     followupConfirmReplace: "Replace & send",
     aiDisclaimer: "AI can make mistakes, please double-check the answer",
+    toneStyle: "Tone",
+    toneStyleNormal: "Normal",
+    toneStyleNormalDescription: "Balanced, professional",
+    toneStyleFormal: "Formal",
+    toneStyleFormalDescription: "Structured, academic register",
+    toneStyleConcise: "Concise",
+    toneStyleConciseDescription: "Shorter, to-the-point",
+    toneStyleExplanatory: "Explanatory",
+    toneStyleExplanatoryDescription: "Thorough, step-by-step",
+    toneStyleEncouraging: "Encouraging",
+    toneStyleEncouragingDescription: "Warmer, supportive",
     suggestions: [
       {
         suggestion: "Write",

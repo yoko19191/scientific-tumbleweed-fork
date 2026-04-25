@@ -10,6 +10,7 @@ import {
   NetworkIcon,
   PaperclipIcon,
   PlusIcon,
+  SlidersHorizontalIcon,
   SparklesIcon,
   XIcon,
 } from "lucide-react";
@@ -55,6 +56,9 @@ import {
   DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { fetchWithAuth } from "@/core/auth/fetcher";
 import { getBackendBaseURL } from "@/core/config";
@@ -83,7 +87,7 @@ import {
 
 import { useThread } from "./messages/context";
 import { ModeHoverGuide } from "./mode-hover-guide";
-import { Tooltip } from "./tooltip";
+
 
 type InputMode = "chat" | "agent" | "swarm";
 
@@ -129,6 +133,7 @@ export function InputBox({
   > & {
     mode: "chat" | "agent" | "swarm" | undefined;
     reasoning_effort?: "minimal" | "low" | "medium" | "high";
+    tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
   };
   extraHeader?: React.ReactNode;
   isNewThread?: boolean;
@@ -141,6 +146,7 @@ export function InputBox({
     > & {
       mode: "chat" | "agent" | "swarm" | undefined;
       reasoning_effort?: "minimal" | "low" | "medium" | "high";
+      tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
     },
   ) => void;
   onFollowupsVisibilityChange?: (visible: boolean) => void;
@@ -244,6 +250,23 @@ export function InputBox({
       onContextChange?.({
         ...context,
         reasoning_effort: effort,
+      });
+    },
+    [onContextChange, context],
+  );
+
+  const handleToneStyleSelect = useCallback(
+    (
+      toneStyle:
+        | "normal"
+        | "formal"
+        | "concise"
+        | "explanatory"
+        | "encouraging",
+    ) => {
+      onContextChange?.({
+        ...context,
+        tone_style: toneStyle,
       });
     },
     [onContextChange, context],
@@ -506,7 +529,11 @@ export function InputBox({
               />
             </PromptInputActionMenuContent>
           </PromptInputActionMenu> */}
-            <AddAttachmentsButton className="px-2!" />
+            <PlusMenuButton
+              className="px-2!"
+              toneStyle={context.tone_style}
+              onToneStyleSelect={handleToneStyleSelect}
+            />
             <PromptInputActionMenu>
               <ModeHoverGuide
                 mode={
@@ -914,17 +941,98 @@ function SuggestionList() {
   );
 }
 
-function AddAttachmentsButton({ className }: { className?: string }) {
+function PlusMenuButton({
+  className,
+  toneStyle,
+  onToneStyleSelect,
+}: {
+  className?: string;
+  toneStyle?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
+  onToneStyleSelect?: (
+    tone: "normal" | "formal" | "concise" | "explanatory" | "encouraging",
+  ) => void;
+}) {
   const { t } = useI18n();
   const attachments = usePromptInputAttachments();
+  const currentTone = toneStyle ?? "normal";
+
+  const toneOptions = useMemo(
+    () =>
+      [
+        {
+          value: "normal" as const,
+          label: t.inputBox.toneStyleNormal,
+          description: t.inputBox.toneStyleNormalDescription,
+        },
+        {
+          value: "formal" as const,
+          label: t.inputBox.toneStyleFormal,
+          description: t.inputBox.toneStyleFormalDescription,
+        },
+        {
+          value: "concise" as const,
+          label: t.inputBox.toneStyleConcise,
+          description: t.inputBox.toneStyleConciseDescription,
+        },
+        {
+          value: "explanatory" as const,
+          label: t.inputBox.toneStyleExplanatory,
+          description: t.inputBox.toneStyleExplanatoryDescription,
+        },
+        {
+          value: "encouraging" as const,
+          label: t.inputBox.toneStyleEncouraging,
+          description: t.inputBox.toneStyleEncouragingDescription,
+        },
+      ] as const,
+    [t],
+  );
+
   return (
-    <Tooltip content={t.inputBox.addAttachments}>
-      <PromptInputButton
-        className={cn("px-2!", className)}
-        onClick={() => attachments.openFileDialog()}
-      >
-        <PaperclipIcon className="size-3" />
-      </PromptInputButton>
-    </Tooltip>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <PromptInputButton className={cn("px-2!", className)}>
+          <PlusIcon className="size-3" />
+        </PromptInputButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuItem onClick={() => attachments.openFileDialog()}>
+          <PaperclipIcon className="mr-2 size-4" />
+          {t.inputBox.addAttachments}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <SlidersHorizontalIcon className="mr-2 size-4" />
+            {t.inputBox.toneStyle}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-56">
+            {toneOptions.map((option) => (
+              <DropdownMenuItem
+                key={option.value}
+                className={cn(
+                  currentTone === option.value
+                    ? "text-accent-foreground"
+                    : "text-muted-foreground/65",
+                )}
+                onClick={() => onToneStyleSelect?.(option.value)}
+              >
+                <div className="flex flex-col gap-0.5">
+                  <div className="font-medium">{option.label}</div>
+                  <div className="text-xs opacity-70">
+                    {option.description}
+                  </div>
+                </div>
+                {currentTone === option.value ? (
+                  <CheckIcon className="ml-auto size-4 shrink-0" />
+                ) : (
+                  <div className="ml-auto size-4 shrink-0" />
+                )}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -209,6 +209,7 @@ class DeerFlowClient:
     def _ensure_agent(self, config: RunnableConfig):
         """Create (or recreate) the agent when config-dependent params change."""
         cfg = config.get("configurable", {})
+        tone_style = cfg.get("tone_style", "normal")
         key = (
             cfg.get("model_name"),
             cfg.get("thinking_enabled"),
@@ -216,6 +217,7 @@ class DeerFlowClient:
             cfg.get("subagent_enabled"),
             self._agent_name,
             frozenset(self._available_skills) if self._available_skills is not None else None,
+            tone_style,
         )
 
         if self._agent is not None and self._agent_config_key == key:
@@ -236,6 +238,7 @@ class DeerFlowClient:
                 agent_name=self._agent_name,
                 user_id=config.get("metadata", {}).get("user_id"),
                 available_skills=self._available_skills,
+                tone_style=tone_style,
             ),
             "state_schema": ThreadState,
         }

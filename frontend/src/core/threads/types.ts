@@ -18,6 +18,7 @@ export interface AgentThreadContext extends Record<string, unknown> {
   reasoning_effort?: "minimal" | "low" | "medium" | "high";
   max_concurrent_subagents?: number;
   agent_name?: string;
+  tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
 }
 
 export interface AgentThread extends Thread<AgentThreadState> {

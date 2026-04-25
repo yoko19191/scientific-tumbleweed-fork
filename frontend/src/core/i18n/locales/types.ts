@@ -91,6 +91,17 @@ export interface Translations {
     followupConfirmAppend: string;
     followupConfirmReplace: string;
     aiDisclaimer: string;
+    toneStyle: string;
+    toneStyleNormal: string;
+    toneStyleNormalDescription: string;
+    toneStyleFormal: string;
+    toneStyleFormalDescription: string;
+    toneStyleConcise: string;
+    toneStyleConciseDescription: string;
+    toneStyleExplanatory: string;
+    toneStyleExplanatoryDescription: string;
+    toneStyleEncouraging: string;
+    toneStyleEncouragingDescription: string;
     suggestions: {
       suggestion: string;
       prompt: string;

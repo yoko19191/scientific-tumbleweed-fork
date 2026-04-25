@@ -248,6 +248,7 @@ export function useThreadStream({
       context.mode,
       context.reasoning_effort,
       context.agent_name,
+      context.tone_style,
     ],
   );
 

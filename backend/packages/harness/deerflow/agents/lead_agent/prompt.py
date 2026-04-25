@@ -577,6 +577,7 @@ def _apply_prompt_via_builder(
     agent_name: str | None = None,
     user_id: str | None = None,
     available_skills: set[str] | None = None,
+    tone_style: str = "normal",
 ) -> str:
     """Build system prompt using the modular SystemPromptBuilder.
 
@@ -587,6 +588,9 @@ def _apply_prompt_via_builder(
 
     name = agent_name or DEFAULT_AGENT_NAME
     builder = SystemPromptBuilder(agent_name=name)
+
+    # Tone style
+    builder.with_tone_style(tone_style)
 
     # Soul
     soul = get_agent_soul(agent_name, user_id=user_id)
@@ -690,7 +694,7 @@ def _build_citations_section() -> str:
 </citations>"""
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, user_id: str | None = None, available_skills: set[str] | None = None) -> str:
+def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, user_id: str | None = None, available_skills: set[str] | None = None, tone_style: str = "normal") -> str:
     """Build the lead agent system prompt.
 
     Uses SystemPromptBuilder for modular assembly with static/dynamic cache
@@ -703,6 +707,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
             agent_name=agent_name,
             user_id=user_id,
             available_skills=available_skills,
+            tone_style=tone_style,
         )
     except Exception:
         logger.warning("SystemPromptBuilder failed; falling back to legacy template", exc_info=True)

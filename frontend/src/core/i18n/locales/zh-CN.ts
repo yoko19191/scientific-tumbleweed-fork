@@ -83,24 +83,27 @@ export const zhCN: Translations = {
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
     mode: "模式",
-    flashMode: "闪速",
-    flashModeDescription: "快速且高效的完成任务，但可能不够精准",
-    reasoningMode: "思考",
-    reasoningModeDescription: "思考后再行动，在时间与准确性之间取得平衡",
-    proMode: "Pro",
-    proModeDescription: "思考、计划再执行，获得更精准的结果，可能需要更多时间",
-    ultraMode: "Ultra",
-    ultraModeDescription:
-      "继承自 Pro 模式，可调用子代理分工协作，适合复杂多步骤任务，能力最强",
+    chatMode: "对话",
+    chatModeDescription: "简单对话和快速查询，支持所有模型",
+    agentMode: "Agent",
+    agentModeDescription:
+      "思考、计划再执行，适合代码编写、数据分析等较长任务",
+    swarmMode: "Swarm",
+    swarmModeDescription:
+      "最多 5 个子代理并行协作，适合文献综述等需要大量资料搜集的场景",
     reasoningEffort: "推理深度",
     reasoningEffortMinimal: "最低",
-    reasoningEffortMinimalDescription: "检索 + 直接输出",
+    reasoningEffortMinimalDescription:
+      "快速检索、直接回答 — 事实查询、名词解释、简单问答",
     reasoningEffortLow: "低",
-    reasoningEffortLowDescription: "简单逻辑校验 + 浅层推演",
+    reasoningEffortLowDescription:
+      "轻度推理 — 论文摘要、概念解释、参考文献整理",
     reasoningEffortMedium: "中",
-    reasoningEffortMediumDescription: "多层逻辑分析 + 基础验证",
+    reasoningEffortMediumDescription:
+      "结构化分析 — 方法对比、实验设计审查、章节起草",
     reasoningEffortHigh: "高",
-    reasoningEffortHighDescription: "全维度逻辑推演 + 多路径验证 + 反推校验",
+    reasoningEffortHighDescription:
+      "深度推理 — 多文献综合、统计验证、端到端研究工作流",
     searchModels: "搜索模型...",
     surpriseMe: "小惊喜",
     surpriseMePrompt: "给我一个小惊喜吧",

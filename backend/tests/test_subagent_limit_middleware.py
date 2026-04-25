@@ -40,6 +40,8 @@ class TestClampSubagentLimit:
         assert _clamp_subagent_limit(2) == 2
         assert _clamp_subagent_limit(3) == 3
         assert _clamp_subagent_limit(4) == 4
+        assert _clamp_subagent_limit(5) == 5
+        assert _clamp_subagent_limit(6) == 6
 
 
 class TestSubagentLimitMiddlewareInit:

@@ -73,18 +73,18 @@ export function Welcome({
   mode,
 }: {
   className?: string;
-  mode?: "ultra" | "pro" | "thinking" | "flash";
+  mode?: "chat" | "agent" | "swarm";
 }) {
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const searchParams = useSearchParams();
-  const isUltra = useMemo(() => mode === "ultra", [mode]);
+  const isSwarm = useMemo(() => mode === "swarm", [mode]);
   const colors = useMemo(() => {
-    if (isUltra) {
+    if (isSwarm) {
       return ["#efefbb", "#e9c665", "#e3a812"];
     }
     return ["var(--color-foreground)"];
-  }, [isUltra]);
+  }, [isSwarm]);
 
   const greeting = useMemo(() => {
     const timeGreeting = getTimeGreeting(locale);
@@ -158,7 +158,7 @@ export function Welcome({
           onClick={replayWave}
           aria-label="Wave"
         >
-          {isUltra ? "🚀" : "👋"}
+          {isSwarm ? "🚀" : "👋"}
         </button>
         <AuroraText colors={colors}>{greeting}</AuroraText>
       </div>

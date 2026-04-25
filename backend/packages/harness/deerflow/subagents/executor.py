@@ -71,11 +71,11 @@ _background_tasks_lock = threading.Lock()
 _BACKGROUND_TASK_TTL_SECONDS = 900  # 15 minutes
 
 # Thread pool for background task scheduling and orchestration
-_scheduler_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-scheduler-")
+_scheduler_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="subagent-scheduler-")
 
 # Thread pool for actual subagent execution (with timeout support)
 # Larger pool to avoid blocking when scheduler submits execution tasks
-_execution_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-exec-")
+_execution_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="subagent-exec-")
 
 # Dedicated pool for sync execute() calls made from an already-running event loop.
 _isolated_loop_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-isolated-")

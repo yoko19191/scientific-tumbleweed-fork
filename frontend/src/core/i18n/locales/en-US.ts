@@ -83,28 +83,28 @@ export const enUS: Translations = {
       "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
     addAttachments: "Add attachments",
     mode: "Mode",
-    flashMode: "Flash",
-    flashModeDescription: "Fast and efficient, but may not be accurate",
-    reasoningMode: "Reasoning",
-    reasoningModeDescription:
-      "Reasoning before action, balance between time and accuracy",
-    proMode: "Pro",
-    proModeDescription:
-      "Reasoning, planning and executing, get more accurate results, may take more time",
-    ultraMode: "Ultra",
-    ultraModeDescription:
-      "Pro mode with subagents to divide work; best for complex multi-step tasks",
+    chatMode: "Chat",
+    chatModeDescription:
+      "Simple conversations and quick queries, works with all models",
+    agentMode: "Agent",
+    agentModeDescription:
+      "Reasoning, planning and executing; best for code, analysis, and longer tasks",
+    swarmMode: "Swarm",
+    swarmModeDescription:
+      "Up to 5 subagents working in parallel; best for research and complex multi-step tasks",
     reasoningEffort: "Reasoning Effort",
     reasoningEffortMinimal: "Minimal",
-    reasoningEffortMinimalDescription: "Retrieval + Direct Output",
+    reasoningEffortMinimalDescription:
+      "Quick lookup, direct answer — fact retrieval, definitions, simple Q&A",
     reasoningEffortLow: "Low",
-    reasoningEffortLowDescription: "Simple Logic Check + Shallow Deduction",
+    reasoningEffortLowDescription:
+      "Light reasoning — summarize a paper, explain a concept, format references",
     reasoningEffortMedium: "Medium",
     reasoningEffortMediumDescription:
-      "Multi-layer Logic Analysis + Basic Verification",
+      "Structured analysis — compare methods, review experimental design, draft sections",
     reasoningEffortHigh: "High",
     reasoningEffortHighDescription:
-      "Full-dimensional Logic Deduction + Multi-path Verification + Backward Check",
+      "Deep reasoning — multi-paper synthesis, statistical validation, end-to-end research workflow",
     searchModels: "Search models...",
     surpriseMe: "Surprise",
     surpriseMePrompt: "Surprise me",

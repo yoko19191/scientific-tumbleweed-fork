@@ -555,18 +555,19 @@ export function useThreadStream({
             context: {
               ...extraContext,
               ...context,
-              thinking_enabled: context.mode !== "flash",
-              is_plan_mode: context.mode === "pro" || context.mode === "ultra",
-              subagent_enabled: context.mode === "ultra",
+              thinking_enabled: true,
+              is_plan_mode:
+                context.mode === "agent" || context.mode === "swarm",
+              subagent_enabled: context.mode === "swarm",
+              max_concurrent_subagents:
+                context.mode === "swarm" ? 5 : undefined,
               reasoning_effort:
                 context.reasoning_effort ??
-                (context.mode === "ultra"
+                (context.mode === "swarm"
                   ? "high"
-                  : context.mode === "pro"
-                    ? "medium"
-                    : context.mode === "thinking"
-                      ? "low"
-                      : undefined),
+                  : context.mode === "agent"
+                    ? "high"
+                    : "medium"),
               thread_id: threadId,
             },
           },

@@ -1,6 +1,6 @@
 # DeerFlow - Unified Development Environment
 
-.PHONY: help config config-upgrade check install setup doctor dev dev-pro dev-daemon dev-daemon-pro start start-pro start-daemon start-daemon-pro stop up up-pro down clean docker-init docker-start docker-start-pro docker-stop docker-logs docker-logs-frontend docker-logs-gateway
+.PHONY: help config config-upgrade check install setup doctor dev dev-pro dev-daemon dev-daemon-pro start start-pro start-daemon start-daemon-pro stop up up-pro down clean dev-clean docker-init docker-start docker-start-pro docker-stop docker-logs docker-logs-frontend docker-logs-gateway
 
 BASH ?= bash
 BACKEND_UV_RUN = cd backend && uv run
@@ -35,6 +35,7 @@ help:
 	@echo "  make start-daemon-pro - Start prod daemon + Gateway mode (experimental)"
 	@echo "  make stop            - Stop all running services"
 	@echo "  make clean           - Clean up processes and temporary files"
+	@echo "  make dev-clean       - Remove backend/frontend caches (ruff, pytest, .next, node_modules, etc.)"
 	@echo ""
 	@echo "Docker Production Commands:"
 	@echo "  make up              - Build and start production Docker services (localhost:2026)"
@@ -167,6 +168,13 @@ clean: stop
 	@-rm -rf backend/.langgraph_api 2>/dev/null || true
 	@-rm -rf logs/*.log 2>/dev/null || true
 	@echo "✓ Cleanup complete"
+
+# Remove dev caches and heavy frontend artifacts (no process stop; run make install to restore node_modules)
+dev-clean:
+	@echo "Removing backend caches and frontend build artifacts..."
+	@-rm -rf backend/.deer-flow backend/.langgraph_api backend/.ruff_cache backend/.pytest_cache 2>/dev/null || true
+	@-rm -rf frontend/node_modules frontend/.next 2>/dev/null || true
+	@echo "✓ dev-clean complete"
 
 # ==========================================
 # Docker Development Commands

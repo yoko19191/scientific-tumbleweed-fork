@@ -30,6 +30,35 @@ def _vllm_disable_chat_template_kwargs(chat_template_kwargs: dict) -> dict:
     return disable_kwargs
 
 
+def _uses_anthropic_request_shape(model_use: str) -> bool:
+    """Return whether the model constructor emits Anthropic Messages API payloads."""
+    return model_use in {
+        "langchain_anthropic:ChatAnthropic",
+        "deerflow.models.claude_provider:ClaudeChatModel",
+    }
+
+
+def _is_deepseek_model(model_name: str) -> bool:
+    """Return whether the model name indicates a DeepSeek model."""
+    return model_name.lower().startswith("deepseek-")
+
+
+_DEEPSEEK_VALID_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+
+
+def _deepseek_effort(reasoning_effort: str) -> str | None:
+    """Normalise a frontend effort label to a value DeepSeek accepts.
+
+    DeepSeek v4 accepts: low, medium, high, xhigh, max.
+    The only frontend value that needs remapping is "minimal" → "low".
+    """
+    if reasoning_effort in _DEEPSEEK_VALID_EFFORTS:
+        return reasoning_effort
+    if reasoning_effort == "minimal":
+        return "low"
+    return None
+
+
 def create_chat_model(name: str | None = None, thinking_enabled: bool = False, **kwargs) -> BaseChatModel:
     """Create a chat model instance from the config.
 
@@ -73,6 +102,10 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
             raise ValueError(f"Model {name} does not support thinking. Set `supports_thinking` to true in the `config.yaml` to enable thinking.") from None
         if effective_wte:
             model_settings_from_config.update(effective_wte)
+        if _is_deepseek_model(model_config.model):
+            for param in ("temperature", "top_p", "presence_penalty", "frequency_penalty"):
+                model_settings_from_config.pop(param, None)
+                kwargs.pop(param, None)
     if not thinking_enabled:
         if model_config.when_thinking_disabled is not None:
             # User-provided disable settings take full precedence
@@ -96,6 +129,45 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
     if not model_config.supports_reasoning_effort:
         kwargs.pop("reasoning_effort", None)
         model_settings_from_config.pop("reasoning_effort", None)
+
+    if model_config.supports_reasoning_effort and _uses_anthropic_request_shape(model_config.use):
+        explicit_effort = kwargs.pop("reasoning_effort", None)
+        # ChatAnthropic forwards unknown constructor fields through model_kwargs,
+        # but DeepSeek's Anthropic-compatible API expects output_config.effort,
+        # not a top-level reasoning_effort field.
+        model_settings_from_config.pop("reasoning_effort", None)
+        configured_output_config = model_settings_from_config.pop("output_config", None)
+        if configured_output_config:
+            model_settings_from_config["model_kwargs"] = _deep_merge_dicts(
+                model_settings_from_config.get("model_kwargs"),
+                {"output_config": configured_output_config},
+            )
+        if thinking_enabled and explicit_effort:
+            mapped_effort = _deepseek_effort(explicit_effort)
+            if mapped_effort:
+                model_settings_from_config["model_kwargs"] = _deep_merge_dicts(
+                    model_settings_from_config.get("model_kwargs"),
+                    {"output_config": {"effort": mapped_effort}},
+                )
+
+    # For DeepSeek OpenAI-compatible models: map reasoning_effort to accepted values
+    if (
+        model_config.supports_reasoning_effort
+        and not _uses_anthropic_request_shape(model_config.use)
+        and _is_deepseek_model(model_config.model)
+    ):
+        explicit_effort = kwargs.pop("reasoning_effort", None)
+        if thinking_enabled:
+            if explicit_effort:
+                mapped = _deepseek_effort(explicit_effort)
+                if mapped:
+                    model_settings_from_config["reasoning_effort"] = mapped
+                else:
+                    model_settings_from_config.pop("reasoning_effort", None)
+            elif "reasoning_effort" not in model_settings_from_config:
+                model_settings_from_config["reasoning_effort"] = "high"
+        else:
+            model_settings_from_config.pop("reasoning_effort", None)
 
     # For Codex Responses API models: map thinking mode to reasoning_effort
     from deerflow.models.openai_codex_provider import CodexChatModel

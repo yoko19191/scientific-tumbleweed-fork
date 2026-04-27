@@ -429,6 +429,225 @@ def test_reasoning_effort_preserved_when_supported(monkeypatch):
     assert captured.get("reasoning_effort") == "minimal"
 
 
+def test_openai_shape_preserves_explicit_reasoning_effort(monkeypatch):
+    cfg = _make_app_config([_make_model("deepseek", supports_reasoning_effort=True)])
+    _patch_factory(monkeypatch, cfg)
+
+    FakeChatModel.captured_kwargs = {}
+    factory_module.create_chat_model(name="deepseek", thinking_enabled=True, reasoning_effort="high")
+
+    assert FakeChatModel.captured_kwargs.get("reasoning_effort") == "high"
+
+
+def test_anthropic_shape_maps_reasoning_effort_to_output_config(monkeypatch):
+    cfg = _make_app_config(
+        [
+            _make_model(
+                "anthropic-shape",
+                use="langchain_anthropic:ChatAnthropic",
+                supports_thinking=True,
+                supports_reasoning_effort=True,
+                when_thinking_enabled={"thinking": {"type": "enabled"}, "output_config": {"effort": "high"}},
+            )
+        ]
+    )
+    _patch_factory(monkeypatch, cfg)
+
+    FakeChatModel.captured_kwargs = {}
+    factory_module.create_chat_model(name="anthropic-shape", thinking_enabled=True, reasoning_effort="high")
+
+    assert "reasoning_effort" not in FakeChatModel.captured_kwargs
+    assert FakeChatModel.captured_kwargs["model_kwargs"]["output_config"]["effort"] == "high"
+
+
+def test_anthropic_shape_drops_reasoning_effort_when_thinking_disabled(monkeypatch):
+    cfg = _make_app_config(
+        [
+            _make_model(
+                "anthropic-shape",
+                use="langchain_anthropic:ChatAnthropic",
+                supports_thinking=True,
+                supports_reasoning_effort=True,
+                when_thinking_enabled={"thinking": {"type": "enabled"}, "output_config": {"effort": "high"}},
+            )
+        ]
+    )
+    _patch_factory(monkeypatch, cfg)
+
+    FakeChatModel.captured_kwargs = {}
+    factory_module.create_chat_model(name="anthropic-shape", thinking_enabled=False, reasoning_effort="minimal")
+
+    assert "reasoning_effort" not in FakeChatModel.captured_kwargs
+    assert FakeChatModel.captured_kwargs["thinking"] == {"type": "disabled"}
+    assert "model_kwargs" not in FakeChatModel.captured_kwargs
+
+
+# ---------------------------------------------------------------------------
+# DeepSeek OpenAI-format reasoning_effort mapping
+# ---------------------------------------------------------------------------
+
+
+def _make_deepseek_model(name="deepseek-v4-flash", *, use="langchain_openai:ChatOpenAI", **extra):
+    defaults = dict(
+        supports_thinking=True,
+        supports_reasoning_effort=True,
+        when_thinking_enabled={"extra_body": {"thinking": {"type": "enabled"}}},
+    )
+    defaults.update(extra)
+    return _make_model(name, use=use, **defaults)
+
+
+def test_deepseek_openai_passes_valid_effort_through(monkeypatch):
+    """DeepSeek accepts low/medium/high/xhigh/max — pass them through unchanged."""
+    cfg = _make_app_config([_make_deepseek_model()])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, reasoning_effort="medium")
+
+    assert captured["reasoning_effort"] == "medium"
+
+
+def test_deepseek_openai_maps_minimal_to_low(monkeypatch):
+    """DeepSeek rejects 'minimal' — remap it to 'low'."""
+    cfg = _make_app_config([_make_deepseek_model()])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, reasoning_effort="minimal")
+
+    assert captured["reasoning_effort"] == "low"
+
+
+def test_deepseek_openai_defaults_effort_to_high(monkeypatch):
+    cfg = _make_app_config([_make_deepseek_model()])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True)
+
+    assert captured["reasoning_effort"] == "high"
+
+
+def test_deepseek_openai_strips_effort_when_thinking_disabled(monkeypatch):
+    cfg = _make_app_config([_make_deepseek_model()])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=False)
+
+    assert captured.get("reasoning_effort") is None
+
+
+def test_deepseek_openai_strips_temperature_when_thinking(monkeypatch):
+    cfg = _make_app_config([_make_deepseek_model(max_tokens=131072)])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, temperature=0.7)
+
+    assert "temperature" not in captured
+
+
+def test_deepseek_openai_preserves_temperature_when_not_thinking(monkeypatch):
+    cfg = _make_app_config([_make_deepseek_model()])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=False, temperature=0.7)
+
+    assert captured["temperature"] == 0.7
+
+
+def test_deepseek_patched_maps_effort(monkeypatch):
+    cfg = _make_app_config([
+        _make_deepseek_model(
+            name="deepseek-v4-pro",
+            use="deerflow.models.patched_deepseek:PatchedChatDeepSeek",
+        )
+    ])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-pro", thinking_enabled=True, reasoning_effort="low")
+
+    assert captured["reasoning_effort"] == "low"
+
+
+def test_non_deepseek_preserves_minimal_effort(monkeypatch):
+    """Non-DeepSeek models keep reasoning_effort='minimal' when thinking is disabled."""
+    cfg = _make_app_config([
+        _make_model(
+            "gpt-5.5",
+            supports_thinking=True,
+            supports_reasoning_effort=True,
+            when_thinking_enabled={"extra_body": {"thinking": {"type": "enabled"}}},
+        )
+    ])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="gpt-5.5", thinking_enabled=False)
+
+    assert captured["reasoning_effort"] == "minimal"
+
+
 # ---------------------------------------------------------------------------
 # thinking shortcut field
 # ---------------------------------------------------------------------------

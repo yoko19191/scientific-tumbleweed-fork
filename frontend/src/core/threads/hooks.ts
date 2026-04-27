@@ -17,6 +17,7 @@ import { useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
 import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
+import { createThread } from "./api";
 import type { AgentThread, AgentThreadState } from "./types";
 
 export type ToolEndEvent = {
@@ -477,6 +478,15 @@ export function useThreadStream({
             if (abortController.signal.aborted) throw new Error("Cancelled");
 
             if (files.length > 0) {
+              if (!threadIdRef.current && !isMock) {
+                await createThread(
+                  threadId,
+                  context.agent_name ? { agent_name: context.agent_name } : {},
+                );
+                handleStreamStart(threadId);
+                setOnStreamThreadId(threadId);
+              }
+
               const uploadResponse = await uploadFiles(threadId, files);
               uploadedFileInfo = uploadResponse.files;
 

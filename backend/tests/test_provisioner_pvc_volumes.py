@@ -156,3 +156,12 @@ class TestBuildPodVolumes:
         # subPath should be set on user-data mount
         userdata_mount = pod.spec.containers[0].volume_mounts[1]
         assert userdata_mount.sub_path == "threads/thread-1/user-data"
+
+    def test_pod_uses_requested_image(self, provisioner_module):
+        """Requested image from config.yaml should override provisioner default."""
+        pod = provisioner_module._build_pod(
+            "sandbox-1",
+            "thread-1",
+            image="custom-sandbox:arm64",
+        )
+        assert pod.spec.containers[0].image == "custom-sandbox:arm64"

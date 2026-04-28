@@ -162,3 +162,31 @@ def test_load_config_uses_scientific_tumbleweed_sandbox_prefix_by_default(monkey
     config = aio_mod.AioSandboxProvider._load_config(provider)
 
     assert config["container_prefix"] == "scientific-tumbleweed-sandbox"
+
+
+def test_remote_backend_posts_configured_image(monkeypatch):
+    """Remote provisioner requests should carry the image from config.yaml."""
+    remote_mod = importlib.import_module("deerflow.community.aio_sandbox.remote_backend")
+    backend = remote_mod.RemoteSandboxBackend(
+        provisioner_url="http://provisioner:8002",
+        image="custom-sandbox:arm64",
+    )
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"sandbox_url": "http://sandbox.example"}
+
+    post_calls = []
+
+    def fake_post(url, json, timeout):
+        post_calls.append({"url": url, "json": json, "timeout": timeout})
+        return FakeResponse()
+
+    monkeypatch.setattr(remote_mod.requests, "post", fake_post)
+
+    backend.create("thread-1", "sandbox-1")
+
+    assert post_calls[0]["json"]["image"] == "custom-sandbox:arm64"

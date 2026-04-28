@@ -40,14 +40,16 @@ class RemoteSandboxBackend(SandboxBackend):
           provisioner_url: http://provisioner:8002
     """
 
-    def __init__(self, provisioner_url: str):
+    def __init__(self, provisioner_url: str, image: str | None = None):
         """Initialize with the provisioner service URL.
 
         Args:
             provisioner_url: URL of the provisioner service
                              (e.g., ``http://provisioner:8002``).
+            image: Optional sandbox image requested by config.yaml.
         """
         self._provisioner_url = provisioner_url.rstrip("/")
+        self._image = image
 
     @property
     def provisioner_url(self) -> str:
@@ -94,6 +96,7 @@ class RemoteSandboxBackend(SandboxBackend):
                 json={
                     "sandbox_id": sandbox_id,
                     "thread_id": thread_id,
+                    "image": self._image,
                 },
                 timeout=30,
             )

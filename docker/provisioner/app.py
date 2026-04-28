@@ -223,6 +223,7 @@ app = FastAPI(title="Scientific Tumbleweed Sandbox Provisioner", lifespan=lifesp
 class CreateSandboxRequest(BaseModel):
     sandbox_id: str
     thread_id: str = Field(pattern=SAFE_THREAD_ID_PATTERN)
+    image: str | None = None
 
 
 class SandboxResponse(BaseModel):
@@ -305,9 +306,10 @@ def _build_volume_mounts(thread_id: str) -> list[k8s_client.V1VolumeMount]:
     ]
 
 
-def _build_pod(sandbox_id: str, thread_id: str) -> k8s_client.V1Pod:
+def _build_pod(sandbox_id: str, thread_id: str, image: str | None = None) -> k8s_client.V1Pod:
     """Construct a Pod manifest for a single sandbox."""
     thread_id = _validate_thread_id(thread_id)
+    sandbox_image = image or SANDBOX_IMAGE
     return k8s_client.V1Pod(
         metadata=k8s_client.V1ObjectMeta(
             name=_pod_name(sandbox_id),
@@ -323,7 +325,7 @@ def _build_pod(sandbox_id: str, thread_id: str) -> k8s_client.V1Pod:
             containers=[
                 k8s_client.V1Container(
                     name="sandbox",
-                    image=SANDBOX_IMAGE,
+                    image=sandbox_image,
                     image_pull_policy="IfNotPresent",
                     ports=[
                         k8s_client.V1ContainerPort(
@@ -447,9 +449,10 @@ async def create_sandbox(req: CreateSandboxRequest):
     """
     sandbox_id = req.sandbox_id
     thread_id = req.thread_id
+    sandbox_image = req.image or SANDBOX_IMAGE
 
     logger.info(
-        f"Received request to create sandbox '{sandbox_id}' for thread '{thread_id}'"
+        f"Received request to create sandbox '{sandbox_id}' for thread '{thread_id}' with image '{sandbox_image}'"
     )
 
     # ── Fast path: sandbox already exists ────────────────────────────
@@ -463,7 +466,10 @@ async def create_sandbox(req: CreateSandboxRequest):
 
     # ── Create Pod ───────────────────────────────────────────────────
     try:
-        core_v1.create_namespaced_pod(K8S_NAMESPACE, _build_pod(sandbox_id, thread_id))
+        core_v1.create_namespaced_pod(
+            K8S_NAMESPACE,
+            _build_pod(sandbox_id, thread_id, sandbox_image),
+        )
         logger.info(f"Created Pod {_pod_name(sandbox_id)}")
     except ApiException as exc:
         if exc.status != 409:  # 409 = AlreadyExists

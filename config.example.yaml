@@ -36,6 +36,7 @@ token_usage:
 models:
   - name: DeepSeek-V4-Flash
     display_name: DeepSeek V4 Flash
+    description: 最新小号鲸鱼, 1M 超长上下文，性价比王者
     use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
     model: deepseek-v4-flash
     api_key: $DEEPSEEK_API_KEY
@@ -45,6 +46,8 @@ models:
     supports_vision: false
     supports_reasoning_effort: true
     max_tokens: 131072
+    profile:
+      max_input_tokens: 1048576
     temperature: 0.7
     when_thinking_enabled:
       extra_body:
@@ -53,6 +56,7 @@ models:
 
   - name: DeepSeek-V4-Pro
     display_name: DeepSeek V4 Pro
+    description: 最新大号鲸鱼，1M 超长上下文，超强推理能力
     use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
     model: deepseek-v4-pro
     api_key: $DEEPSEEK_API_KEY
@@ -62,6 +66,8 @@ models:
     supports_vision: false
     supports_reasoning_effort: true
     max_tokens: 131072
+    profile:
+      max_input_tokens: 1048576
     temperature: 0.7
     when_thinking_enabled:
       extra_body:
@@ -70,6 +76,7 @@ models:
 
   - name: Kimi-K2.6
     display_name: Kimi K2.6
+    description: 多模态推理模型，智能体和前端审美强
     use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
     model: kimi-k2.6
     api_key: $MOONSHOT_API_KEY
@@ -78,24 +85,16 @@ models:
     supports_thinking: true
     supports_vision: true
     max_tokens: 131072
+    profile:
+      max_input_tokens: 262144
     when_thinking_enabled:
       extra_body:
         thinking:
           type: enabled
 
-  - name: Minimax-M2.7
-    display_name: Minimax M2.7
-    use: langchain_anthropic:ChatAnthropic
-    model: MiniMax-M2.7
-    api_key: $MINIMAX_API_KEY
-    api_base: https://api.minimaxi.com/anthropic
-    timeout: 30
-    supports_thinking: true
-    supports_vision: false
-    max_tokens: 131072
-
   - name: Gemini-3.1-Pro
     display_name: Gemini 3.1 Pro
+    description: 谷歌最新旗舰模型，1M 超长上下文，最强多模态能力
     use: deerflow.models.patched_openai:PatchedChatOpenAI
     model: gemini-3.1-pro-preview
     api_key: $GEMINI_API_KEY
@@ -104,6 +103,8 @@ models:
     supports_thinking: true
     supports_vision: true
     max_tokens: 131072
+    profile:
+      max_input_tokens: 1048576
     temperature: 1.0
     when_thinking_enabled:
       extra_body:
@@ -112,6 +113,7 @@ models:
 
   - name: GPT-5.5
     display_name: GPT 5.5
+    description: OpenAI 旗舰，动态调节推理能力，高效输出
     use: langchain_openai:ChatOpenAI
     model: gpt-5.5
     api_key: $OPENAI_API_KEY
@@ -121,6 +123,8 @@ models:
     supports_vision: true
     supports_reasoning_effort: true
     max_tokens: 131072
+    profile:
+      max_input_tokens: 131072
     temperature: 1.0
     when_thinking_enabled:
       extra_body:
@@ -129,11 +133,14 @@ models:
   
   - name: claude-sonnet-4-6
     display_name: Claude Sonnet 4.6
+    description: Anthropic 主力模型，编程能力强，人机交互体验好
     use: langchain_anthropic:ChatAnthropic
     model: claude-sonnet-4-6-thinking
     api_key: $ANTHROPIC_API_KEY
     base_url: https://www.dmxapi.cn
     max_tokens: 128000
+    profile:
+      max_input_tokens: 200000
     supports_vision: true
     supports_thinking: true
     supports_reasoning_effort: true
@@ -146,11 +153,14 @@ models:
 
   - name: claude-opus-4-6
     display_name: Claude Opus 4.6
+    description: Anthropic 旗舰，信息整合推理编程 SOTA，贵贵贵贵
     use: langchain_anthropic:ChatAnthropic
     model: claude-opus-4-6-thinking
     api_key: $ANTHROPIC_API_KEY
     base_url: https://www.dmxapi.cn
     max_tokens: 128000
+    profile:
+      max_input_tokens: 1048576
     supports_vision: true
     supports_thinking: true
     supports_reasoning_effort: true
@@ -234,7 +244,9 @@ tools:
   #   # Image size filter. Options: "l" (large), "m" (medium), "i" (icon).
   #   image_size: "i"
 
-  # Academic search tools (OpenAlex + Semantic Scholar with aggregator fallback)
+  # Academic search tools (OpenAlex + Semantic Scholar aggregator)
+  # Uses OpenAlex as primary source with Semantic Scholar fallback.
+  # Set OPENALEX_EMAIL for polite pool access; SEMANTIC_SCHOLAR_API_KEY for higher S2 rate limits.
   - name: academic_search_papers
     group: academic_search
     use: deerflow.community.academic_search.tools:academic_search_papers_tool
@@ -291,7 +303,10 @@ tools:
     timeout_seconds: 20
     cache_db_path: cache/academic_search.db
     cache_hot_max_entries: 256
+    search_ttl_seconds: 43200
     paper_detail_ttl_seconds: 604800
+    recommend_ttl_seconds: 86400
+    citation_network_ttl_seconds: 86400
     max_retry_attempts: 4
     api_key: $SEMANTIC_SCHOLAR_API_KEY
     openalex_email: $OPENALEX_EMAIL
@@ -305,6 +320,8 @@ tools:
     cache_hot_max_entries: 256
     search_ttl_seconds: 43200
     paper_detail_ttl_seconds: 604800
+    recommend_ttl_seconds: 86400
+    citation_network_ttl_seconds: 86400
     max_retry_attempts: 4
     api_key: $SEMANTIC_SCHOLAR_API_KEY
     openalex_email: $OPENALEX_EMAIL
@@ -312,10 +329,12 @@ tools:
   - name: academic_get_citation_network
     group: academic_search
     use: deerflow.community.academic_search.tools:academic_get_citation_network_tool
-    timeout_seconds: 30
+    timeout_seconds: 20
     cache_db_path: cache/academic_search.db
     cache_hot_max_entries: 256
+    search_ttl_seconds: 43200
     paper_detail_ttl_seconds: 604800
+    recommend_ttl_seconds: 86400
     citation_network_ttl_seconds: 86400
     max_retry_attempts: 4
     api_key: $SEMANTIC_SCHOLAR_API_KEY
@@ -389,8 +408,7 @@ sandbox:
 #   # Optional: Container image to use (works with both Docker and Apple Container)
 #   # Default: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest
 #   # Recommended: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest (works on both x86_64 and arm64)
-  image: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest
-
+  image: scientific-tumbleweed-aio-sandbox:arm64-20260427
 #   # Optional: Base port for sandbox containers (default: 8080)
 #   # port: 8080
 
@@ -437,7 +455,7 @@ sandbox:
 subagents:
   agents:
     verification:
-      model: deepseek-v4-pro
+      model: gpt-5.5
       timeout_seconds: 600
     plan:
       model: claude-opus-4-6
@@ -445,7 +463,7 @@ subagents:
       model: deepseek-v4-flash
       timeout_seconds: 1800
     explore:
-      model: minimax-m2.7
+      model: deepseek-v4-flash
     bash:
       model: gpt-5.5
       timeout_seconds: 300
@@ -523,14 +541,14 @@ summarization:
   # You can specify a single trigger or a list of triggers
   trigger:
     # Trigger when token count reaches 15564
-    - type: tokens
-      value: 15564
+    # - type: tokens
+    #   value: 15564
     # Uncomment to also trigger when message count reaches 50
     # - type: messages
     #   value: 50
     # Uncomment to trigger when 80% of model's max input tokens is reached
-    # - type: fraction
-    #   value: 0.8
+    - type: fraction
+      value: 0.8
 
   # Context retention policy after summarization
   # Specifies how much recent history to preserve

@@ -809,7 +809,7 @@ export function InputBox({
                           {m.display_name}
                         </ModelSelectorName>
                         <span className="text-muted-foreground truncate text-[10px]">
-                          {m.model}
+                          {m.description || m.model}
                         </span>
                       </div>
                       {m.supports_thinking && (

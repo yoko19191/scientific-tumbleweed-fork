@@ -19,7 +19,7 @@ export const Suggestions = ({
 }: SuggestionsProps) => (
   <ScrollArea className="overflow-x-auto whitespace-normal" {...props}>
     <div
-      className={cn("flex w-full flex-wrap items-center gap-2", className)}
+      className={cn("flex w-full flex-nowrap items-center gap-2", className)}
       data-slot="suggestions-list"
     >
       {Children.map(children, (child, index) =>
@@ -37,7 +37,7 @@ export const Suggestions = ({
         ),
       )}
     </div>
-    <ScrollBar className="hidden" orientation="horizontal" />
+    <ScrollBar orientation="horizontal" />
   </ScrollArea>
 );
 
@@ -64,7 +64,7 @@ export const Suggestion = ({
   return (
     <Button
       className={cn(
-        "text-muted-foreground h-auto max-w-full cursor-pointer rounded-full px-4 py-2 text-center text-xs font-normal whitespace-normal",
+        "text-muted-foreground h-auto max-w-full cursor-pointer rounded-full px-4 py-2 text-center text-xs font-normal whitespace-nowrap",
         className,
       )}
       onClick={handleClick}

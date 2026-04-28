@@ -5,12 +5,17 @@ import { useCallback, useEffect, useState } from "react";
 
 import { type PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
+import { SandboxTrigger } from "@/components/workspace/artifacts/sandbox-trigger";
 import {
   ChatBox,
   useSpecificChatMode,
   useThreadChat,
 } from "@/components/workspace/chats";
 import { ExportTrigger } from "@/components/workspace/export-trigger";
+import {
+  FollowupSuggestions,
+  useFollowupSuggestions,
+} from "@/components/workspace/followup-suggestions";
 import { InputBox } from "@/components/workspace/input-box";
 import {
   MessageList,
@@ -35,7 +40,6 @@ export default function ChatPage() {
   const { t } = useI18n();
   const router = useRouter();
   const { user } = useAuth();
-  const [showFollowups, setShowFollowups] = useState(false);
   const { threadId, setThreadId, isNewThread, setIsNewThread, isMock } =
     useThreadChat();
   const [settings, setSettings] = useThreadSettings(threadId);
@@ -108,6 +112,35 @@ export default function ChatPage() {
     await thread.stop();
   }, [thread]);
 
+  const threadStatus = thread.error
+    ? "error" as const
+    : thread.isLoading
+      ? "streaming" as const
+      : "ready" as const;
+
+  const {
+    followups,
+    followupsLoading,
+    showFollowups,
+    setFollowupsHidden,
+  } = useFollowupSuggestions({
+    threadId,
+    status: threadStatus,
+    disabled: env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || isUploading,
+    isNewThread,
+    isMock,
+    modelName: settings.context.model_name,
+    messages: thread.messages,
+  });
+
+  const handleFollowupSelect = useCallback(
+    (suggestion: string) => {
+      void sendMessage(threadId, { text: suggestion, files: [] });
+      setFollowupsHidden(true);
+    },
+    [sendMessage, threadId, setFollowupsHidden],
+  );
+
   const messageListPaddingBottom = showFollowups
     ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
       MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
@@ -148,6 +181,7 @@ export default function ChatPage() {
             </div>
             <div className="flex items-center gap-2">
               <TokenUsageIndicator messages={thread.messages} />
+              <SandboxTrigger />
               <ExportTrigger threadId={threadId} />
               <ArtifactTrigger />
             </div>
@@ -172,13 +206,20 @@ export default function ChatPage() {
                 )}
               >
                 <div className="absolute -top-4 right-0 left-0 z-0">
-                  <div className="absolute right-0 bottom-0 left-0">
+                  <div className="absolute right-0 bottom-0 left-0 flex flex-col-reverse">
                     <TodoList
                       className="bg-background/5"
                       todos={thread.values.todos ?? []}
                       hidden={
                         !thread.values.todos || thread.values.todos.length === 0
                       }
+                    />
+                    <FollowupSuggestions
+                      followups={followups}
+                      followupsLoading={followupsLoading}
+                      showFollowups={showFollowups}
+                      setFollowupsHidden={setFollowupsHidden}
+                      onSelect={handleFollowupSelect}
                     />
                   </div>
                 </div>
@@ -188,13 +229,7 @@ export default function ChatPage() {
                     isNewThread={isNewThread}
                     threadId={threadId}
                     autoFocus={isNewThread}
-                    status={
-                      thread.error
-                        ? "error"
-                        : thread.isLoading
-                          ? "streaming"
-                          : "ready"
-                    }
+                    status={threadStatus}
                     context={settings.context}
                     extraHeader={
                       isNewThread && <Welcome mode={settings.context.mode} />
@@ -206,7 +241,6 @@ export default function ChatPage() {
                     onContextChange={(context) =>
                       setSettings("context", context)
                     }
-                    onFollowupsVisibilityChange={setShowFollowups}
                     onSubmit={handleSubmit}
                     onStop={handleStop}
                   />

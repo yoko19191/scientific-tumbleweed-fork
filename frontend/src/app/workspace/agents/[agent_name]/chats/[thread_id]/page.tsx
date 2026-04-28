@@ -8,8 +8,13 @@ import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
 import { AgentWelcome } from "@/components/workspace/agent-welcome";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
+import { SandboxTrigger } from "@/components/workspace/artifacts/sandbox-trigger";
 import { ChatBox, useThreadChat } from "@/components/workspace/chats";
 import { ExportTrigger } from "@/components/workspace/export-trigger";
+import {
+  FollowupSuggestions,
+  useFollowupSuggestions,
+} from "@/components/workspace/followup-suggestions";
 import { InputBox } from "@/components/workspace/input-box";
 import {
   MessageList,
@@ -32,7 +37,6 @@ import { cn } from "@/lib/utils";
 
 export default function AgentChatPage() {
   const { t } = useI18n();
-  const [showFollowups, setShowFollowups] = useState(false);
   const router = useRouter();
 
   const { agent_name } = useParams<{
@@ -88,6 +92,35 @@ export default function AgentChatPage() {
     await thread.stop();
   }, [thread]);
 
+  const threadStatus = thread.error
+    ? "error" as const
+    : thread.isLoading
+      ? "streaming" as const
+      : "ready" as const;
+
+  const {
+    followups,
+    followupsLoading,
+    showFollowups,
+    setFollowupsHidden,
+  } = useFollowupSuggestions({
+    threadId,
+    status: threadStatus,
+    disabled: env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
+    isNewThread,
+    isMock: false,
+    modelName: settings.context.model_name,
+    messages: thread.messages,
+  });
+
+  const handleFollowupSelect = useCallback(
+    (suggestion: string) => {
+      void sendMessage(threadId, { text: suggestion, files: [] }, { agent_name });
+      setFollowupsHidden(true);
+    },
+    [sendMessage, threadId, agent_name, setFollowupsHidden],
+  );
+
   const messageListPaddingBottom = showFollowups
     ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
       MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
@@ -129,6 +162,7 @@ export default function AgentChatPage() {
                 </Button>
               </Tooltip>
               <TokenUsageIndicator messages={thread.messages} />
+              <SandboxTrigger />
               <ExportTrigger threadId={threadId} />
               <ArtifactTrigger />
             </div>
@@ -155,13 +189,20 @@ export default function AgentChatPage() {
                 )}
               >
                 <div className="absolute -top-4 right-0 left-0 z-0">
-                  <div className="absolute right-0 bottom-0 left-0">
+                  <div className="absolute right-0 bottom-0 left-0 flex flex-col-reverse">
                     <TodoList
                       className="bg-background/5"
                       todos={thread.values.todos ?? []}
                       hidden={
                         !thread.values.todos || thread.values.todos.length === 0
                       }
+                    />
+                    <FollowupSuggestions
+                      followups={followups}
+                      followupsLoading={followupsLoading}
+                      showFollowups={showFollowups}
+                      setFollowupsHidden={setFollowupsHidden}
+                      onSelect={handleFollowupSelect}
                     />
                   </div>
                 </div>
@@ -171,13 +212,7 @@ export default function AgentChatPage() {
                   isNewThread={isNewThread}
                   threadId={threadId}
                   autoFocus={isNewThread}
-                  status={
-                    thread.error
-                      ? "error"
-                      : thread.isLoading
-                        ? "streaming"
-                        : "ready"
-                  }
+                  status={threadStatus}
                   context={settings.context}
                   extraHeader={
                     isNewThread && (
@@ -186,7 +221,6 @@ export default function AgentChatPage() {
                   }
                   disabled={env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true"}
                   onContextChange={(context) => setSettings("context", context)}
-                  onFollowupsVisibilityChange={setShowFollowups}
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                 />

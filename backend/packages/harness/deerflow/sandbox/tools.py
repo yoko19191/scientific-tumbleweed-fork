@@ -587,7 +587,7 @@ def validate_local_tool_path(path: str, thread_data: ThreadDataState | None, *, 
     This function is a security gate — it checks whether *path* may be
     accessed and raises on violation.  It does **not** resolve the virtual
     path to a host path; callers are responsible for resolution via
-    ``_resolve_and_validate_user_data_path`` or ``_resolve_skills_path``.
+    ``resolve_and_validate_user_data_path`` or ``_resolve_skills_path``.
 
     Allowed virtual-path families:
       - ``/mnt/user-data/*``  — always allowed (read + write)

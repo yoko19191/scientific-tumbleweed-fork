@@ -169,7 +169,6 @@ def _resolve_docker_bind_host(sandbox_host: str | None = None, bind_host: str | 
     return "0.0.0.0"
 
 
-
 class LocalContainerBackend(SandboxBackend):
     """Backend that manages sandbox containers locally using Docker or Apple Container.
 
@@ -553,7 +552,8 @@ class LocalContainerBackend(SandboxBackend):
 
         cmd.append(self._image)
 
-        logger.info(f"Starting container using {self._runtime}: {' '.join(cmd)}")
+        log_cmd = _format_container_command_for_log(_redact_container_command_for_log(cmd))
+        logger.info(f"Starting container using {self._runtime}: {log_cmd}")
 
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)

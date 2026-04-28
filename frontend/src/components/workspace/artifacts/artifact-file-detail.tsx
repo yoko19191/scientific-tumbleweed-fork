@@ -5,8 +5,11 @@ import {
   EyeIcon,
   LoaderIcon,
   PackageIcon,
+  RotateCcwIcon,
   SquareArrowOutUpRightIcon,
   XIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -34,7 +37,7 @@ import { urlOfArtifact } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { installSkill } from "@/core/skills/api";
 import { streamdownPlugins } from "@/core/streamdown";
-import { checkCodeFile, getFileName } from "@/core/utils/files";
+import { checkCodeFile, checkImageFile, getFileName } from "@/core/utils/files";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +83,7 @@ export function ArtifactFileDetail({
     }
     return checkCodeFile(filepath);
   }, [filepath, isWriteFile, isSkillFile]);
+  const isImageFile = useMemo(() => checkImageFile(filepath), [filepath]);
   const isSupportPreview = useMemo(() => {
     return language === "html" || language === "markdown";
   }, [language]);
@@ -93,7 +97,13 @@ export function ArtifactFileDetail({
 
   const [viewMode, setViewMode] = useState<"code" | "preview">("code");
   const [isInstalling, setIsInstalling] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
   const { isMock } = useThread();
+
+  useEffect(() => {
+    setZoomLevel(1);
+  }, [filepath]);
+
   useEffect(() => {
     if (isSupportPreview) {
       setViewMode("preview");
@@ -149,6 +159,31 @@ export function ArtifactFileDetail({
           </ArtifactTitle>
         </div>
         <div className="flex min-w-0 grow items-center justify-center">
+          {isImageFile && (
+            <div className="flex items-center gap-1">
+              <ArtifactAction
+                icon={ZoomOutIcon}
+                label="Zoom out"
+                tooltip="Zoom out"
+                onClick={() => setZoomLevel((z) => Math.max(0.25, z - 0.25))}
+              />
+              <span className="text-muted-foreground min-w-[3ch] text-center text-xs">
+                {Math.round(zoomLevel * 100)}%
+              </span>
+              <ArtifactAction
+                icon={ZoomInIcon}
+                label="Zoom in"
+                tooltip="Zoom in"
+                onClick={() => setZoomLevel((z) => Math.min(5, z + 0.25))}
+              />
+              <ArtifactAction
+                icon={RotateCcwIcon}
+                label="Reset"
+                tooltip="Reset zoom"
+                onClick={() => setZoomLevel(1)}
+              />
+            </div>
+          )}
           {isSupportPreview && (
             <ToggleGroup
               className="mx-auto"
@@ -264,7 +299,30 @@ export function ArtifactFileDetail({
             readonly
           />
         )}
-        {!isCodeFile && (
+        {isImageFile && (
+          <div
+            className="flex size-full items-start justify-center overflow-auto"
+            onWheel={(e) => {
+              if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                setZoomLevel((z) =>
+                  Math.min(5, Math.max(0.25, z + (e.deltaY > 0 ? -0.1 : 0.1))),
+                );
+              }
+            }}
+          >
+            <img
+              src={urlOfArtifact({ filepath, threadId, isMock })}
+              alt={getFileName(filepath)}
+              className="h-auto max-w-full object-contain transition-transform"
+              style={{
+                transform: `scale(${zoomLevel})`,
+                transformOrigin: "top center",
+              }}
+            />
+          </div>
+        )}
+        {!isCodeFile && !isImageFile && (
           <iframe
             className="size-full"
             src={urlOfArtifact({ filepath, threadId, isMock })}

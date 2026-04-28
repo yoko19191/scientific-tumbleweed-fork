@@ -143,6 +143,14 @@ const extensionMap: Record<string, string> = {
   v: "v",
 };
 
+const IMAGE_EXTENSIONS = new Set([
+  "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico", "heic", "tiff",
+]);
+
+export function checkImageFile(filepath: string): boolean {
+  return IMAGE_EXTENSIONS.has(getFileExtension(filepath));
+}
+
 export function getFileName(filepath: string) {
   return filepath.split("/").pop()!;
 }

@@ -18,6 +18,7 @@ import {
   ArtifactFileList,
   useArtifacts,
 } from "../artifacts";
+import { SandboxFileManager } from "../artifacts/sandbox-file-manager";
 import { useThread } from "../messages/context";
 
 const CLOSE_MODE = { chat: 100, artifacts: 0 };
@@ -40,6 +41,7 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
     select: selectArtifact,
     deselect,
     selectedArtifact,
+    fileManagerOpen,
   } = useArtifacts();
 
   const [autoSelectFirstArtifact, setAutoSelectFirstArtifact] = useState(true);
@@ -130,7 +132,9 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
             artifactPanelOpen ? "translate-x-0" : "translate-x-full",
           )}
         >
-          {selectedArtifact ? (
+          {fileManagerOpen ? (
+            <SandboxFileManager threadId={threadId} />
+          ) : selectedArtifact ? (
             <ArtifactFileDetail
               className="size-full"
               filepath={selectedArtifact}

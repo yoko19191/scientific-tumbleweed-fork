@@ -21,6 +21,9 @@ export interface ArtifactsContextType {
   open: boolean;
   autoOpen: boolean;
   setOpen: (open: boolean) => void;
+
+  fileManagerOpen: boolean;
+  setFileManagerOpen: (open: boolean) => void;
 }
 
 const ArtifactsContext = createContext<ArtifactsContextType | undefined>(
@@ -39,6 +42,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
   );
   const [autoOpen, setAutoOpen] = useState(true);
+  const [fileManagerOpen, setFileManagerOpenState] = useState(false);
   const { setOpen: setSidebarOpen } = useSidebar();
 
   const select = useCallback(
@@ -78,6 +82,15 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     selectedArtifact,
     select,
     deselect,
+
+    fileManagerOpen,
+    setFileManagerOpen: (isOpen: boolean) => {
+      setFileManagerOpenState(isOpen);
+      if (isOpen) {
+        setSelectedArtifact(null);
+        setOpen(true);
+      }
+    },
   };
 
   return (

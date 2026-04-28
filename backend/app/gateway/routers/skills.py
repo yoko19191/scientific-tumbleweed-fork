@@ -10,7 +10,7 @@ from app.gateway.deps import get_current_user_id
 from app.gateway.path_utils import resolve_thread_virtual_path
 from deerflow.agents.lead_agent.prompt import refresh_skills_system_prompt_cache_async
 from deerflow.skills import Skill, load_skills
-from deerflow.skills.installer import SkillAlreadyExistsError, install_skill_from_archive
+from deerflow.skills.installer import SkillAlreadyExistsError, ainstall_skill_from_archive
 from deerflow.skills.manager import (
     append_history,
     atomic_write,
@@ -107,6 +107,7 @@ async def list_skills(user_id: str = Depends(get_current_user_id)) -> SkillsList
     except Exception as e:
         logger.error(f"Failed to load skills: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to load skills: {str(e)}")
+
 
 
 @router.get("/skills/custom", response_model=SkillsListResponse, summary="List Custom Skills")

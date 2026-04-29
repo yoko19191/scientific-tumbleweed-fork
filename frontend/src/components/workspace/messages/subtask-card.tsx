@@ -41,8 +41,9 @@ export function SubtaskCard({
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
   const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
-  const task = useSubtask(taskId)!;
+  const task = useSubtask(taskId);
   const icon = useMemo(() => {
+    if (!task) return <Loader2Icon className="size-3 animate-spin" />;
     if (task.status === "completed") {
       return <CheckCircleIcon className="size-3" />;
     } else if (task.status === "failed") {
@@ -50,7 +51,26 @@ export function SubtaskCard({
     } else if (task.status === "in_progress") {
       return <Loader2Icon className="size-3 animate-spin" />;
     }
-  }, [task.status]);
+  }, [task?.status]);
+  if (!task) {
+    return (
+      <ChainOfThought
+        className={cn("relative w-full gap-2 rounded-lg border py-0", className)}
+        open={false}
+      >
+        <div className="bg-background/95 flex w-full flex-col rounded-lg">
+          <div className="flex w-full items-center justify-between p-0.5">
+            <Button className="w-full items-start justify-start text-left" variant="ghost" disabled>
+              <div className="flex w-full items-center gap-2">
+                <Loader2Icon className="size-3 animate-spin" />
+                <span className="text-muted-foreground text-sm">{t.subtasks.in_progress}</span>
+              </div>
+            </Button>
+          </div>
+        </div>
+      </ChainOfThought>
+    );
+  }
   return (
     <ChainOfThought
       className={cn("relative w-full gap-2 rounded-lg border py-0", className)}

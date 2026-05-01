@@ -31,7 +31,7 @@ When a user requests image generation, identify:
 
 Write a descriptive English prompt to a plain text file in `/mnt/user-data/workspace/` with naming pattern: `{descriptive-name}.txt`
 
-The prompt should be a single, detailed natural language description. gpt-image-2 supports up to 32,000 characters — be as specific and semantic as possible.
+The prompt should be a single, detailed natural language description. gpt-image-2 supports up to 32,000 characters, but for stability and speed, keep prompts within 1,000 characters whenever possible.
 
 **Prompt writing guidelines:**
 
@@ -59,6 +59,7 @@ Parameters:
 - `--size`: Resolution — `auto` (default), `1024x1024`, `1536x1024` (landscape), `1024x1536` (portrait)
 - `--quality`: Quality level — `auto` (default), `high`, `medium`, `low`
 - `--n`: Number of images to generate, 1-10 (optional, default: 1)
+- `--timeout`: Request timeout in seconds (optional, default: 180)
 
 [!NOTE]
 Do NOT read the python file, just call it with the parameters.
@@ -154,7 +155,7 @@ After generation:
 ## Notes
 
 - Always write prompts in English regardless of user's language
-- Be as descriptive and specific as possible — the model handles up to 32,000 characters
+- Keep prompts concise and clear; keep within 1,000 characters whenever possible
 - For academic figures, explicitly describe layout, labels, color coding, and style
 - Specify "white background", "vector style", "clean labels" for publication-quality figures
 - Use `--size 1536x1024` for landscape diagrams, `1024x1536` for portrait/vertical flows

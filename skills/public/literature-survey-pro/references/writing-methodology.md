@@ -95,6 +95,15 @@ Mini lit review 部分**必须**有清晰的 "however" 转折：
 - **修复**：按概念/方法/结论分组，用主题句统领，引用作为证据而非主语
 - **正确示例**：「基于注意力机制的方法已成为主流范式 \citep{a2020,b2021,c2022}，其中...」
 
+### 内容堆砌反模式
+- **症状**：段落只总结多篇论文分别做了什么，没有解释它们共同支持或挑战了什么机制观点
+- **修复**：先提出机制主张，再组织证据簇，并说明证据强度、分歧来源和适用边界
+- **正确示例**：「These studies collectively suggest that X influences Y through Z, but the strength of this mechanism appears conditional on dataset scale and intervention timing \citep{a2021,b2022,c2024}.」
+
+### 证据缺席反模式
+- **症状**：使用 "shows/proves/demonstrates" 等强表述，但没有说明证据类型、样本/数据范围、评价指标或局限
+- **修复**：每个关键主张后补充证据类型和强度判断；证据不足时使用 hedging
+
 ### Hedge 泛滥
 - **症状**：每句都有 "may"、"might"、"could"、"possibly"
 - **修复**：区分确定性层级——有强证据时直接陈述，仅在真正不确定时使用 hedging
@@ -109,29 +118,29 @@ Mini lit review 部分**必须**有清晰的 "however" 转折：
 
 ---
 
-## 4. 段落结构模板
+## 4. 机制与证据写作模板
 
-每个正文段落遵循四层结构：
+每个正文段落遵循五层结构：
 
 ```
-主题句（对该主题的核心主张）
-  → 证据簇（2-4 个引用支撑，按共识/分歧组织）
-  → 分析（证据意味着什么，不仅仅是说了什么）
+机制主张（对该主题的解释性观点）
+  → 证据簇（2-4 个引用支撑，按证据类型和强度组织）
+  → 证据评估（研究设计、样本/数据、指标、可复现性、分歧来源）
+  → 边界条件（何时成立、何处可能失效、外推限制）
   → 过渡（桥接到下一段或下一节）
 ```
 
 **示例**：
 ```latex
-Transformer-based architectures have fundamentally reshaped the landscape of
-natural language processing \citep{vaswani2017attention}. Subsequent work
-demonstrated their effectiveness across diverse tasks, including machine
-translation \citep{devlin2019bert}, text generation \citep{radford2019gpt2},
-and question answering \citep{raffel2020t5}. Notably, these models share a
-common reliance on self-attention mechanisms, yet differ significantly in
-their pre-training objectives and architectural choices. However, the
-computational cost of full self-attention scales quadratically with sequence
-length, motivating a parallel line of research on efficient attention
-variants (Section~\ref{sec:efficient}).
+Transformer-based architectures appear to improve language modeling primarily
+by replacing fixed sequential bottlenecks with content-dependent token
+interactions \citep{vaswani2017attention}. Evidence for this mechanism comes
+from consistent gains across machine translation, language understanding, and
+question answering benchmarks \citep{devlin2019bert,raffel2020t5}. However,
+the strength of this evidence is strongest in benchmark settings with abundant
+pre-training data and less direct in low-resource or long-context regimes.
+This boundary condition motivates a parallel line of work on efficient and
+data-constrained attention variants (Section~\ref{sec:efficient}).
 ```
 
 ---
@@ -140,15 +149,15 @@ variants (Section~\ref{sec:efficient}).
 
 每个主题章节（Phase 3 中的 Thematic Section）必须包含：
 
-1. **开头段**：1-2 段介绍该主题的动机和范围
-2. **方法/发现分组**：按概念而非论文组织，每组一个段落
-3. **对比表格**：至少 1 个 `booktabs` 风格的对比表（方法/数据集/指标/创新点）
-4. **局限性段**：该主题方向的共性局限
+1. **开头段**：1-2 段提出该主题的核心机制问题和范围
+2. **机制/证据分组**：按机制观点、证据类型、证据强度和边界条件组织，每组一个段落
+3. **对比表格**：至少 1 个 `booktabs` 风格的对比表（机制观点/证据类型/证据强度/边界条件/代表文献）
+4. **局限性段**：该主题方向的共性证据缺口、混杂因素和外推限制
 5. **过渡段**：桥接到下一个主题章节
 
 ### 对比表格写作规范
 
 - 使用 `\begin{table}[H]` + `booktabs`（`\toprule`, `\midrule`, `\bottomrule`）
-- 列设计：Reference | Category | Key Innovation | Dataset/Context | Main Result
+- 列设计：Mechanism View | Evidence Type | Evidence Strength | Boundary Conditions | Representative Sources
 - 表标题放在表格上方（`\caption{...}` 在 `\begin{tabular}` 之前）
 - 每个表格必须在正文中被引用（`Table~\ref{tab:...}`）

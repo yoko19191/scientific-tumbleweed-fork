@@ -11,6 +11,7 @@ def generate_image(
     size: str = "auto",
     quality: str = "high",
     n: int = 1,
+    timeout: int = 180,
 ) -> str:
     api_key = os.getenv("DMXAPI_API_KEY")
     if not api_key:
@@ -32,7 +33,7 @@ def generate_image(
             "size": size,
             "quality": quality,
         },
-        timeout=1000,
+        timeout=timeout,
     )
     response.raise_for_status()
     data = response.json()
@@ -74,10 +75,20 @@ if __name__ == "__main__":
     parser.add_argument("--size", default="auto", choices=["auto", "1024x1024", "1536x1024", "1024x1536"], help="Image resolution")
     parser.add_argument("--quality", default="high", choices=["auto", "high", "medium", "low"], help="Image quality")
     parser.add_argument("--n", type=int, default=1, help="Number of images to generate (1-10)")
+    parser.add_argument("--timeout", type=int, default=180, help="Request timeout in seconds")
 
     args = parser.parse_args()
 
     try:
-        print(generate_image(args.prompt_file, args.output_file, args.size, args.quality, args.n))
+        print(
+            generate_image(
+                args.prompt_file,
+                args.output_file,
+                args.size,
+                args.quality,
+                args.n,
+                args.timeout,
+            )
+        )
     except Exception as e:
         print(f"Error: {e}")

@@ -32,10 +32,10 @@ grep -oP '@\w+\{([^,]+),' references.bib | \
 
 ### Step 3: 元数据验证
 
-对至少 50% 的 BibTeX 条目，使用 `academic_get_bibtex` 进行交叉验证：
-- 比对 title、authors、year、venue 是否与 API 返回一致
-- 发现不一致时以 API 数据为准进行修正
-- 对于 API 无法验证的条目（如灰色文献），保留但标注来源
+对至少 50% 的 BibTeX 条目，使用可用的学术元数据来源进行交叉验证：
+- 比对 title、authors、year、venue 是否与数据源返回一致
+- 发现不一致时以可信学术数据源或论文原始页面为准进行修正
+- 对于无法验证的条目（如灰色文献），保留但标注来源
 
 ### Step 4: Entry type 检查
 
@@ -51,7 +51,7 @@ grep -oP '@\w+\{([^,]+),' references.bib | \
 ### 编译命令（英文输出）
 
 ```bash
-cd /mnt/user-data/outputs/survey-<slug>-<date>/ && \
+cd "survey+{title}+{version}/" && \
 pdflatex -interaction=nonstopmode survey.tex && \
 bibtex survey && \
 pdflatex -interaction=nonstopmode survey.tex && \
@@ -61,7 +61,7 @@ pdflatex -interaction=nonstopmode survey.tex
 ### 编译命令（中文输出）
 
 ```bash
-cd /mnt/user-data/outputs/survey-<slug>-<date>/ && \
+cd "survey+{title}+{version}/" && \
 xelatex -interaction=nonstopmode survey.tex && \
 bibtex survey && \
 xelatex -interaction=nonstopmode survey.tex && \
@@ -118,7 +118,7 @@ detex survey.tex 2>/dev/null | wc -w || \
 ```
 
 **检查项**：
-- 唯一引用数 ≥ Scope Card 目标的 80%
+- 唯一引用数 ≥ Article Outline + Writing Outline 中目标引用数的 80%
 - 表格数 ≥ 2
 - 每个 RQ 在 Introduction 和 Conclusion 中都被提及
 
@@ -126,11 +126,12 @@ detex survey.tex 2>/dev/null | wc -w || \
 
 逐项检查：
 
-1. **无捏造元数据**：抽查 10 个 BibTeX 条目，验证 title/year 与 `academic_get_bibtex` 返回一致
+1. **无捏造元数据**：抽查 10 个 BibTeX 条目，验证 title/year 与可信学术数据源或论文原始页面一致
 2. **无孤立引用/条目**：Step 1-2 的交叉比对已通过
 3. **无重复 key**：`.bib` 中无重复条目
 4. **引用诚实**：搜索 `reportedly`、`according to` 等 hedging 标记，确认用于正确场景
 5. **无 [需补充] 残留**：搜索 LaTeX 注释中的 `[需补充]` 标记，全部处理完毕
+6. **无内部过程痕迹**：正文和 Methodology 不出现 agent、subagent、prompt、tool call 或内部工具函数名
 
 ### Gate C: 多视角审阅
 
@@ -153,7 +154,8 @@ detex survey.tex 2>/dev/null | wc -w || \
 - 论证层次是否清晰？
 - 是否有冗余或遗漏？
 - 反模式检测是否通过？
-- 评分标准：流畅度(30%) + 结构(30%) + 无反模式(20%) + 过渡质量(20%)
+- 是否围绕机制观点和证据强度展开，而不是内容堆砌？
+- 评分标准：流畅度(25%) + 结构(25%) + 机制/证据综合(25%) + 无反模式(15%) + 过渡质量(10%)
 
 **总分 = 三个视角的平均分**
 
@@ -167,7 +169,60 @@ detex survey.tex 2>/dev/null | wc -w || \
 
 ---
 
-## 4. 编译降级方案
+## 4. Gate D: paper-review + 独立子智能体评估
+
+文章完成、Gate A-C 自检通过后，必须完成两类外部评估。主写作上下文不得替代这些评估。
+
+### 调度要求
+
+- 评估 1：使用 `paper-review` 对成稿进行学术论文审阅，重点检查论证质量、贡献表述、结构、写作质量和潜在学术风险。
+- 评估 2：派发一个独立子智能体进行质量清单复核。不要硬编码具体子智能体类型名称，只要求其独立读取文件、独立评估并输出结论。
+- 输入文件：`survey.tex`、`references.bib`、`scope/article-outline.md`、`scope/writing-plan.md`、`synthesis-blueprint.md`、`explore/explore.tex`、`explore/papers.json`、`explore/references.bib`、`quality-checklist.md`
+- `paper-review` 评估依据：成稿学术质量、论证完整性、文献覆盖、贡献清晰度和投稿风险。
+- 独立子智能体评估依据：完整执行 `quality-checklist.md` 的 A-F 部分。
+- 综合评估目标：综述质量、证据质量、机制观点综合、引用诚信、LaTeX 质量，以及协作质量。
+
+### 独立子智能体 Prompt 模板
+
+```text
+你是独立质量审阅者。请不要延续写作者的自评结论。
+
+请读取 survey.tex、references.bib、scope/article-outline.md、scope/writing-plan.md、
+synthesis-blueprint.md、explore/explore.tex、explore/papers.json、explore/references.bib
+和 quality-checklist.md，基于 checklist 的 A-F 部分独立评估：
+
+1. 每个 checklist 项是否通过，并给出证据位置或失败原因。
+2. 文章是否围绕机制观点和证据强度组织，而不是论文内容堆砌。
+3. `explore/explore.tex`、`explore/references.bib`、`synthesis-blueprint.md` 与正文之间是否可追溯，尤其是 Literature Matrix 和 Evidence Convergence Summary 两个章节。
+4. `synthesis-blueprint.md` 的 Devil's Advocate Stress Test 是否被正文吸收，尤其是 strongest counter-argument 和过度推论风险。
+5. Methodology 是否像研究者的文献筛选说明，且无 agent/tool/prompt 等内部过程痕迹。
+6. 引用、BibTeX、RQ 覆盖和表格是否满足门控。
+7. 协作质量：`scope/article-outline.md`、`scope/writing-plan.md`、Background Brief、explore offload、写作约束和最终输出是否一致。
+
+输出：
+- Verdict: PASS 或 FAIL
+- Checklist summary: A-F 各部分通过率
+- Critical issues: 必须修复的问题
+- Minor issues: 可选改进
+- Evidence notes: 支撑结论的简短证据
+```
+
+### 通过条件
+
+- `paper-review` 结论为通过或仅有不阻塞交付的 Minor issues
+- 独立子智能体输出 `Verdict: PASS`
+- 两类评估均无 Critical issues
+- `quality-checklist.md` 的 A-F 部分全部通过，或只有明确说明不影响交付的 Minor issues
+
+若任一外部评估返回 `FAIL`：
+1. 修复 Critical issues。
+2. 重新运行相关 Gate A-C。
+3. 再次运行 `paper-review` 或独立子智能体复评（只重跑失败的评估即可）。
+4. 最多复评 2 轮；仍失败则停止交付并向用户报告阻塞原因。
+
+---
+
+## 5. 编译降级方案
 
 如果 sandbox 环境中 `pdflatex`/`xelatex` 不可用：
 
@@ -189,19 +244,25 @@ detex survey.tex 2>/dev/null | wc -w || \
     sh -c "cd /work && pdflatex survey.tex && bibtex survey && pdflatex survey.tex && pdflatex survey.tex"
 ```
 
-2. 仍然通过 `present_files` 呈现 `.tex` + `.bib` 文件
+2. 在交付消息中呈现 `.tex` + `.bib` 文件路径
 
 ---
 
-## 5. 门控条件总检
+## 6. 门控条件总检
 
 Phase 4 完成的最终检查清单：
 
 - [ ] 引用交叉验证通过（无孤立引用/条目）
-- [ ] BibTeX 元数据验证通过（≥50% 条目经 API 验证）
+- [ ] BibTeX 元数据验证通过（≥50% 条目经可信学术数据源验证）
 - [ ] LaTeX 编译通过（或已提供降级方案）
 - [ ] Gate A 物理计数通过
 - [ ] Gate B 学术诚信通过
 - [ ] Gate C 多视角审阅总分 ≥ 80
+- [ ] Gate D 的 `paper-review` 评估通过（无 Critical issues）
+- [ ] Gate D 的独立子智能体评估通过（Verdict: PASS，无 Critical issues）
+- [ ] `scope/article-outline.md` 和 `scope/writing-plan.md` 已生成并被用于 Explore、Write 和独立评估
+- [ ] `explore/explore.tex`、`explore/references.bib` 和 `synthesis-blueprint.md` 均已生成并被独立子智能体检查
+- [ ] 正文无智能体、prompt、内部工具调用等过程痕迹
+- [ ] 默认作者为 `Scientific Tumbleweed`
 
 **全部通过后**，进入 Phase 5 (Deliver)。

@@ -158,7 +158,7 @@ export function Welcome({
           onClick={replayWave}
           aria-label="Wave"
         >
-          {isSwarm ? "🚀" : "👋"}
+          {isSwarm ? "🐝" : "👋"}
         </button>
         <AuroraText colors={colors}>{greeting}</AuroraText>
       </div>

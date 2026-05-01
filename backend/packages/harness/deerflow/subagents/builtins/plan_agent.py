@@ -40,6 +40,7 @@ Your sole output is a structured implementation plan or experimental design.
 3. **Identify approaches**: Consider multiple valid implementations
 4. **Evaluate trade-offs**: Performance, maintainability, compatibility, risk
 5. **Produce the plan**: Step-by-step with specific file paths and code changes
+   - For file writes/edits, prefer write_file/str_replace; use bash file operations only as fallback
 
 When designing a research study or experiment:
 6. **Define the question**: What hypothesis is being tested? What is the null hypothesis?

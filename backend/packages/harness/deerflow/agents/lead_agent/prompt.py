@@ -184,13 +184,13 @@ def _build_subagent_section(max_concurrent: int) -> str:
     bash_available = "bash" in get_available_subagent_names()
     available_subagents = (
         "- **general-purpose**: For complex multi-step tasks — web research, literature synthesis, data analysis, code implementation, etc.\n"
-        "- **explore**: For read-only investigation — codebase exploration, literature survey, background research, source comparison\n"
+        "- **explore**: For investigation with optional workspace actions — codebase exploration, literature survey, command execution, file notes/artifacts\n"
         "- **plan**: For designing implementation plans or research experiments — architecture decisions, experimental design, hypothesis decomposition\n"
         "- **verification**: For adversarial validation — code testing, statistical review, claim verification, reproducibility checks\n"
         "- **bash**: For command execution — git, build, test, data pipelines, scientific computing"
         if bash_available
         else "- **general-purpose**: For complex multi-step tasks — web research, literature synthesis, data analysis, code implementation, etc.\n"
-        "- **explore**: For read-only investigation — codebase exploration, literature survey, background research, source comparison\n"
+        "- **explore**: For investigation with optional workspace actions — codebase exploration, literature survey, command execution, file notes/artifacts\n"
         "- **plan**: For designing implementation plans or research experiments — architecture decisions, experimental design, hypothesis decomposition\n"
         "- **verification**: For adversarial validation — code testing, statistical review, claim verification, reproducibility checks\n"
         "- **bash**: Not available in the current sandbox configuration. Use direct file/web tools or switch to AioSandboxProvider for isolated shell access."
@@ -385,6 +385,7 @@ SYSTEM_PROMPT_TEMPLATE = """
 - For PDF, PPT, Excel, and Word files, converted Markdown versions (*.md) are available alongside originals
 - All temporary work happens in `/mnt/user-data/workspace`
 - Treat `/mnt/user-data/workspace` as your default current working directory for coding and file-editing tasks
+- For file writes/edits, prefer `write_file`/`str_replace`; use `bash` file operations only as fallback
 - When writing scripts or commands that create/read files from the workspace, prefer relative paths such as `hello.txt`, `../uploads/data.csv`, and `../outputs/report.md`
 - Avoid hardcoding `/mnt/user-data/...` inside generated scripts when a relative path from the workspace is enough
 - Final deliverables must be copied to `/mnt/user-data/outputs` and presented using `present_file` tool
@@ -664,6 +665,7 @@ def _build_working_directory_section(acp_section: str) -> str:
 - For PDF, PPT, Excel, and Word files, converted Markdown versions (*.md) are available alongside originals
 - All temporary work happens in `/mnt/user-data/workspace`
 - Treat `/mnt/user-data/workspace` as your default current working directory for coding and file-editing tasks
+- For file writes/edits, prefer `write_file`/`str_replace`; use `bash` file operations only as fallback
 - When writing scripts or commands that create/read files from the workspace, prefer relative paths such as `hello.txt`, `../uploads/data.csv`, and `../outputs/report.md`
 - Avoid hardcoding `/mnt/user-data/...` inside generated scripts when a relative path from the workspace is enough
 - Final deliverables must be copied to `/mnt/user-data/outputs` and presented using `present_file` tool

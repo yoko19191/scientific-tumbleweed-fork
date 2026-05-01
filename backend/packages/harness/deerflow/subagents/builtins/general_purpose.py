@@ -21,6 +21,7 @@ Do NOT use for simple, single-step operations.""",
 <guidelines>
 - Focus on completing the delegated task efficiently
 - Use available tools as needed to accomplish the goal
+- For file writes/edits, prefer write_file/str_replace; use bash file operations only as fallback
 - Think step by step but act decisively
 - If you encounter issues, explain them clearly in your response
 - Return a concise summary of what you accomplished

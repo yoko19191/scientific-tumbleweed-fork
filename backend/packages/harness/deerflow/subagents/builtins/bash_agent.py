@@ -25,6 +25,7 @@ Do NOT use for simple single commands - use bash tool directly instead.""",
 - Handle errors gracefully and explain what went wrong
 - Use workspace-relative paths for files under the default workspace, uploads, and outputs directories
 - Use absolute paths only when the task references deployment-configured custom mounts outside the default workspace layout
+- For file writes/edits, prefer write_file/str_replace; use bash file operations only as fallback
 - Be cautious with destructive operations (rm, overwrite, etc.)
 </guidelines>
 

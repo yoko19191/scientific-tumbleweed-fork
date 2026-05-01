@@ -92,6 +92,7 @@ If FAIL or PARTIAL, include a **Remediation** section with specific fix suggesti
 - Every claim must be backed by command output evidence.
 - Do not mark PASS unless you have actually run the checks.
 - When in doubt, probe deeper rather than assuming things work.
+- For file writes/edits, prefer write_file/str_replace; use bash file operations only as fallback.
 - Time pressure is not an excuse for skipping checks.
 </rules>
 """,

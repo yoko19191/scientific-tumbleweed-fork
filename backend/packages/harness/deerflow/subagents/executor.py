@@ -80,6 +80,15 @@ _execution_pool = ThreadPoolExecutor(max_workers=5, thread_name_prefix="subagent
 # Dedicated pool for sync execute() calls made from an already-running event loop.
 _isolated_loop_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="subagent-isolated-")
 
+# LangGraph's recursion limit counts graph super-steps, not just model turns.
+# Very small limits such as 8 can be exhausted by a create_agent loop before a
+# subagent has a chance to produce a final answer.
+MIN_SUBAGENT_RECURSION_LIMIT = 500
+
+
+def _effective_recursion_limit(max_turns: int) -> int:
+    return max(MIN_SUBAGENT_RECURSION_LIMIT, max_turns)
+
 
 def _filter_tools(
     all_tools: list[BaseTool],
@@ -233,16 +242,24 @@ class SubagentExecutor:
             agent = self._create_agent()
             state = self._build_initial_state(task)
 
+            recursion_limit = _effective_recursion_limit(self.config.max_turns)
+
             # Build config with thread_id for sandbox access and recursion limit
             run_config: RunnableConfig = {
-                "recursion_limit": self.config.max_turns,
+                "recursion_limit": recursion_limit,
             }
             context = {}
             if self.thread_id:
                 run_config["configurable"] = {"thread_id": self.thread_id}
                 context["thread_id"] = self.thread_id
 
-            logger.info(f"[trace={self.trace_id}] Subagent {self.config.name} starting async execution with max_turns={self.config.max_turns}")
+            logger.info(
+                "[trace=%s] Subagent %s starting async execution with max_turns=%s, recursion_limit=%s",
+                self.trace_id,
+                self.config.name,
+                self.config.max_turns,
+                recursion_limit,
+            )
 
             # Use stream instead of invoke to get real-time updates
             # This allows us to collect AI messages as they are generated

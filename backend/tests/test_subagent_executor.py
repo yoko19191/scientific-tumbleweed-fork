@@ -58,6 +58,7 @@ def _setup_executor_classes():
 
     from deerflow.subagents.config import SubagentConfig
     from deerflow.subagents.executor import (
+        MIN_SUBAGENT_RECURSION_LIMIT,
         SubagentExecutor,
         SubagentResult,
         SubagentStatus,
@@ -67,6 +68,7 @@ def _setup_executor_classes():
     classes = {
         "AIMessage": AIMessage,
         "HumanMessage": HumanMessage,
+        "MIN_SUBAGENT_RECURSION_LIMIT": MIN_SUBAGENT_RECURSION_LIMIT,
         "SubagentConfig": SubagentConfig,
         "SubagentExecutor": SubagentExecutor,
         "SubagentResult": SubagentResult,
@@ -214,6 +216,38 @@ class TestAsyncExecutionPath:
         assert result.error is None
         assert result.started_at is not None
         assert result.completed_at is not None
+
+    @pytest.mark.anyio
+    async def test_aexecute_clamps_tiny_recursion_limit(self, classes, mock_agent, msg):
+        """Tiny max_turns should not become an unusably small recursion_limit."""
+        SubagentConfig = classes["SubagentConfig"]
+        SubagentExecutor = classes["SubagentExecutor"]
+        SubagentStatus = classes["SubagentStatus"]
+        min_limit = classes["MIN_SUBAGENT_RECURSION_LIMIT"]
+        captured = {}
+
+        config = SubagentConfig(
+            name="test-agent",
+            description="Test agent",
+            system_prompt="You are a test agent.",
+            max_turns=8,
+            timeout_seconds=60,
+        )
+        final_state = {"messages": [msg.human("Task"), msg.ai("Done")]}
+
+        async def capture_astream(*args, **kwargs):
+            captured["kwargs"] = kwargs
+            async for item in async_iterator([final_state]):
+                yield item
+
+        mock_agent.astream = capture_astream
+        executor = SubagentExecutor(config=config, tools=[], thread_id="test-thread")
+
+        with patch.object(executor, "_create_agent", return_value=mock_agent):
+            result = await executor._aexecute("Task")
+
+        assert result.status == SubagentStatus.COMPLETED
+        assert captured["kwargs"]["config"]["recursion_limit"] == min_limit
 
     @pytest.mark.anyio
     async def test_aexecute_collects_ai_messages(self, classes, base_config, mock_agent, msg):

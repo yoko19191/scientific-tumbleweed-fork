@@ -40,7 +40,7 @@ def parse_skill_file(skill_file: Path, category: str, relative_path: Path | None
         # (e.g. unquoted colons in values like "description: A skill: does things").
         metadata: dict | None = None
         try:
-            parsed = yaml.safe_load(front_matter)
+            parsed = yaml.safe_load(front_matter_text)
             if isinstance(parsed, dict):
                 # Strip trailing whitespace from string values (yaml preserves trailing \n in block scalars)
                 metadata = {k: v.rstrip() if isinstance(v, str) else v for k, v in parsed.items()}
@@ -50,7 +50,7 @@ def parse_skill_file(skill_file: Path, category: str, relative_path: Path | None
         if metadata is None:
             # Fallback: simple key-value parsing (handles unquoted colons)
             metadata = {}
-            for line in front_matter.split("\n"):
+            for line in front_matter_text.split("\n"):
                 line_stripped = line.strip()
                 if not line_stripped:
                     continue

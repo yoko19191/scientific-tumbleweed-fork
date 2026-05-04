@@ -316,7 +316,6 @@ class MemoryUpdater:
         user_id: str | None,
         correction_detected: bool,
         reinforcement_detected: bool,
-        user_id: str | None = None,
     ) -> tuple[dict[str, Any], str] | None:
         """Load memory and build the update prompt for a conversation."""
         config = get_memory_config()
@@ -367,7 +366,6 @@ class MemoryUpdater:
         user_id: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
-        user_id: str | None = None,
     ) -> bool:
         """Update memory asynchronously by delegating to the sync path.
 

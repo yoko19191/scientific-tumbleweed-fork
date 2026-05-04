@@ -130,13 +130,13 @@
 
 ## Phase 9: 可选功能 (按需)
 
-- [ ] `c42ae3af` feat: add optional prompt-toolkit support to debug.py (#2461)
-- [ ] `3a611268` fix: keep debug.py interactive terminal free from background log noise (#2466)
+- [ ] `c42ae3af` feat: add optional prompt-toolkit support to debug.py (#2461) — **延后：debug.py 已大改，需手动适配**
+- [ ] `3a611268` fix: keep debug.py interactive terminal free from background log noise (#2466) — **延后：同上**
 - [ ] `db5ad863` feat: enhance chat history loading with new hooks and UI components (#2338)
-- [ ] `410f0c48` fix(channels): accept single slack allowed user (#2481)
-- [ ] `9dc25987` fix(channels): update the logger for the channel config (#2524)
-- [ ] `78633c69` fix(agents): propagate agent_name into ToolRuntime.context for setup_agent (#2679)
-- [ ] `692f7945` fix(gateway): forward agent_name and is_bootstrap from context to configurable (#2242)
+- [x] ~~`410f0c48` fix(channels): accept single slack allowed user (#2481)~~
+- [x] ~~`9dc25987` fix(channels): update the logger for the channel config (#2524)~~
+- [ ] `78633c69` fix(agents): propagate agent_name into ToolRuntime.context for setup_agent (#2679) — **延后：runtime layer 冲突面广**
+- [x] ~~`692f7945` fix(gateway): forward agent_name and is_bootstrap from context to configurable (#2242) — **已包含在之前的合并中**~~
 
 ---
 

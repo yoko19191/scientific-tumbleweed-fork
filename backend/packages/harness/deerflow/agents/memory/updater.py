@@ -379,7 +379,6 @@ class MemoryUpdater:
             self._do_update_memory_sync,
             messages=messages,
             thread_id=thread_id,
-            agent_name=agent_name,
             correction_detected=correction_detected,
             reinforcement_detected=reinforcement_detected,
             user_id=user_id,

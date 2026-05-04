@@ -77,6 +77,7 @@ class MemoryUpdateQueue:
         self,
         thread_id: str,
         messages: list[Any],
+        user_id: str | None = None,
         agent_name: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
@@ -90,6 +91,7 @@ class MemoryUpdateQueue:
             self._enqueue_locked(
                 thread_id=thread_id,
                 messages=messages,
+                user_id=user_id,
                 agent_name=agent_name,
                 correction_detected=correction_detected,
                 reinforcement_detected=reinforcement_detected,
@@ -103,7 +105,8 @@ class MemoryUpdateQueue:
         *,
         thread_id: str,
         messages: list[Any],
-        agent_name: str | None,
+        user_id: str | None = None,
+        agent_name: str | None = None,
         correction_detected: bool,
         reinforcement_detected: bool,
     ) -> None:
@@ -116,6 +119,7 @@ class MemoryUpdateQueue:
         context = ConversationContext(
             thread_id=thread_id,
             messages=messages,
+            user_id=user_id,
             agent_name=agent_name,
             correction_detected=merged_correction_detected,
             reinforcement_detected=merged_reinforcement_detected,

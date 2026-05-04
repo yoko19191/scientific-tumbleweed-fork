@@ -25,6 +25,7 @@ class SummarizationEvent:
     preserved_messages: tuple[AnyMessage, ...]
     thread_id: str | None
     agent_name: str | None
+    user_id: str | None
     runtime: Runtime
 
 
@@ -57,6 +58,15 @@ def _resolve_agent_name(runtime: Runtime) -> str | None:
             return None
         agent_name = config_data.get("configurable", {}).get("agent_name")
     return agent_name
+
+
+def _resolve_user_id(runtime: Runtime) -> str | None:
+    """Resolve the current user ID from runtime metadata."""
+    try:
+        config_data = get_config()
+    except RuntimeError:
+        return None
+    return config_data.get("metadata", {}).get("user_id")
 
 
 def _tool_call_path(tool_call: dict[str, Any]) -> str | None:
@@ -336,6 +346,7 @@ class DeerFlowSummarizationMiddleware(SummarizationMiddleware):
             preserved_messages=tuple(preserved_messages),
             thread_id=_resolve_thread_id(runtime),
             agent_name=_resolve_agent_name(runtime),
+            user_id=_resolve_user_id(runtime),
             runtime=runtime,
         )
 

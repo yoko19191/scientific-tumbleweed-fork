@@ -12,7 +12,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 5
+config_version: 8
 
 # ============================================================================
 # Logging
@@ -21,10 +21,11 @@ config_version: 5
 log_level: info
 
 # ============================================================================
-# Token Usage Tracking
+# Token Usage
 # ============================================================================
-# Track LLM token usage per model call (input/output/total tokens)
-# Logs at info level via TokenUsageMiddleware
+# Enable token usage collection and display.
+# When enabled, DeerFlow records input/output/total tokens per model call
+# and shows usage metadata in the workspace UI when providers return it.
 token_usage:
   enabled: false
 
@@ -390,6 +391,21 @@ tool_search:
 #   # trusted, single-user local workflows.
 #   allow_host_bash: false
 
+uploads:
+  # Automatic Office/PDF conversion runs on the backend host before sandbox
+  # isolation applies. Keep this disabled unless uploads come from a fully
+  # trusted source and you intentionally accept host-side parser risk.
+  auto_convert_documents: false
+  # Controls which PDF-to-Markdown converter is used whenever PDF conversion
+  # runs. Automatic upload conversion is gated separately by
+  # auto_convert_documents.
+  # auto        — prefer pymupdf4llm when installed; fall back to MarkItDown for
+  #               image-based or encrypted PDFs (recommended default).
+  # pymupdf4llm — always use pymupdf4llm (must be installed: uv add pymupdf4llm).
+  #               Better heading/table extraction; faster on most files.
+  # markitdown  — always use MarkItDown (original behaviour, no extra dependency).
+  pdf_converter: auto
+
 #   # Tool output truncation limits (characters).
 #   # bash uses middle-truncation (head + tail) since errors can appear anywhere in the output.
 #   # read_file uses head-truncation since source code context is front-loaded.
@@ -571,6 +587,19 @@ summarization:
   # The prompt should guide the model to extract important context
   summary_prompt: null
 
+  # Recently-loaded skill files are excluded from summarization so the agent
+  # does not lose skill instructions after a compression pass. Claude Code uses
+  # a similar strategy (keep the most recent ~5 skills, ~25k total tokens, with
+  # a ~5k cap per skill). Set preserve_recent_skill_count to 0 to disable.
+  preserve_recent_skill_count: 5
+  preserve_recent_skill_tokens: 25000
+  preserve_recent_skill_tokens_per_skill: 5000
+  skill_file_read_tool_names:
+    - read_file
+    - read
+    - view
+    - cat
+
 # ============================================================================
 # Memory Configuration
 # ============================================================================
@@ -662,7 +691,7 @@ checkpointer:
 #     enabled: false
 #     bot_token: $SLACK_BOT_TOKEN     # xoxb-...
 #     app_token: $SLACK_APP_TOKEN     # xapp-... (Socket Mode)
-#     allowed_users: []               # empty = allow all
+#     allowed_users: []               # empty = allow all; can also be a single Slack user ID string, e.g. U123456, but list form is recommended
 #
 #   telegram:
 #     enabled: false
@@ -719,3 +748,20 @@ checkpointer:
 #     use: my_package:MyGuardrailProvider
 #     config:
 #       key: value
+
+# ============================================================================
+# Circuit Breaker Configuration
+# ============================================================================
+# Circuit breaker for LLM calls prevents repeated requests to a failing provider.
+# When the failure threshold is reached, subsequent calls fast-fail until recovery.
+#
+# This is useful for:
+# - Avoiding rate-limit bans during provider outages
+# - Reducing resource exhaustion from retry loops
+# - Gracefully degrading when LLM services are unavailable
+
+# circuit_breaker:
+#   # Number of consecutive failures before opening the circuit (default: 5)
+#   failure_threshold: 5
+#   # Time in seconds before attempting to recover (default: 60)
+#   recovery_timeout_sec: 60

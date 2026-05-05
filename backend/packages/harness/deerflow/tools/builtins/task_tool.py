@@ -19,6 +19,17 @@ from deerflow.subagents.executor import SubagentStatus, cleanup_background_task,
 logger = logging.getLogger(__name__)
 
 
+def _merge_skill_allowlists(parent: list[str] | None, child: list[str] | None) -> list[str] | None:
+    """Return the effective subagent skill allowlist under the parent policy."""
+    if parent is None:
+        return child
+    if child is None:
+        return list(parent)
+
+    parent_set = set(parent)
+    return [skill for skill in child if skill in parent_set]
+
+
 @tool("task", parse_docstring=True)
 async def task_tool(
     runtime: ToolRuntime[ContextT, ThreadState],
@@ -87,15 +98,13 @@ async def task_tool(
     if max_turns is not None:
         overrides["max_turns"] = max_turns
 
-    if overrides:
-        config = replace(config, **overrides)
-
     # Extract parent context from runtime
     sandbox_state = None
     thread_data = None
     thread_id = None
     parent_model = None
     trace_id = None
+    metadata: dict = {}
 
     if runtime is not None:
         sandbox_state = runtime.state.get("sandbox")
@@ -111,12 +120,22 @@ async def task_tool(
         # Get or generate trace_id for distributed tracing
         trace_id = metadata.get("trace_id") or str(uuid.uuid4())[:8]
 
+    parent_available_skills = metadata.get("available_skills")
+    if parent_available_skills is not None:
+        overrides["skills"] = _merge_skill_allowlists(list(parent_available_skills), config.skills)
+
+    if overrides:
+        config = replace(config, **overrides)
+
     # Get available tools (excluding task tool to prevent nesting)
     # Lazy import to avoid circular dependency
     from deerflow.tools import get_available_tools
 
+    # Inherit parent agent's tool_groups so subagents respect the same restrictions
+    parent_tool_groups = metadata.get("tool_groups")
+
     # Subagents should not have subagent tools enabled (prevent recursive nesting)
-    tools = get_available_tools(model_name=parent_model, subagent_enabled=False)
+    tools = get_available_tools(model_name=parent_model, groups=parent_tool_groups, subagent_enabled=False)
 
     # Create executor
     executor = SubagentExecutor(

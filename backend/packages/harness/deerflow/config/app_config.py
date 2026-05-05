@@ -34,6 +34,13 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+class CircuitBreakerConfig(BaseModel):
+    """Configuration for the LLM Circuit Breaker."""
+
+    failure_threshold: int = Field(default=5, description="Number of consecutive failures before tripping the circuit")
+    recovery_timeout_sec: int = Field(default=60, description="Time in seconds before attempting to recover the circuit")
+
+
 def _default_config_candidates() -> tuple[Path, ...]:
     """Return deterministic config.yaml locations without relying on cwd."""
     backend_dir = Path(__file__).resolve().parents[4]
@@ -41,10 +48,34 @@ def _default_config_candidates() -> tuple[Path, ...]:
     return (backend_dir / "config.yaml", repo_root / "config.yaml")
 
 
+def logging_level_from_config(name: str | None) -> int:
+    """Map ``config.yaml`` ``log_level`` string to a :mod:`logging` level constant."""
+    mapping = logging.getLevelNamesMapping()
+    return mapping.get((name or "info").strip().upper(), logging.INFO)
+
+
+def apply_logging_level(name: str | None) -> None:
+    """Resolve *name* to a logging level and apply it to the ``deerflow``/``app`` logger hierarchies.
+
+    Only the ``deerflow`` and ``app`` logger levels are changed so that
+    third-party library verbosity (e.g. uvicorn, sqlalchemy) is not
+    affected. Root handler levels are lowered (never raised) so that
+    messages from the configured loggers can propagate through without
+    being filtered, while preserving handler thresholds that may be
+    intentionally restrictive for third-party log output.
+    """
+    level = logging_level_from_config(name)
+    for logger_name in ("deerflow", "app"):
+        logging.getLogger(logger_name).setLevel(level)
+    for handler in logging.root.handlers:
+        if level < handler.level:
+            handler.setLevel(level)
+
+
 class AppConfig(BaseModel):
     """Config for the Scientific Tumbleweed application"""
 
-    log_level: str = Field(default="info", description="Logging level for deerflow modules (debug/info/warning/error)")
+    log_level: str = Field(default="info", description="Logging level for deerflow and app modules (debug/info/warning/error); third-party libraries are not affected")
     token_usage: TokenUsageConfig = Field(default_factory=TokenUsageConfig, description="Token usage tracking configuration")
     models: list[ModelConfig] = Field(default_factory=list, description="Available models")
     sandbox: SandboxConfig = Field(description="Sandbox configuration")
@@ -59,6 +90,7 @@ class AppConfig(BaseModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig, description="Memory subsystem configuration")
     subagents: SubagentsAppConfig = Field(default_factory=SubagentsAppConfig, description="Subagent runtime configuration")
     guardrails: GuardrailsConfig = Field(default_factory=GuardrailsConfig, description="Guardrail middleware configuration")
+    circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig, description="LLM circuit breaker configuration")
     model_config = ConfigDict(extra="allow", frozen=False)
     checkpointer: CheckpointerConfig | None = Field(default=None, description="Checkpointer configuration")
     stream_bridge: StreamBridgeConfig | None = Field(default=None, description="Stream bridge configuration")
@@ -141,6 +173,10 @@ class AppConfig(BaseModel):
         # Load guardrails config if present
         if "guardrails" in config_data:
             load_guardrails_config_from_dict(config_data["guardrails"])
+
+        # Load circuit_breaker config if present
+        if "circuit_breaker" in config_data:
+            config_data["circuit_breaker"] = config_data["circuit_breaker"]
 
         # Load checkpointer config if present
         if "checkpointer" in config_data:

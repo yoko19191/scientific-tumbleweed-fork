@@ -1,3 +1,4 @@
+import errno
 import json
 import logging
 import shutil
@@ -10,7 +11,7 @@ from app.gateway.deps import get_current_user_id
 from app.gateway.path_utils import resolve_thread_virtual_path
 from deerflow.agents.lead_agent.prompt import refresh_skills_system_prompt_cache_async
 from deerflow.skills import Skill, load_skills
-from deerflow.skills.installer import SkillAlreadyExistsError, install_skill_from_archive
+from deerflow.skills.installer import SkillAlreadyExistsError, ainstall_skill_from_archive
 from deerflow.skills.manager import (
     append_history,
     atomic_write,
@@ -109,6 +110,7 @@ async def list_skills(user_id: str = Depends(get_current_user_id)) -> SkillsList
         raise HTTPException(status_code=500, detail=f"Failed to load skills: {str(e)}")
 
 
+
 @router.get("/skills/custom", response_model=SkillsListResponse, summary="List Custom Skills")
 async def list_custom_skills(user_id: str = Depends(get_current_user_id)) -> SkillsListResponse:
     try:
@@ -122,6 +124,7 @@ async def list_custom_skills(user_id: str = Depends(get_current_user_id)) -> Ski
 @router.get("/skills/custom/{skill_name}", response_model=CustomSkillContentResponse, summary="Get Custom Skill Content")
 async def get_custom_skill(skill_name: str, user_id: str = Depends(get_current_user_id)) -> CustomSkillContentResponse:
     try:
+        skill_name = skill_name.replace("\r\n", "").replace("\n", "")
         skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name and s.category == "custom"), None)
         if skill is None:
@@ -137,6 +140,7 @@ async def get_custom_skill(skill_name: str, user_id: str = Depends(get_current_u
 @router.put("/skills/custom/{skill_name}", response_model=CustomSkillContentResponse, summary="Edit Custom Skill")
 async def update_custom_skill(skill_name: str, request: CustomSkillUpdateRequest, user_id: str = Depends(get_current_user_id)) -> CustomSkillContentResponse:
     try:
+        skill_name = skill_name.replace("\r\n", "").replace("\n", "")
         ensure_custom_skill_is_editable(skill_name, user_id)
         validate_skill_markdown_content(skill_name, request.content)
         scan = await scan_skill_content(request.content, executable=False, location=f"{skill_name}/SKILL.md")
@@ -174,22 +178,28 @@ async def update_custom_skill(skill_name: str, request: CustomSkillUpdateRequest
 @router.delete("/skills/custom/{skill_name}", summary="Delete Custom Skill")
 async def delete_custom_skill(skill_name: str, user_id: str = Depends(get_current_user_id)) -> dict[str, bool]:
     try:
+        skill_name = skill_name.replace("\r\n", "").replace("\n", "")
         ensure_custom_skill_is_editable(skill_name, user_id)
         skill_dir = get_custom_skill_dir(skill_name, user_id)
         prev_content = read_custom_skill_content(skill_name, user_id)
-        append_history(
-            skill_name,
-            {
-                "action": "human_delete",
-                "author": "human",
-                "thread_id": None,
-                "file_path": "SKILL.md",
-                "prev_content": prev_content,
-                "new_content": None,
-                "scanner": {"decision": "allow", "reason": "Deletion requested."},
-            },
-            user_id,
-        )
+        try:
+            append_history(
+                skill_name,
+                {
+                    "action": "human_delete",
+                    "author": "human",
+                    "thread_id": None,
+                    "file_path": "SKILL.md",
+                    "prev_content": prev_content,
+                    "new_content": None,
+                    "scanner": {"decision": "allow", "reason": "Deletion requested."},
+                },
+                user_id,
+            )
+        except OSError as e:
+            if not isinstance(e, PermissionError) and e.errno not in {errno.EACCES, errno.EPERM, errno.EROFS}:
+                raise
+            logger.warning("Skipping delete history write for custom skill %s due to readonly/permission failure; continuing with skill directory removal: %s", skill_name, e)
         shutil.rmtree(skill_dir)
         await refresh_skills_system_prompt_cache_async()
         return {"success": True}
@@ -205,6 +215,7 @@ async def delete_custom_skill(skill_name: str, user_id: str = Depends(get_curren
 @router.get("/skills/custom/{skill_name}/history", response_model=CustomSkillHistoryResponse, summary="Get Custom Skill History")
 async def get_custom_skill_history(skill_name: str, user_id: str = Depends(get_current_user_id)) -> CustomSkillHistoryResponse:
     try:
+        skill_name = skill_name.replace("\r\n", "").replace("\n", "")
         if not custom_skill_exists(skill_name, user_id) and not get_skill_history_file(skill_name, user_id).exists():
             raise HTTPException(status_code=404, detail=f"Custom skill '{skill_name}' not found")
         return CustomSkillHistoryResponse(history=read_history(skill_name, user_id))
@@ -218,6 +229,7 @@ async def get_custom_skill_history(skill_name: str, user_id: str = Depends(get_c
 @router.post("/skills/custom/{skill_name}/rollback", response_model=CustomSkillContentResponse, summary="Rollback Custom Skill")
 async def rollback_custom_skill(skill_name: str, request: SkillRollbackRequest, user_id: str = Depends(get_current_user_id)) -> CustomSkillContentResponse:
     try:
+        skill_name = skill_name.replace("\r\n", "").replace("\n", "")
         if not custom_skill_exists(skill_name, user_id) and not get_skill_history_file(skill_name, user_id).exists():
             raise HTTPException(status_code=404, detail=f"Custom skill '{skill_name}' not found")
         history = read_history(skill_name, user_id)
@@ -269,6 +281,7 @@ async def rollback_custom_skill(skill_name: str, request: SkillRollbackRequest, 
 )
 async def get_skill(skill_name: str, user_id: str = Depends(get_current_user_id)) -> SkillResponse:
     try:
+        skill_name = skill_name.replace("\r\n", "").replace("\n", "")
         skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name), None)
 
@@ -291,6 +304,7 @@ async def get_skill(skill_name: str, user_id: str = Depends(get_current_user_id)
 )
 async def update_skill(skill_name: str, body: SkillUpdateRequest, user_id: str = Depends(get_current_user_id)) -> SkillResponse:
     try:
+        skill_name = skill_name.replace("\r\n", "").replace("\n", "")
         skills = load_skills(enabled_only=False, user_id=user_id)
         skill = next((s for s in skills if s.name == skill_name), None)
 

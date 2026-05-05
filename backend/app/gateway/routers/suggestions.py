@@ -124,7 +124,7 @@ async def generate_suggestions(thread_id: str, request: Request, body: Suggestio
 
     try:
         model = create_chat_model(name=body.model_name, thinking_enabled=False)
-        response = await model.ainvoke([SystemMessage(content=system_instruction), HumanMessage(content=user_content)])
+        response = await model.ainvoke([SystemMessage(content=system_instruction), HumanMessage(content=user_content)], config={"run_name": "suggest_agent"})
         raw = _extract_response_text(response.content)
         suggestions = _parse_json_string_list(raw) or []
         cleaned = [s.replace("\n", " ").strip() for s in suggestions if s.strip()]

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -22,9 +23,9 @@ from app.gateway.routers import (
     threads,
     uploads,
 )
-from deerflow.config.app_config import get_app_config
+from deerflow.config.app_config import apply_logging_level, get_app_config
 
-# Configure logging
+# Default logging; lifespan overrides from config.yaml log_level.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -33,6 +34,11 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Upper bound (seconds) each lifespan shutdown hook is allowed to run.
+# Bounds worker exit time so uvicorn's reload supervisor does not keep
+# firing signals into a worker that is stuck waiting for shutdown cleanup.
+_SHUTDOWN_HOOK_TIMEOUT_SECONDS = 5.0
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -40,7 +46,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Load config and check necessary environment variables at startup
     try:
-        get_app_config()
+        app.state.config = get_app_config()
+        apply_logging_level(app.state.config.log_level)
         logger.info("Configuration loaded successfully")
     except Exception as e:
         error_msg = f"Failed to load configuration during gateway startup: {e}"
@@ -82,11 +89,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         yield
 
-        # Stop channel service on shutdown
+        # Stop channel service on shutdown (bounded to prevent worker hang)
         try:
             from app.channels.service import stop_channel_service
 
-            await stop_channel_service()
+            await asyncio.wait_for(
+                stop_channel_service(),
+                timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            logger.warning(
+                "Channel service shutdown exceeded %.1fs; proceeding with worker exit.",
+                _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+            )
         except Exception:
             logger.exception("Failed to stop channel service")
 
@@ -99,6 +114,8 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application instance.
     """
+    config = get_gateway_config()
+    docs_kwargs = {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"} if config.enable_docs else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
     app = FastAPI(
         title="Scientific Tumbleweed API Gateway",
@@ -123,9 +140,7 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
         """,
         version="0.1.0",
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        **docs_kwargs,
         openapi_tags=[
             {
                 "name": "models",

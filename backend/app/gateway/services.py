@@ -12,6 +12,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -110,9 +111,10 @@ def resolve_agent_factory(assistant_id: str | None):
     """Resolve the agent factory callable from config.
 
     Custom agents are implemented as ``lead_agent`` + an ``agent_name``
-    injected into ``configurable`` — see :func:`build_run_config`.  All
-    ``assistant_id`` values therefore map to the same factory; the routing
-    happens inside ``make_lead_agent`` when it reads ``cfg["agent_name"]``.
+    injected into ``configurable`` or ``context`` — see
+    :func:`build_run_config`.  All ``assistant_id`` values therefore map to the
+    same factory; the routing happens inside ``make_lead_agent`` when it reads
+    ``cfg["agent_name"]``.
     """
     from deerflow.agents.lead_agent.agent import make_lead_agent
 
@@ -129,35 +131,63 @@ def build_run_config(
     """Build a RunnableConfig dict for the agent.
 
     When *assistant_id* refers to a custom agent (anything other than
-    ``"lead_agent"`` / ``None``), the name is forwarded as
-    ``configurable["agent_name"]``.  ``make_lead_agent`` reads this key to
-    load the matching ``agents/<name>/SOUL.md`` and per-agent config —
-    without it the agent silently runs as the default lead agent.
+    ``"lead_agent"`` / ``None``), the name is forwarded as ``agent_name`` in
+    whichever runtime options container is active: ``context`` for
+    LangGraph >= 0.6.0 requests, otherwise ``configurable``.
+    ``make_lead_agent`` reads this key to load the matching
+    ``agents/<name>/SOUL.md`` and per-agent config — without it the agent
+    silently runs as the default lead agent.
 
     This mirrors the channel manager's ``_resolve_run_params`` logic so that
     the LangGraph Platform-compatible HTTP API and the IM channel path behave
     identically.
     """
     configurable: dict[str, Any] = {"thread_id": thread_id}
+    config: dict[str, Any] = {"configurable": configurable, "recursion_limit": 100}
     if request_config:
-        configurable.update(request_config.get("configurable", {}))
+        # LangGraph >= 0.6.0 introduced ``context`` as the preferred way to
+        # pass thread-level data and rejects requests that include both
+        # ``configurable`` and ``context``.  If the caller already sends
+        # ``context``, honour it and skip our own ``configurable`` dict.
+        if "context" in request_config:
+            if "configurable" in request_config:
+                logger.warning(
+                    "build_run_config: client sent both 'context' and 'configurable'; preferring 'context' (LangGraph >= 0.6.0). thread_id=%s, caller_configurable keys=%s",
+                    thread_id,
+                    list(request_config.get("configurable", {}).keys()),
+                )
+            context_value = request_config["context"]
+            if context_value is None:
+                context = {}
+            elif isinstance(context_value, Mapping):
+                context = dict(context_value)
+            else:
+                raise ValueError("request config 'context' must be a mapping or null.")
+            config["context"] = context
+        else:
+            configurable = {"thread_id": thread_id}
+            configurable.update(request_config.get("configurable", {}))
+            config["configurable"] = configurable
+        for k, v in request_config.items():
+            if k not in ("configurable", "context"):
+                config[k] = v
+    else:
+        config["configurable"] = {"thread_id": thread_id}
 
     # Inject custom agent name when the caller specified a non-default assistant.
-    # Honour an explicit configurable["agent_name"] in the request if already set.
-    if assistant_id and assistant_id != _DEFAULT_ASSISTANT_ID and "agent_name" not in configurable:
-        # Normalize the same way ChannelManager does: strip, lowercase,
-        # replace underscores with hyphens, then validate to prevent path
-        # traversal and invalid agent directory lookups.
+    # Honour an explicit agent_name in the active runtime options container.
+    if assistant_id and assistant_id != _DEFAULT_ASSISTANT_ID:
         normalized = assistant_id.strip().lower().replace("_", "-")
         if not normalized or not re.fullmatch(r"[a-z0-9-]+", normalized):
             raise ValueError(f"Invalid assistant_id {assistant_id!r}: must contain only letters, digits, and hyphens after normalization.")
-        configurable["agent_name"] = normalized
-
-    config: dict[str, Any] = {"configurable": configurable, "recursion_limit": 100}
-    if request_config:
-        for k, v in request_config.items():
-            if k != "configurable":
-                config[k] = v
+        if "configurable" in config:
+            target = config["configurable"]
+        elif "context" in config:
+            target = config["context"]
+        else:
+            target = config.setdefault("configurable", {})
+        if target is not None and "agent_name" not in target:
+            target["agent_name"] = normalized
     if metadata:
         config.setdefault("metadata", {}).update(metadata)
     return config

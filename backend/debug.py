@@ -20,19 +20,63 @@ import logging
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
+from langgraph.runtime import Runtime
 
 from deerflow.agents import make_lead_agent
 
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+_LOG_FMT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+_LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+
+def _setup_logging(log_level: int = logging.INFO) -> None:
+    """Route logs to ``debug.log`` using *log_level* for the initial root/file setup.
+
+    This configures the root logger and the ``debug.log`` file handler so logs do
+    not print on the interactive console. It is idempotent: any pre-existing
+    handlers on the root logger (e.g. installed by ``logging.basicConfig`` in
+    transitively imported modules) are removed so the debug session output only
+    lands in ``debug.log``.
+
+    Note: later config-driven logging adjustments may change named logger
+    verbosity without raising the root logger or file-handler thresholds set
+    here, so the eventual contents of ``debug.log`` may not be filtered solely by
+    this function's ``log_level`` argument.
+    """
+    root = logging.root
+    for h in list(root.handlers):
+        root.removeHandler(h)
+        h.close()
+    root.setLevel(log_level)
+
+    file_handler = logging.FileHandler("debug.log", mode="a", encoding="utf-8")
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(logging.Formatter(_LOG_FMT, datefmt=_LOG_DATEFMT))
+    root.addHandler(file_handler)
 
 
 async def main():
+    # Install file logging first so warnings emitted while loading config do not
+    # leak onto the interactive terminal via Python's lastResort handler.
+    _setup_logging()
+
+    from deerflow.config import get_app_config
+    from deerflow.config.app_config import apply_logging_level
+
+    app_config = get_app_config()
+    apply_logging_level(app_config.log_level)
+
+    # Delay the rest of the deerflow imports until *after* logging is installed
+    # so that any import-time side effects (e.g. deerflow.agents starts a
+    # background skill-loader thread on import) emit logs to debug.log instead
+    # of leaking onto the interactive terminal via Python's lastResort handler.
+    from langchain_core.messages import HumanMessage
+    from langgraph.runtime import Runtime
+
+    from deerflow.agents import make_lead_agent
+    from deerflow.mcp import initialize_mcp_tools
+
     # Initialize MCP tools at startup
     try:
         from deerflow.mcp import initialize_mcp_tools
@@ -52,6 +96,9 @@ async def main():
         }
     }
 
+    runtime = Runtime(context={"thread_id": config["configurable"]["thread_id"]})
+    config["configurable"]["__pregel_runtime"] = runtime
+
     agent = make_lead_agent(config)
 
     print("=" * 50)
@@ -70,7 +117,7 @@ async def main():
 
             # Invoke the agent
             state = {"messages": [HumanMessage(content=user_input)]}
-            result = await agent.ainvoke(state, config=config, context={"thread_id": "debug-thread-001"})
+            result = await agent.ainvoke(state, config=config)
 
             # Print the response
             if result.get("messages"):

@@ -32,6 +32,7 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = True
     provider.acquire.return_value = "local"
     sandbox = MagicMock()
     provider.get.return_value = sandbox
@@ -53,11 +54,63 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
     sandbox.update_file.assert_not_called()
 
 
+
+
+def test_upload_files_skips_acquire_when_thread_data_is_mounted(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        file = UploadFile(filename="notes.txt", file=BytesIO(b"hello uploads"))
+        result = asyncio.run(uploads.upload_files("thread-mounted", files=[file]))
+
+    assert result.success is True
+    assert (thread_uploads_dir / "notes.txt").read_bytes() == b"hello uploads"
+    provider.acquire.assert_not_called()
+    provider.get.assert_not_called()
+
+
+def test_upload_files_does_not_auto_convert_documents_by_default(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+    provider.acquire.return_value = "local"
+    sandbox = MagicMock()
+    provider.get.return_value = sandbox
+
+    with (
+        patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+        patch.object(uploads, "_auto_convert_documents_enabled", return_value=False),
+        patch.object(uploads, "convert_file_to_markdown", AsyncMock()) as convert_mock,
+    ):
+        file = UploadFile(filename="report.pdf", file=BytesIO(b"pdf-bytes"))
+        result = asyncio.run(uploads.upload_files("thread-local", files=[file]))
+
+    assert result.success is True
+    assert len(result.files) == 1
+    assert result.files[0]["filename"] == "report.pdf"
+    assert "markdown_file" not in result.files[0]
+    convert_mock.assert_not_called()
+    assert not (thread_uploads_dir / "report.md").exists()
+
+
 def test_upload_files_syncs_non_local_sandbox_and_marks_markdown_file(tmp_path):
     thread_uploads_dir = tmp_path / "uploads"
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = False
     provider.acquire.return_value = "aio-1"
     sandbox = MagicMock()
     provider.get.return_value = sandbox
@@ -72,6 +125,7 @@ def test_upload_files_syncs_non_local_sandbox_and_marks_markdown_file(tmp_path):
         patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "get_sandbox_provider", return_value=provider),
+        patch.object(uploads, "_auto_convert_documents_enabled", return_value=True),
         patch.object(uploads, "convert_file_to_markdown", AsyncMock(side_effect=fake_convert)),
     ):
         file = UploadFile(filename="report.pdf", file=BytesIO(b"pdf-bytes"))
@@ -95,6 +149,7 @@ def test_upload_files_makes_non_local_files_sandbox_writable(tmp_path):
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = False
     provider.acquire.return_value = "aio-1"
     sandbox = MagicMock()
     provider.get.return_value = sandbox
@@ -109,6 +164,7 @@ def test_upload_files_makes_non_local_files_sandbox_writable(tmp_path):
         patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "get_sandbox_provider", return_value=provider),
+        patch.object(uploads, "_auto_convert_documents_enabled", return_value=True),
         patch.object(uploads, "convert_file_to_markdown", AsyncMock(side_effect=fake_convert)),
         patch.object(uploads, "_make_file_sandbox_writable") as make_writable,
     ):
@@ -125,6 +181,7 @@ def test_upload_files_does_not_adjust_permissions_for_local_sandbox(tmp_path):
     thread_uploads_dir.mkdir(parents=True)
 
     provider = MagicMock()
+    provider.uses_thread_data_mounts = True
     provider.acquire.return_value = "local"
     sandbox = MagicMock()
     provider.get.return_value = sandbox
@@ -272,3 +329,44 @@ def test_delete_upload_returns_401_when_unauthenticated():
     with TestClient(app, raise_server_exceptions=False) as client:
         resp = client.delete("/api/threads/thread-1/uploads/file.txt")
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Auto-convert documents config tests
+# ---------------------------------------------------------------------------
+
+
+def test_auto_convert_documents_enabled_defaults_to_false_on_config_errors():
+    with patch.object(uploads, "get_app_config", side_effect=RuntimeError("boom")):
+        assert uploads._auto_convert_documents_enabled() is False
+
+
+def test_auto_convert_documents_enabled_reads_dict_backed_uploads_config():
+    cfg = MagicMock()
+    cfg.uploads = {"auto_convert_documents": True}
+
+    with patch.object(uploads, "get_app_config", return_value=cfg):
+        assert uploads._auto_convert_documents_enabled() is True
+
+
+def test_auto_convert_documents_enabled_accepts_boolean_and_string_truthy_values():
+    false_cfg = MagicMock()
+    false_cfg.uploads = MagicMock(auto_convert_documents=False)
+
+    true_cfg = MagicMock()
+    true_cfg.uploads = MagicMock(auto_convert_documents=True)
+
+    string_true_cfg = MagicMock()
+    string_true_cfg.uploads = MagicMock(auto_convert_documents="YES")
+
+    string_false_cfg = MagicMock()
+    string_false_cfg.uploads = MagicMock(auto_convert_documents="false")
+
+    with patch.object(uploads, "get_app_config", return_value=false_cfg):
+        assert uploads._auto_convert_documents_enabled() is False
+    with patch.object(uploads, "get_app_config", return_value=true_cfg):
+        assert uploads._auto_convert_documents_enabled() is True
+    with patch.object(uploads, "get_app_config", return_value=string_true_cfg):
+        assert uploads._auto_convert_documents_enabled() is True
+    with patch.object(uploads, "get_app_config", return_value=string_false_cfg):
+        assert uploads._auto_convert_documents_enabled() is False

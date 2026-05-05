@@ -104,6 +104,7 @@ export default function LoginPage() {
           src="/lzlab/front_gate.png"
           alt="LZLab"
           fill
+          sizes="50vw"
           className="object-cover"
           priority
         />

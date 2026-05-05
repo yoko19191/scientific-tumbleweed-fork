@@ -38,6 +38,7 @@ def mock_app_config():
 
     config = MagicMock()
     config.models = [model]
+    config.token_usage.enabled = False
     return config
 
 
@@ -46,6 +47,17 @@ def client(mock_app_config):
     """Create a DeerFlowClient with mocked config loading."""
     with patch("deerflow.client.get_app_config", return_value=mock_app_config):
         return DeerFlowClient()
+
+
+@pytest.fixture
+def allow_skill_security_scan():
+    async def _scan(*args, **kwargs):
+        from deerflow.skills.security_scanner import ScanResult
+
+        return ScanResult(decision="allow", reason="ok")
+
+    with patch("deerflow.skills.installer.scan_skill_content", _scan):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +119,7 @@ class TestConfigQueries:
     def test_list_models(self, client):
         result = client.list_models()
         assert "models" in result
+        assert result["token_usage"] == {"enabled": False}
         assert len(result["models"]) == 1
         assert result["models"][0]["name"] == "test-model"
         # Verify Gateway-aligned fields are present
@@ -1193,7 +1206,7 @@ class TestSkillsManagement:
             with pytest.raises(ValueError, match="not found"):
                 client.update_skill("nonexistent", enabled=True)
 
-    def test_install_skill(self, client):
+    def test_install_skill(self, client, allow_skill_security_scan):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
 
@@ -2013,7 +2026,7 @@ class TestScenarioMemoryWorkflow:
 class TestScenarioSkillInstallAndUse:
     """Scenario: Install a skill → verify it appears → toggle it."""
 
-    def test_install_then_toggle(self, client):
+    def test_install_then_toggle(self, client, allow_skill_security_scan):
         """Install .skill archive → list to verify → disable → verify disabled."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -2196,7 +2209,9 @@ class TestGatewayConformance:
         model.display_name = "Test Model"
         model.description = "A test model"
         model.supports_thinking = False
+        model.supports_reasoning_effort = False
         mock_app_config.models = [model]
+        mock_app_config.token_usage.enabled = True
 
         with patch("deerflow.client.get_app_config", return_value=mock_app_config):
             client = DeerFlowClient()
@@ -2206,6 +2221,7 @@ class TestGatewayConformance:
         assert len(parsed.models) == 1
         assert parsed.models[0].name == "test-model"
         assert parsed.models[0].model == "gpt-test"
+        assert parsed.token_usage.enabled is True
 
     def test_get_model(self, mock_app_config):
         model = MagicMock()
@@ -2256,7 +2272,7 @@ class TestGatewayConformance:
         parsed = SkillResponse(**result)
         assert parsed.name == "web-search"
 
-    def test_install_skill(self, client, tmp_path):
+    def test_install_skill(self, client, tmp_path, allow_skill_security_scan):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("---\nname: my-skill\ndescription: A test skill\n---\nBody\n")
@@ -2454,7 +2470,7 @@ class TestInstallSkillSecurity:
                 with pytest.raises(ValueError, match="unsafe"):
                     client.install_skill(archive)
 
-    def test_symlinks_skipped_during_extraction(self, client):
+    def test_symlinks_skipped_during_extraction(self, client, allow_skill_security_scan):
         """Symlink entries in the archive are skipped (never written to disk)."""
         import stat as stat_mod
 

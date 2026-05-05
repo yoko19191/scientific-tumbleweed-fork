@@ -293,6 +293,10 @@ export function useThreadStream({
       );
       for (const update of updates) {
         if (update && "title" in update && update.title) {
+          const rawTitle = update.title;
+          const cleanedTitle =
+            rawTitle.replace(/<think>[\s\S]*?<\/think>/gi, "").trim() ||
+            rawTitle;
           void queryClient.setQueriesData(
             {
               queryKey: ["threads", "search"],
@@ -305,7 +309,7 @@ export function useThreadStream({
                     ...t,
                     values: {
                       ...t.values,
-                      title: update.title,
+                      title: cleanedTitle,
                     },
                   };
                 }

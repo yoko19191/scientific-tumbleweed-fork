@@ -46,6 +46,9 @@ export function textOfMessage(message: Message) {
   return null;
 }
 
+const THINK_TAG_RE = /<think>[\s\S]*?<\/think>/gi;
+
 export function titleOfThread(thread: AgentThread) {
-  return thread.values?.title ?? "Untitled";
+  const raw = thread.values?.title ?? "Untitled";
+  return raw.replace(THINK_TAG_RE, "").trim() || "Untitled";
 }

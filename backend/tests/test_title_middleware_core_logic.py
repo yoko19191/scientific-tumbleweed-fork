@@ -229,3 +229,35 @@ class TestTitleMiddlewareCoreLogic:
         assert result is not None
         assert "<think>" not in result["title"]
         assert result["title"] == "贵阳发展研究"
+
+    def test_normalize_content_skips_thinking_blocks(self):
+        """Structured content with thinking/reasoning type blocks should be excluded."""
+        middleware = TitleMiddleware()
+        content = [
+            {"type": "thinking", "thinking": "Let me think about a good title..."},
+            {"type": "text", "text": "Here is the actual response"},
+        ]
+        result = middleware._normalize_content(content)
+        assert "think" not in result.lower()
+        assert "Here is the actual response" in result
+
+    def test_normalize_content_skips_reasoning_blocks(self):
+        """Structured content with reasoning type blocks should be excluded."""
+        middleware = TitleMiddleware()
+        content = [
+            {"type": "reasoning", "text": "Step 1: analyze the question..."},
+            {"type": "text", "text": "Final answer"},
+        ]
+        result = middleware._normalize_content(content)
+        assert "Step 1" not in result
+        assert "Final answer" in result
+
+    def test_parse_title_from_structured_content_with_thinking(self):
+        """_parse_title handles list content containing thinking blocks."""
+        middleware = TitleMiddleware()
+        content = [
+            {"type": "thinking", "thinking": "I need to generate a concise title"},
+            {"type": "text", "text": "AI Development Trends"},
+        ]
+        result = middleware._parse_title(content)
+        assert result == "AI Development Trends"

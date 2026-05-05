@@ -34,6 +34,10 @@ class TitleMiddleware(AgentMiddleware[TitleMiddlewareState]):
             return "\n".join(part for part in parts if part)
 
         if isinstance(content, dict):
+            content_type = content.get("type")
+            if content_type in ("thinking", "reasoning"):
+                return ""
+
             text_value = content.get("text")
             if isinstance(text_value, str):
                 return text_value

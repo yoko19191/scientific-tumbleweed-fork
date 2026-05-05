@@ -105,6 +105,9 @@ export const enUS: Translations = {
     reasoningEffortHigh: "High",
     reasoningEffortHighDescription:
       "Deep reasoning — multi-paper synthesis, statistical validation, end-to-end research workflow",
+    reasoningEffortMax: "Max",
+    reasoningEffortMaxDescription:
+      "Maximum depth — complex agent tasks, exhaustive multi-step reasoning, no budget limit",
     searchModels: "Search models...",
     surpriseMe: "Surprise",
     surpriseMePrompt: "Surprise me",

@@ -498,7 +498,7 @@ def _make_deepseek_model(name="deepseek-v4-flash", *, use="langchain_openai:Chat
 
 
 def test_deepseek_openai_passes_valid_effort_through(monkeypatch):
-    """DeepSeek accepts low/medium/high/xhigh/max — pass them through unchanged."""
+    """DeepSeek only accepts high and max — pass these through unchanged."""
     cfg = _make_app_config([_make_deepseek_model()])
     _patch_factory(monkeypatch, cfg)
 
@@ -510,13 +510,31 @@ def test_deepseek_openai_passes_valid_effort_through(monkeypatch):
             BaseChatModel.__init__(self, **kw)
 
     monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
-    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, reasoning_effort="medium")
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, reasoning_effort="max")
 
-    assert captured["reasoning_effort"] == "medium"
+    assert captured["reasoning_effort"] == "max"
 
 
-def test_deepseek_openai_maps_minimal_to_low(monkeypatch):
-    """DeepSeek rejects 'minimal' — remap it to 'low'."""
+def test_deepseek_openai_maps_low_to_high(monkeypatch):
+    """DeepSeek maps low/medium/minimal to high per latest API docs."""
+    cfg = _make_app_config([_make_deepseek_model()])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, reasoning_effort="low")
+
+    assert captured["reasoning_effort"] == "high"
+
+
+def test_deepseek_openai_maps_minimal_to_high(monkeypatch):
+    """DeepSeek maps minimal to high per latest API docs."""
     cfg = _make_app_config([_make_deepseek_model()])
     _patch_factory(monkeypatch, cfg)
 
@@ -530,7 +548,25 @@ def test_deepseek_openai_maps_minimal_to_low(monkeypatch):
     monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
     factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, reasoning_effort="minimal")
 
-    assert captured["reasoning_effort"] == "low"
+    assert captured["reasoning_effort"] == "high"
+
+
+def test_deepseek_openai_maps_xhigh_to_max(monkeypatch):
+    """DeepSeek maps xhigh to max per latest API docs."""
+    cfg = _make_app_config([_make_deepseek_model()])
+    _patch_factory(monkeypatch, cfg)
+
+    captured: dict = {}
+
+    class Cap(FakeChatModel):
+        def __init__(self, **kw):
+            captured.update(kw)
+            BaseChatModel.__init__(self, **kw)
+
+    monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
+    factory_module.create_chat_model(name="deepseek-v4-flash", thinking_enabled=True, reasoning_effort="xhigh")
+
+    assert captured["reasoning_effort"] == "max"
 
 
 def test_deepseek_openai_defaults_effort_to_high(monkeypatch):
@@ -620,7 +656,7 @@ def test_deepseek_patched_maps_effort(monkeypatch):
     monkeypatch.setattr(factory_module, "resolve_class", lambda p, b: Cap)
     factory_module.create_chat_model(name="deepseek-v4-pro", thinking_enabled=True, reasoning_effort="low")
 
-    assert captured["reasoning_effort"] == "low"
+    assert captured["reasoning_effort"] == "high"
 
 
 def test_non_deepseek_preserves_minimal_effort(monkeypatch):

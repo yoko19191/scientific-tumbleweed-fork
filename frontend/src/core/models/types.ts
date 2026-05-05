@@ -7,6 +7,7 @@ export interface Model {
   supports_thinking?: boolean;
   supports_reasoning_effort?: boolean;
   supports_vision?: boolean;
+  reasoning_effort_levels?: string[];
 }
 
 export interface TokenUsageSettings {

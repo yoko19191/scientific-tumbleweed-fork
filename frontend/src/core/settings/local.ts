@@ -34,7 +34,7 @@ export interface LocalSettings {
   > & {
     model_name?: string | undefined;
     mode: "chat" | "agent" | "swarm" | undefined;
-    reasoning_effort?: "minimal" | "low" | "medium" | "high";
+    reasoning_effort?: "minimal" | "low" | "medium" | "high" | "max";
   };
 }
 

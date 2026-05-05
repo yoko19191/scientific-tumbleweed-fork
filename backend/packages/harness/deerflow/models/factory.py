@@ -43,20 +43,25 @@ def _is_deepseek_model(model_name: str) -> bool:
     return model_name.lower().startswith("deepseek-")
 
 
-_DEEPSEEK_VALID_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+_DEEPSEEK_VALID_EFFORTS = {"high", "max"}
+
+_DEEPSEEK_EFFORT_MAP = {
+    "minimal": "high",
+    "low": "high",
+    "medium": "high",
+    "xhigh": "max",
+}
 
 
 def _deepseek_effort(reasoning_effort: str) -> str | None:
     """Normalise a frontend effort label to a value DeepSeek accepts.
 
-    DeepSeek v4 accepts: low, medium, high, xhigh, max.
-    The only frontend value that needs remapping is "minimal" → "low".
+    DeepSeek API only has two meaningful levels: high and max.
+    low/medium/minimal all map to high; xhigh maps to max.
     """
     if reasoning_effort in _DEEPSEEK_VALID_EFFORTS:
         return reasoning_effort
-    if reasoning_effort == "minimal":
-        return "low"
-    return None
+    return _DEEPSEEK_EFFORT_MAP.get(reasoning_effort)
 
 
 def _enable_stream_usage_by_default(model_use_path: str, model_settings_from_config: dict) -> None:
@@ -100,6 +105,7 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
             "description",
             "supports_thinking",
             "supports_reasoning_effort",
+            "reasoning_effort_levels",
             "when_thinking_enabled",
             "when_thinking_disabled",
             "thinking",

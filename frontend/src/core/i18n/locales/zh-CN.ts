@@ -104,6 +104,9 @@ export const zhCN: Translations = {
     reasoningEffortHigh: "高",
     reasoningEffortHighDescription:
       "深度推理 — 多文献综合、统计验证、端到端研究工作流",
+    reasoningEffortMax: "最大",
+    reasoningEffortMaxDescription:
+      "最大深度 — 复杂智能体任务、穷尽式多步推理、无预算限制",
     searchModels: "搜索模型...",
     surpriseMe: "小惊喜",
     surpriseMePrompt: "给我一个小惊喜吧",

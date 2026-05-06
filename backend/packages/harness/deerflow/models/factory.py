@@ -3,6 +3,7 @@ import logging
 from langchain.chat_models import BaseChatModel
 
 from deerflow.config import get_app_config
+from deerflow.models.anthropic_streaming_compat import patch_langchain_anthropic_streaming_dict_metadata
 from deerflow.reflection import resolve_class
 from deerflow.tracing import build_tracing_callbacks
 
@@ -44,6 +45,7 @@ def _is_deepseek_model(model_name: str) -> bool:
 
 
 _DEEPSEEK_VALID_EFFORTS = {"high", "max"}
+_ANTHROPIC_VALID_EFFORTS = {"low", "medium", "high", "max"}
 
 _DEEPSEEK_EFFORT_MAP = {
     "minimal": "high",
@@ -62,6 +64,13 @@ def _deepseek_effort(reasoning_effort: str) -> str | None:
     if reasoning_effort in _DEEPSEEK_VALID_EFFORTS:
         return reasoning_effort
     return _DEEPSEEK_EFFORT_MAP.get(reasoning_effort)
+
+
+def _anthropic_effort(reasoning_effort: str | None) -> str | None:
+    """Return a ChatAnthropic-native effort value if valid."""
+    if reasoning_effort in _ANTHROPIC_VALID_EFFORTS:
+        return reasoning_effort
+    return None
 
 
 def _enable_stream_usage_by_default(model_use_path: str, model_settings_from_config: dict) -> None:
@@ -95,6 +104,8 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
     model_config = config.get_model_config(name)
     if model_config is None:
         raise ValueError(f"Model {name} not found in config") from None
+    if _uses_anthropic_request_shape(model_config.use):
+        patch_langchain_anthropic_streaming_dict_metadata()
     model_class = resolve_class(model_config.use, BaseChatModel)
     model_settings_from_config = model_config.model_dump(
         exclude_none=True,
@@ -106,6 +117,7 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
             "supports_thinking",
             "supports_reasoning_effort",
             "reasoning_effort_levels",
+            "default_reasoning_effort",
             "when_thinking_enabled",
             "when_thinking_disabled",
             "thinking",
@@ -148,15 +160,14 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
         elif has_thinking_settings and effective_wte.get("thinking", {}).get("type"):
             # Native langchain_anthropic: thinking is a direct constructor parameter
             model_settings_from_config["thinking"] = {"type": "disabled"}
-    if not model_config.supports_reasoning_effort:
+    effective_supports_reasoning_effort = model_config.effective_supports_reasoning_effort()
+    if not effective_supports_reasoning_effort:
         kwargs.pop("reasoning_effort", None)
         model_settings_from_config.pop("reasoning_effort", None)
 
-    if model_config.supports_reasoning_effort and _uses_anthropic_request_shape(model_config.use):
+    if effective_supports_reasoning_effort and _uses_anthropic_request_shape(model_config.use):
         explicit_effort = kwargs.pop("reasoning_effort", None)
-        # ChatAnthropic forwards unknown constructor fields through model_kwargs,
-        # but DeepSeek's Anthropic-compatible API expects output_config.effort,
-        # not a top-level reasoning_effort field.
+        configured_effort = model_settings_from_config.pop("effort", None)
         model_settings_from_config.pop("reasoning_effort", None)
         configured_output_config = model_settings_from_config.pop("output_config", None)
         if configured_output_config:
@@ -164,17 +175,17 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
                 model_settings_from_config.get("model_kwargs"),
                 {"output_config": configured_output_config},
             )
-        if thinking_enabled and explicit_effort:
-            mapped_effort = _deepseek_effort(explicit_effort)
-            if mapped_effort:
-                model_settings_from_config["model_kwargs"] = _deep_merge_dicts(
-                    model_settings_from_config.get("model_kwargs"),
-                    {"output_config": {"effort": mapped_effort}},
-                )
+        selected_effort = (
+            _anthropic_effort(explicit_effort)
+            or _anthropic_effort(configured_effort)
+            or _anthropic_effort(model_config.effective_default_reasoning_effort())
+        )
+        if selected_effort:
+            model_settings_from_config["effort"] = selected_effort
 
     # For DeepSeek OpenAI-compatible models: map reasoning_effort to accepted values
     if (
-        model_config.supports_reasoning_effort
+        effective_supports_reasoning_effort
         and not _uses_anthropic_request_shape(model_config.use)
         and _is_deepseek_model(model_config.model)
     ):

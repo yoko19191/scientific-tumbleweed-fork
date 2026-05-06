@@ -942,6 +942,8 @@ class TestGetModel:
             "description": "A test model",
             "supports_thinking": True,
             "supports_reasoning_effort": True,
+            "reasoning_effort_levels": None,
+            "default_reasoning_effort": None,
         }
 
     def test_not_found(self, client):

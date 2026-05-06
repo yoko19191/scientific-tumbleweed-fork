@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import pytest
 from langchain.chat_models import BaseChatModel
+from langchain_anthropic import chat_models as anthropic_chat_models
 
 from deerflow.config.app_config import AppConfig
 from deerflow.config.model_config import ModelConfig
 from deerflow.config.sandbox_config import SandboxConfig
 from deerflow.models import factory as factory_module
 from deerflow.models import openai_codex_provider as codex_provider_module
+from deerflow.models.anthropic_streaming_compat import patch_langchain_anthropic_streaming_dict_metadata
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -33,6 +35,8 @@ def _make_model(
     when_thinking_disabled: dict | None = None,
     thinking: dict | None = None,
     max_tokens: int | None = None,
+    default_reasoning_effort: str | None = None,
+    reasoning_effort_levels: list[str] | None = None,
 ) -> ModelConfig:
     return ModelConfig(
         name=name,
@@ -43,6 +47,8 @@ def _make_model(
         max_tokens=max_tokens,
         supports_thinking=supports_thinking,
         supports_reasoning_effort=supports_reasoning_effort,
+        default_reasoning_effort=default_reasoning_effort,
+        reasoning_effort_levels=reasoning_effort_levels,
         when_thinking_enabled=when_thinking_enabled,
         when_thinking_disabled=when_thinking_disabled,
         thinking=thinking,
@@ -69,6 +75,11 @@ class FakeChatModel(BaseChatModel):
 
     def _stream(self, *args, **kwargs):  # type: ignore[override]
         raise NotImplementedError
+
+
+class _FakeObj:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
 
 
 def _patch_factory(monkeypatch, app_config: AppConfig, model_class=FakeChatModel):
@@ -439,7 +450,7 @@ def test_openai_shape_preserves_explicit_reasoning_effort(monkeypatch):
     assert FakeChatModel.captured_kwargs.get("reasoning_effort") == "high"
 
 
-def test_anthropic_shape_maps_reasoning_effort_to_output_config(monkeypatch):
+def test_anthropic_shape_passes_native_effort(monkeypatch):
     cfg = _make_app_config(
         [
             _make_model(
@@ -454,10 +465,73 @@ def test_anthropic_shape_maps_reasoning_effort_to_output_config(monkeypatch):
     _patch_factory(monkeypatch, cfg)
 
     FakeChatModel.captured_kwargs = {}
-    factory_module.create_chat_model(name="anthropic-shape", thinking_enabled=True, reasoning_effort="high")
+    factory_module.create_chat_model(name="anthropic-shape", thinking_enabled=True, reasoning_effort="medium")
 
     assert "reasoning_effort" not in FakeChatModel.captured_kwargs
+    assert FakeChatModel.captured_kwargs["effort"] == "medium"
     assert FakeChatModel.captured_kwargs["model_kwargs"]["output_config"]["effort"] == "high"
+
+
+def test_anthropic_shape_uses_default_reasoning_effort(monkeypatch):
+    cfg = _make_app_config(
+        [
+            _make_model(
+                "claude-sonnet-4-6",
+                use="langchain_anthropic:ChatAnthropic",
+                supports_thinking=True,
+                supports_reasoning_effort=True,
+                default_reasoning_effort="medium",
+                reasoning_effort_levels=["low", "medium", "high", "max"],
+                when_thinking_enabled={"thinking": {"type": "adaptive"}},
+            )
+        ]
+    )
+    _patch_factory(monkeypatch, cfg)
+
+    FakeChatModel.captured_kwargs = {}
+    factory_module.create_chat_model(name="claude-sonnet-4-6", thinking_enabled=True)
+
+    assert FakeChatModel.captured_kwargs["effort"] == "medium"
+    assert FakeChatModel.captured_kwargs["thinking"] == {"type": "adaptive"}
+
+
+def test_claude_opus_4_6_prefix_infers_reasoning_effort_support(monkeypatch):
+    cfg = _make_app_config(
+        [
+            _make_model(
+                "claude-opus-4-6-experimental",
+                use="langchain_anthropic:ChatAnthropic",
+                supports_thinking=True,
+                supports_reasoning_effort=False,
+                when_thinking_enabled={"thinking": {"type": "adaptive"}},
+            )
+        ]
+    )
+    _patch_factory(monkeypatch, cfg)
+
+    FakeChatModel.captured_kwargs = {}
+    factory_module.create_chat_model(name="claude-opus-4-6-experimental", thinking_enabled=True, reasoning_effort="max")
+
+    assert FakeChatModel.captured_kwargs["effort"] == "max"
+
+
+def test_anthropic_streaming_accepts_dict_context_management():
+    patch_langchain_anthropic_streaming_dict_metadata()
+    event = _FakeObj(
+        type="message_delta",
+        usage=_FakeObj(input_tokens=0, output_tokens=3),
+        delta=_FakeObj(stop_reason="end_turn", stop_sequence=None, container={"id": "ctx_123"}),
+        context_management={"edits": [{"type": "clear_tool_uses_20250919"}]},
+    )
+
+    chunk, _ = anthropic_chat_models._make_message_chunk_from_anthropic_event(
+        event,
+        stream_usage=True,
+        coerce_content_to_string=False,
+    )
+
+    assert chunk.response_metadata["context_management"] == {"edits": [{"type": "clear_tool_uses_20250919"}]}
+    assert chunk.response_metadata["container"] == {"id": "ctx_123"}
 
 
 def test_anthropic_shape_drops_reasoning_effort_when_thinking_disabled(monkeypatch):

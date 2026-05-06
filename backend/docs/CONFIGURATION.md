@@ -57,6 +57,25 @@ models:
     model: claude-sonnet-4-6
     max_tokens: 4096
     supports_thinking: true
+    supports_reasoning_effort: true
+    reasoning_effort_levels: ["low", "medium", "high", "max"]
+    default_reasoning_effort: medium
+    when_thinking_enabled:
+      thinking:
+        type: adaptive
+
+  - name: claude-opus-4.6
+    display_name: Claude Opus 4.6 (Anthropic API)
+    use: langchain_anthropic:ChatAnthropic
+    model: claude-opus-4-6
+    max_tokens: 4096
+    supports_thinking: true
+    supports_reasoning_effort: true
+    reasoning_effort_levels: ["low", "medium", "high", "max"]
+    default_reasoning_effort: high
+    when_thinking_enabled:
+      thinking:
+        type: adaptive
 ```
 
 **Auth behavior for CLI-backed providers**:

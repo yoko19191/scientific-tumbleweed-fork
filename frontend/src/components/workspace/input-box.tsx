@@ -62,6 +62,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/core/i18n/hooks";
 import { useModels } from "@/core/models/hooks";
+import type { Model } from "@/core/models/types";
 import type { AgentThreadContext } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
@@ -85,8 +86,23 @@ import {
 import { useThread } from "./messages/context";
 import { ModeHoverGuide } from "./mode-hover-guide";
 
-
 type InputMode = "chat" | "agent" | "swarm";
+type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "max";
+
+const REASONING_EFFORT_VALUES = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "max",
+] as const satisfies readonly ReasoningEffort[];
+
+const DEFAULT_REASONING_EFFORT_LEVELS: ReasoningEffort[] = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+];
 
 function getResolvedMode(
   mode: InputMode | undefined,
@@ -103,6 +119,45 @@ function getResolvedMode(
     return effectiveMode;
   }
   return supportsThinking ? "agent" : "chat";
+}
+
+function isReasoningEffort(value: string | undefined | null): value is ReasoningEffort {
+  return REASONING_EFFORT_VALUES.includes(value as ReasoningEffort);
+}
+
+function getModeDefaultReasoningEffort(mode: InputMode | undefined): ReasoningEffort {
+  return mode === "swarm" ? "high" : mode === "agent" ? "high" : "medium";
+}
+
+function getReasoningEffortLevels(model: Model | undefined): ReasoningEffort[] {
+  const configuredLevels = model?.reasoning_effort_levels
+    ?.filter(isReasoningEffort);
+  if (configuredLevels && configuredLevels.length > 0) {
+    return configuredLevels;
+  }
+  return DEFAULT_REASONING_EFFORT_LEVELS;
+}
+
+function resolveReasoningEffort(
+  current: ReasoningEffort | undefined,
+  model: Model | undefined,
+  mode: InputMode | undefined,
+  preferModeDefault = false,
+): ReasoningEffort | undefined {
+  if (!model?.supports_reasoning_effort) {
+    return undefined;
+  }
+  const levels = getReasoningEffortLevels(model);
+  const modelDefault = isReasoningEffort(model.default_reasoning_effort)
+    ? model.default_reasoning_effort
+    : undefined;
+  const modeDefault = getModeDefaultReasoningEffort(mode);
+  const candidates = preferModeDefault
+    ? [modeDefault, modelDefault, current, levels[0]]
+    : [current, modelDefault, modeDefault, levels[0]];
+  return candidates.find((effort): effort is ReasoningEffort =>
+    Boolean(effort && levels.includes(effort)),
+  );
 }
 
 export function InputBox({
@@ -128,7 +183,7 @@ export function InputBox({
     "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
   > & {
     mode: "chat" | "agent" | "swarm" | undefined;
-    reasoning_effort?: "minimal" | "low" | "medium" | "high" | "max";
+    reasoning_effort?: ReasoningEffort;
     tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
   };
   extraHeader?: React.ReactNode;
@@ -141,7 +196,7 @@ export function InputBox({
       "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
     > & {
       mode: "chat" | "agent" | "swarm" | undefined;
-      reasoning_effort?: "minimal" | "low" | "medium" | "high" | "max";
+      reasoning_effort?: ReasoningEffort;
       tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
     },
   ) => void;
@@ -165,8 +220,17 @@ export function InputBox({
     const supportsThinking = fallbackModel.supports_thinking ?? false;
     const nextModelName = fallbackModel.name;
     const nextMode = getResolvedMode(context.mode, supportsThinking);
+    const nextEffort = resolveReasoningEffort(
+      context.reasoning_effort,
+      fallbackModel,
+      nextMode,
+    );
 
-    if (context.model_name === nextModelName && context.mode === nextMode) {
+    if (
+      context.model_name === nextModelName &&
+      context.mode === nextMode &&
+      context.reasoning_effort === nextEffort
+    ) {
       return;
     }
 
@@ -174,6 +238,7 @@ export function InputBox({
       ...context,
       model_name: nextModelName,
       mode: nextMode,
+      reasoning_effort: nextEffort,
     });
   }, [context, models, onContextChange]);
 
@@ -196,17 +261,10 @@ export function InputBox({
     [selectedModel],
   );
 
-  const reasoningEffortLevels = useMemo<
-    ("minimal" | "low" | "medium" | "high" | "max")[]
-  >(() => {
-    const levels = selectedModel?.reasoning_effort_levels;
-    if (levels && levels.length > 0) {
-      return levels.filter((l): l is "minimal" | "low" | "medium" | "high" | "max" =>
-        ["minimal", "low", "medium", "high", "max"].includes(l),
-      );
-    }
-    return ["minimal", "low", "medium", "high"];
-  }, [selectedModel]);
+  const reasoningEffortLevels = useMemo(
+    () => getReasoningEffortLevels(selectedModel),
+    [selectedModel],
+  );
 
   const handleModelSelect = useCallback(
     (model_name: string) => {
@@ -214,26 +272,16 @@ export function InputBox({
       if (!model) {
         return;
       }
-      const allowedLevels = model.reasoning_effort_levels ?? [
-        "minimal",
-        "low",
-        "medium",
-        "high",
-      ];
-      const nextEffort =
-        context.reasoning_effort && allowedLevels.includes(context.reasoning_effort)
-          ? context.reasoning_effort
-          : (allowedLevels[0] as
-              | "minimal"
-              | "low"
-              | "medium"
-              | "high"
-              | "max"
-              | undefined);
+      const nextMode = getResolvedMode(context.mode, model.supports_thinking ?? false);
+      const nextEffort = resolveReasoningEffort(
+        context.reasoning_effort,
+        model,
+        nextMode,
+      );
       onContextChange?.({
         ...context,
         model_name,
-        mode: getResolvedMode(context.mode, model.supports_thinking ?? false),
+        mode: nextMode,
         reasoning_effort: nextEffort,
       });
       setModelDialogOpen(false);
@@ -243,24 +291,24 @@ export function InputBox({
 
   const handleModeSelect = useCallback(
     (mode: InputMode) => {
-      const defaultEffort =
-        mode === "swarm" ? "high" : mode === "agent" ? "high" : "medium";
-      const nextEffort = reasoningEffortLevels.includes(
-        defaultEffort as "minimal" | "low" | "medium" | "high" | "max",
-      )
-        ? (defaultEffort as "minimal" | "low" | "medium" | "high" | "max")
-        : reasoningEffortLevels[0];
+      const nextMode = getResolvedMode(mode, supportThinking);
+      const nextEffort = resolveReasoningEffort(
+        context.reasoning_effort,
+        selectedModel,
+        nextMode,
+        true,
+      );
       onContextChange?.({
         ...context,
-        mode: getResolvedMode(mode, supportThinking),
+        mode: nextMode,
         reasoning_effort: nextEffort,
       });
     },
-    [onContextChange, context, supportThinking, reasoningEffortLevels],
+    [onContextChange, context, supportThinking, selectedModel],
   );
 
   const handleReasoningEffortSelect = useCallback(
-    (effort: "minimal" | "low" | "medium" | "high" | "max") => {
+    (effort: ReasoningEffort) => {
       onContextChange?.({
         ...context,
         reasoning_effort: effort,
@@ -306,6 +354,28 @@ export function InputBox({
             context.mode,
             selectedModel?.supports_thinking ?? false,
           ),
+          reasoning_effort: resolveReasoningEffort(
+            context.reasoning_effort,
+            selectedModel,
+            getResolvedMode(
+              context.mode,
+              selectedModel?.supports_thinking ?? false,
+            ),
+          ),
+        });
+        setTimeout(() => onSubmit?.(message), 0);
+        return;
+      }
+
+      const nextEffort = resolveReasoningEffort(
+        context.reasoning_effort,
+        selectedModel,
+        context.mode,
+      );
+      if (context.reasoning_effort !== nextEffort) {
+        onContextChange?.({
+          ...context,
+          reasoning_effort: nextEffort,
         });
         setTimeout(() => onSubmit?.(message), 0);
         return;
@@ -319,7 +389,7 @@ export function InputBox({
       onSubmit,
       onStop,
       resolvedModelName,
-      selectedModel?.supports_thinking,
+      selectedModel,
       status,
     ],
   );
@@ -607,7 +677,7 @@ export function InputBox({
                           {m.display_name}
                         </ModelSelectorName>
                         <span className="text-muted-foreground truncate text-[10px]">
-                          {m.description || m.model}
+                          {m.description ?? m.model}
                         </span>
                       </div>
                       {m.supports_thinking && (

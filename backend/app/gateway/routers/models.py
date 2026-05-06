@@ -17,6 +17,7 @@ class ModelResponse(BaseModel):
     supports_reasoning_effort: bool = Field(default=False, description="Whether model supports reasoning effort")
     supports_vision: bool = Field(default=False, description="Whether model supports vision/image inputs")
     reasoning_effort_levels: list[str] | None = Field(None, description="Available reasoning effort levels for this model")
+    default_reasoning_effort: str | None = Field(None, description="Default reasoning effort for this model")
 
 
 class TokenUsageResponse(BaseModel):
@@ -82,9 +83,10 @@ async def list_models() -> ModelsListResponse:
             display_name=model.display_name,
             description=model.description,
             supports_thinking=model.supports_thinking,
-            supports_reasoning_effort=model.supports_reasoning_effort,
+            supports_reasoning_effort=model.effective_supports_reasoning_effort(),
             supports_vision=model.supports_vision,
-            reasoning_effort_levels=model.reasoning_effort_levels,
+            reasoning_effort_levels=model.effective_reasoning_effort_levels(),
+            default_reasoning_effort=model.effective_default_reasoning_effort(),
         )
         for model in config.models
     ]
@@ -133,7 +135,8 @@ async def get_model(model_name: str) -> ModelResponse:
         display_name=model.display_name,
         description=model.description,
         supports_thinking=model.supports_thinking,
-        supports_reasoning_effort=model.supports_reasoning_effort,
+        supports_reasoning_effort=model.effective_supports_reasoning_effort(),
         supports_vision=model.supports_vision,
-        reasoning_effort_levels=model.reasoning_effort_levels,
+        reasoning_effort_levels=model.effective_reasoning_effort_levels(),
+        default_reasoning_effort=model.effective_default_reasoning_effort(),
     )

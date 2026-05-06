@@ -8,6 +8,7 @@ export interface Model {
   supports_reasoning_effort?: boolean;
   supports_vision?: boolean;
   reasoning_effort_levels?: string[];
+  default_reasoning_effort?: string | null;
 }
 
 export interface TokenUsageSettings {

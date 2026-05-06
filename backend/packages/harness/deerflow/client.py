@@ -38,6 +38,7 @@ from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import AGENT_NAME_PATTERN
 from deerflow.config.app_config import get_app_config, reload_app_config
 from deerflow.config.extensions_config import ExtensionsConfig, SkillStateConfig, get_extensions_config, reload_extensions_config
+from deerflow.config.model_config import ModelConfig
 from deerflow.config.paths import get_paths
 from deerflow.models import create_chat_model
 from deerflow.skills.installer import install_skill_from_archive
@@ -56,6 +57,24 @@ logger = logging.getLogger(__name__)
 
 
 StreamEventType = Literal["values", "messages-tuple", "custom", "end"]
+
+
+def _model_effort_metadata(model: Any) -> dict[str, Any]:
+    """Return Gateway-aligned reasoning effort metadata for real configs and test doubles."""
+    if isinstance(model, ModelConfig):
+        return {
+            "supports_reasoning_effort": model.effective_supports_reasoning_effort(),
+            "reasoning_effort_levels": model.effective_reasoning_effort_levels(),
+            "default_reasoning_effort": model.effective_default_reasoning_effort(),
+        }
+    supports_reasoning_effort = getattr(model, "supports_reasoning_effort", False)
+    reasoning_effort_levels = getattr(model, "reasoning_effort_levels", None)
+    default_reasoning_effort = getattr(model, "default_reasoning_effort", None)
+    return {
+        "supports_reasoning_effort": supports_reasoning_effort if isinstance(supports_reasoning_effort, bool) else False,
+        "reasoning_effort_levels": reasoning_effort_levels if isinstance(reasoning_effort_levels, list) else None,
+        "default_reasoning_effort": default_reasoning_effort if isinstance(default_reasoning_effort, str) else None,
+    }
 
 
 @dataclass
@@ -730,16 +749,20 @@ class DeerFlowClient:
         if not isinstance(token_usage_enabled, bool):
             token_usage_enabled = False
 
+        def _model_response(model) -> dict[str, Any]:
+            effort_metadata = _model_effort_metadata(model)
+            return {
+                "name": model.name,
+                "model": getattr(model, "model", None),
+                "display_name": getattr(model, "display_name", None),
+                "description": getattr(model, "description", None),
+                "supports_thinking": getattr(model, "supports_thinking", False),
+                **effort_metadata,
+            }
+
         return {
             "models": [
-                {
-                    "name": model.name,
-                    "model": getattr(model, "model", None),
-                    "display_name": getattr(model, "display_name", None),
-                    "description": getattr(model, "description", None),
-                    "supports_thinking": getattr(model, "supports_thinking", False),
-                    "supports_reasoning_effort": getattr(model, "supports_reasoning_effort", False),
-                }
+                _model_response(model)
                 for model in self._app_config.models
             ],
             "token_usage": {"enabled": token_usage_enabled},
@@ -805,13 +828,14 @@ class DeerFlowClient:
         model = self._app_config.get_model_config(name)
         if model is None:
             return None
+        effort_metadata = _model_effort_metadata(model)
         return {
             "name": model.name,
             "model": getattr(model, "model", None),
             "display_name": getattr(model, "display_name", None),
             "description": getattr(model, "description", None),
             "supports_thinking": getattr(model, "supports_thinking", False),
-            "supports_reasoning_effort": getattr(model, "supports_reasoning_effort", False),
+            **effort_metadata,
         }
 
     # ------------------------------------------------------------------

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from deerflow.community.aio_sandbox.aio_sandbox import AioSandbox
+from deerflow.sandbox.exceptions import SandboxRuntimeError
 from deerflow.sandbox.local.local_sandbox import LocalSandbox
 from deerflow.sandbox.search import GrepMatch, find_glob_matches, find_grep_matches
 from deerflow.sandbox.tools import glob_tool, grep_tool, ls_tool
@@ -418,6 +419,24 @@ def test_ls_tool_masks_user_data_host_paths(tmp_path, monkeypatch) -> None:
     # Host paths must NOT leak
     assert str(workspace) not in result
     assert str(tmp_path) not in result
+
+
+def test_ls_tool_reports_aio_list_dir_errors_instead_of_empty(monkeypatch) -> None:
+    runtime = SimpleNamespace(state={"sandbox": {"sandbox_id": "aio"}}, context={"thread_id": "thread-1"})
+
+    class BrokenSandbox:
+        def list_dir(self, path: str):
+            raise SandboxRuntimeError("Failed to list directory: file API unavailable")
+
+    monkeypatch.setattr("deerflow.sandbox.tools.ensure_sandbox_initialized", lambda runtime: BrokenSandbox())
+
+    result = ls_tool.func(
+        runtime=runtime,
+        description="list workspace",
+        path="/mnt/user-data/workspace",
+    )
+
+    assert result == "Error: Failed to list directory: file API unavailable"
 
 
 def test_ls_tool_masks_skills_host_paths(tmp_path, monkeypatch) -> None:

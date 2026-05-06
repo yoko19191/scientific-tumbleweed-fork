@@ -1,17 +1,28 @@
 import base64
+import inspect
 import logging
-import shlex
 import threading
 import uuid
 
 from agent_sandbox import Sandbox as AioSandboxClient
 
+from deerflow.sandbox.exceptions import SandboxRuntimeError
 from deerflow.sandbox.sandbox import Sandbox
 from deerflow.sandbox.search import GrepMatch, path_matches, should_ignore_path, truncate_line
 
 logger = logging.getLogger(__name__)
 
 _ERROR_OBSERVATION_SIGNATURE = "'ErrorObservation' object has no attribute 'exit_code'"
+_BINARY_MAGIC_PREFIXES = (
+    b"\x7fELF",
+    b"\x89PNG\r\n\x1a\n",
+    b"\xff\xd8\xff",
+    b"GIF87a",
+    b"GIF89a",
+    b"PK\x03\x04",
+    b"\x1f\x8b",
+    b"%PDF-",
+)
 
 
 class AioSandbox(Sandbox):
@@ -48,11 +59,40 @@ class AioSandbox(Sandbox):
             self._home_dir = context.home_dir
         return self._home_dir
 
-    # Default no_change_timeout for exec_command (seconds).  Matches the
-    # client-level timeout so that long-running commands which produce no
-    # output are not prematurely terminated by the sandbox's built-in 120 s
-    # default.
-    _DEFAULT_NO_CHANGE_TIMEOUT = 600
+    # Default shell wait timeout (seconds). Older agent-sandbox SDKs expose
+    # this as ``timeout``; newer SDKs may expose ``no_change_timeout``.
+    _DEFAULT_EXEC_TIMEOUT = 600
+
+    def _exec_command(self, *, command: str, id: str | None = None):
+        """Execute a shell command using the timeout kwarg supported by the SDK."""
+        kwargs: dict[str, object] = {"command": command}
+        if id is not None:
+            kwargs["id"] = id
+
+        timeout_kwarg = self._exec_command_timeout_kwarg()
+        if timeout_kwarg is not None:
+            kwargs[timeout_kwarg] = self._DEFAULT_EXEC_TIMEOUT
+
+        return self._client.shell.exec_command(**kwargs)
+
+    def _exec_command_timeout_kwarg(self) -> str | None:
+        try:
+            signature = inspect.signature(self._client.shell.exec_command)
+        except (TypeError, ValueError):
+            return "timeout"
+
+        parameters = signature.parameters
+        if "no_change_timeout" in parameters:
+            return "no_change_timeout"
+        if "timeout" in parameters:
+            return "timeout"
+        return None
+
+    @staticmethod
+    def _is_binary_content(content: bytes) -> bool:
+        if any(content.startswith(prefix) for prefix in _BINARY_MAGIC_PREFIXES):
+            return True
+        return b"\0" in content[:8192]
 
     def execute_command(self, command: str) -> str:
         """Execute a shell command in the sandbox.
@@ -72,13 +112,13 @@ class AioSandbox(Sandbox):
         """
         with self._lock:
             try:
-                result = self._client.shell.exec_command(command=command, no_change_timeout=self._DEFAULT_NO_CHANGE_TIMEOUT)
+                result = self._exec_command(command=command)
                 output = result.data.output if result.data else ""
 
                 if output and _ERROR_OBSERVATION_SIGNATURE in output:
                     logger.warning("ErrorObservation detected in sandbox output, retrying with a fresh session")
                     fresh_id = str(uuid.uuid4())
-                    result = self._client.shell.exec_command(command=command, id=fresh_id, no_change_timeout=self._DEFAULT_NO_CHANGE_TIMEOUT)
+                    result = self._exec_command(command=command, id=fresh_id)
                     output = result.data.output if result.data else ""
 
                 return output if output else "(no output)"
@@ -96,8 +136,10 @@ class AioSandbox(Sandbox):
             The content of the file.
         """
         try:
-            result = self._client.file.read_file(file=path)
-            return result.data.content if result.data else ""
+            content = b"".join(self._client.file.download_file(path=path))
+            if self._is_binary_content(content):
+                return f"Error: Cannot read binary file with read_file: {path}"
+            return content.decode("utf-8", errors="replace")
         except Exception as e:
             logger.error(f"Failed to read file in sandbox: {e}")
             return f"Error: {e}"
@@ -112,16 +154,35 @@ class AioSandbox(Sandbox):
         Returns:
             The contents of the directory.
         """
-        with self._lock:
-            try:
-                result = self._client.shell.exec_command(command=f"find {shlex.quote(path)} -maxdepth {max_depth} -type f -o -type d 2>/dev/null | head -500", no_change_timeout=self._DEFAULT_NO_CHANGE_TIMEOUT)
-                output = result.data.output if result.data else ""
-                if output:
-                    return [line.strip() for line in output.strip().split("\n") if line.strip()]
-                return []
-            except Exception as e:
-                logger.error(f"Failed to list directory in sandbox: {e}")
-                return []
+        try:
+            result = self._client.file.list_path(
+                path=path,
+                recursive=True,
+                show_hidden=True,
+                max_depth=max_depth,
+            )
+            entries = result.data.files if result.data and result.data.files else []
+            root_path = path.rstrip("/") or "/"
+            root_prefix = root_path if root_path == "/" else f"{root_path}/"
+
+            children: list[str] = []
+            for entry in entries:
+                entry_path = getattr(entry, "path", "")
+                if not entry_path or entry_path == root_path:
+                    continue
+                if entry_path != root_path and not entry_path.startswith(root_prefix):
+                    continue
+                if should_ignore_path(entry_path):
+                    continue
+                if getattr(entry, "is_directory", False):
+                    entry_path = f"{entry_path.rstrip('/')}/"
+                children.append(entry_path)
+                if len(children) >= 500:
+                    break
+            return children
+        except Exception as e:
+            logger.error(f"Failed to list directory in sandbox: {e}")
+            raise SandboxRuntimeError(f"Failed to list directory: {e}") from e
 
     def write_file(self, path: str, content: str, append: bool = False) -> None:
         """Write content to a file in the sandbox.

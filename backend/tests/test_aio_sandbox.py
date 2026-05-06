@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from deerflow.sandbox.exceptions import SandboxRuntimeError
+
 
 @pytest.fixture()
 def sandbox():
@@ -114,49 +116,82 @@ class TestErrorObservationRetry:
 
 
 class TestListDirSerialization:
-    """Verify that list_dir also acquires the lock."""
+    """Verify that list_dir uses the file API rather than shell execution."""
 
-    def test_list_dir_uses_lock(self, sandbox):
-        """list_dir should hold the lock during execution."""
-        lock_was_held = []
+    def test_list_dir_uses_file_api_and_includes_hidden_files(self, sandbox):
+        """list_dir should not depend on bash and should include .gitkeep."""
+        sandbox._client.shell.exec_command = MagicMock(side_effect=AssertionError("shell should not be used"))
+        list_path_calls = []
 
-        original_exec = MagicMock(return_value=SimpleNamespace(data=SimpleNamespace(output="/a\n/b")))
+        def list_path(**kwargs):
+            list_path_calls.append(kwargs)
+            return SimpleNamespace(
+                data=SimpleNamespace(
+                    files=[
+                        SimpleNamespace(path="/test", is_directory=True),
+                        SimpleNamespace(path="/test/.gitkeep", is_directory=False),
+                        SimpleNamespace(path="/test/src", is_directory=True),
+                        SimpleNamespace(path="/test/src/app.py", is_directory=False),
+                        SimpleNamespace(path="/test/node_modules/skip.js", is_directory=False),
+                        SimpleNamespace(path="/test-other/outside.py", is_directory=False),
+                    ]
+                )
+            )
 
-        def tracking_exec(command, **kwargs):
-            lock_was_held.append(sandbox._lock.locked())
-            return original_exec(command, **kwargs)
-
-        sandbox._client.shell.exec_command = tracking_exec
-
+        sandbox._client.file.list_path = list_path
         result = sandbox.list_dir("/test")
-        assert result == ["/a", "/b"]
-        assert lock_was_held == [True], "list_dir must hold the lock during exec_command"
+        assert result == ["/test/.gitkeep", "/test/src/", "/test/src/app.py"]
+        assert list_path_calls == [
+            {
+                "path": "/test",
+                "recursive": True,
+                "show_hidden": True,
+                "max_depth": 2,
+            }
+        ]
+
+    def test_list_dir_raises_instead_of_returning_fake_empty_on_api_error(self, sandbox):
+        def list_path(**kwargs):
+            raise RuntimeError("file API unavailable")
+
+        sandbox._client.file.list_path = list_path
+
+        with pytest.raises(SandboxRuntimeError, match="file API unavailable"):
+            sandbox.list_dir("/test")
 
 
-class TestNoChangeTimeout:
-    """Verify that no_change_timeout is forwarded to every exec_command call."""
+class TestExecCommandTimeoutCompatibility:
+    """Verify shell timeout kwargs match the installed agent-sandbox SDK."""
 
-    def test_execute_command_passes_no_change_timeout(self, sandbox):
-        """execute_command should pass no_change_timeout to exec_command."""
+    def test_execute_command_uses_timeout_for_current_sdk_signature(self, sandbox):
         calls = []
 
-        def mock_exec(command, **kwargs):
-            calls.append(kwargs)
+        def mock_exec(*, command, id=None, timeout=None):
+            calls.append({"command": command, "id": id, "timeout": timeout})
             return SimpleNamespace(data=SimpleNamespace(output="ok"))
 
         sandbox._client.shell.exec_command = mock_exec
 
         sandbox.execute_command("echo hello")
 
-        assert len(calls) == 1
-        assert calls[0].get("no_change_timeout") == sandbox._DEFAULT_NO_CHANGE_TIMEOUT
+        assert calls == [{"command": "echo hello", "id": None, "timeout": sandbox._DEFAULT_EXEC_TIMEOUT}]
 
-    def test_retry_passes_no_change_timeout(self, sandbox):
-        """The ErrorObservation retry path should also pass no_change_timeout."""
+    def test_execute_command_does_not_pass_unsupported_no_change_timeout(self, sandbox):
+        def current_sdk_exec(*, command, id=None, timeout=None):
+            return SimpleNamespace(data=SimpleNamespace(output=f"{command}:{timeout}:{id}"))
+
+        sandbox._client.shell.exec_command = current_sdk_exec
+
+        result = sandbox.execute_command("echo hello")
+
+        assert "unexpected keyword argument 'no_change_timeout'" not in result
+        assert result == f"echo hello:{sandbox._DEFAULT_EXEC_TIMEOUT}:None"
+
+    def test_retry_uses_same_timeout_kwarg(self, sandbox):
         calls = []
 
-        def mock_exec(command, **kwargs):
-            calls.append(kwargs)
+        def mock_exec(*, command, id=None, timeout=None):
+            calls.append({"id": id, "timeout": timeout})
             if len(calls) == 1:
                 return SimpleNamespace(data=SimpleNamespace(output="'ErrorObservation' object has no attribute 'exit_code'"))
             return SimpleNamespace(data=SimpleNamespace(output="ok"))
@@ -166,23 +201,38 @@ class TestNoChangeTimeout:
         sandbox.execute_command("echo hello")
 
         assert len(calls) == 2
-        assert calls[0].get("no_change_timeout") == sandbox._DEFAULT_NO_CHANGE_TIMEOUT
-        assert calls[1].get("no_change_timeout") == sandbox._DEFAULT_NO_CHANGE_TIMEOUT
+        assert calls[0] == {"id": None, "timeout": sandbox._DEFAULT_EXEC_TIMEOUT}
+        assert calls[1]["id"] is not None
+        assert calls[1]["timeout"] == sandbox._DEFAULT_EXEC_TIMEOUT
 
-    def test_list_dir_passes_no_change_timeout(self, sandbox):
-        """list_dir should pass no_change_timeout to exec_command."""
+    def test_future_no_change_timeout_signature_is_supported(self, sandbox):
         calls = []
 
-        def mock_exec(command, **kwargs):
-            calls.append(kwargs)
-            return SimpleNamespace(data=SimpleNamespace(output="/a\n/b"))
+        def mock_exec(*, command, id=None, no_change_timeout=None):
+            calls.append({"command": command, "id": id, "no_change_timeout": no_change_timeout})
+            return SimpleNamespace(data=SimpleNamespace(output="ok"))
 
         sandbox._client.shell.exec_command = mock_exec
 
-        sandbox.list_dir("/test")
+        sandbox.execute_command("echo hello")
 
-        assert len(calls) == 1
-        assert calls[0].get("no_change_timeout") == sandbox._DEFAULT_NO_CHANGE_TIMEOUT
+        assert calls == [{"command": "echo hello", "id": None, "no_change_timeout": sandbox._DEFAULT_EXEC_TIMEOUT}]
+
+
+class TestReadFile:
+    """Verify text reads are stable and binary reads fail clearly."""
+
+    def test_read_file_downloads_and_decodes_text(self, sandbox):
+        sandbox._client.file.download_file = lambda **kwargs: iter([b"hello ", b"world\n"])
+
+        assert sandbox.read_file("/test/readme.txt") == "hello world\n"
+
+    def test_read_file_rejects_elf_binary(self, sandbox):
+        sandbox._client.file.download_file = lambda **kwargs: iter([b"\x7fELF\x02\x01\x01\0binary"])
+
+        result = sandbox.read_file("/test/tool")
+
+        assert result == "Error: Cannot read binary file with read_file: /test/tool"
 
 
 class TestConcurrentFileWrites:

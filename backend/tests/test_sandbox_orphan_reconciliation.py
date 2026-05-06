@@ -13,6 +13,7 @@ import json
 import signal
 import threading
 import time
+import weakref
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
@@ -345,7 +346,7 @@ def _make_provider_for_reconciliation():
     provider._sandboxes = {}
     provider._sandbox_infos = {}
     provider._thread_sandboxes = {}
-    provider._thread_locks = {}
+    provider._thread_locks = weakref.WeakValueDictionary()
     provider._last_activity = {}
     provider._warm_pool = {}
     provider._shutdown_called = False
@@ -377,6 +378,46 @@ def test_reconcile_adopts_old_containers_into_warm_pool():
     # Should NOT destroy directly — let idle checker handle it
     provider._backend.destroy.assert_not_called()
     assert "old12345" in provider._warm_pool
+
+
+def test_acquire_discards_invalid_warm_pool_url_before_create():
+    """Warm-pool entries without a usable URL must not be returned as active sandboxes."""
+    provider = _make_provider_for_reconciliation()
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    thread_id = "thread-invalid-warm"
+    sandbox_id = aio_mod.AioSandboxProvider._deterministic_sandbox_id(thread_id)
+    info = SandboxInfo(
+        sandbox_id=sandbox_id,
+        sandbox_url="",
+        container_name=f"scientific-tumbleweed-sandbox-{sandbox_id}",
+        created_at=time.time(),
+    )
+    provider._warm_pool[sandbox_id] = (info, time.time())
+    provider._discover_or_create_with_lock = MagicMock(return_value="created")
+
+    result = aio_mod.AioSandboxProvider._acquire_internal(provider, thread_id, None, thread_id)
+
+    assert result == "created"
+    provider._backend.destroy.assert_called_once_with(info)
+    assert sandbox_id not in provider._warm_pool
+
+
+def test_thread_lock_cache_uses_weak_values():
+    """Per-thread locks should disappear after the in-flight acquire releases its local reference."""
+    import gc
+
+    provider = _make_provider_for_reconciliation()
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+
+    def _use_lock() -> None:
+        lock = aio_mod.AioSandboxProvider._get_thread_lock(provider, "thread-weak-lock")
+        with lock:
+            assert "thread-weak-lock" in provider._thread_locks
+
+    _use_lock()
+    gc.collect()
+
+    assert "thread-weak-lock" not in provider._thread_locks
 
 
 def test_reconcile_adopts_young_containers():

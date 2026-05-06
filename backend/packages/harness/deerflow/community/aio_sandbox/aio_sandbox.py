@@ -24,6 +24,16 @@ _BINARY_MAGIC_PREFIXES = (
     b"%PDF-",
 )
 
+_BINARY_SAMPLE_SIZE = 8192
+
+
+def _max_depth_for_glob(pattern: str) -> int | None:
+    """Return a safe list_path max_depth for glob patterns without recursive wildcards."""
+    parts = [part for part in pattern.strip("/").split("/") if part and part != "."]
+    if not parts or "**" in parts:
+        return None
+    return max(1, len(parts))
+
 
 class AioSandbox(Sandbox):
     """Sandbox implementation using the agent-infra/sandbox Docker container.
@@ -62,6 +72,7 @@ class AioSandbox(Sandbox):
     # Default shell wait timeout (seconds). Older agent-sandbox SDKs expose
     # this as ``timeout``; newer SDKs may expose ``no_change_timeout``.
     _DEFAULT_EXEC_TIMEOUT = 600
+    _MAX_READ_FILE_BYTES = 1_000_000
 
     def _exec_command(self, *, command: str, id: str | None = None):
         """Execute a shell command using the timeout kwarg supported by the SDK."""
@@ -92,7 +103,7 @@ class AioSandbox(Sandbox):
     def _is_binary_content(content: bytes) -> bool:
         if any(content.startswith(prefix) for prefix in _BINARY_MAGIC_PREFIXES):
             return True
-        return b"\0" in content[:8192]
+        return b"\0" in content[:_BINARY_SAMPLE_SIZE]
 
     def execute_command(self, command: str) -> str:
         """Execute a shell command in the sandbox.
@@ -136,10 +147,34 @@ class AioSandbox(Sandbox):
             The content of the file.
         """
         try:
-            content = b"".join(self._client.file.download_file(path=path))
-            if self._is_binary_content(content):
-                return f"Error: Cannot read binary file with read_file: {path}"
-            return content.decode("utf-8", errors="replace")
+            chunks: list[bytes] = []
+            sample = bytearray()
+            total_bytes = 0
+            truncated = False
+
+            for chunk in self._client.file.download_file(path=path):
+                if not chunk:
+                    continue
+
+                if len(sample) < _BINARY_SAMPLE_SIZE:
+                    sample.extend(chunk[: _BINARY_SAMPLE_SIZE - len(sample)])
+                    if self._is_binary_content(bytes(sample)):
+                        return f"Error: Cannot read binary file with read_file: {path}"
+
+                remaining = self._MAX_READ_FILE_BYTES - total_bytes
+                if len(chunk) > remaining:
+                    chunks.append(chunk[:remaining])
+                    total_bytes += remaining
+                    truncated = True
+                    break
+
+                chunks.append(chunk)
+                total_bytes += len(chunk)
+
+            text = b"".join(chunks).decode("utf-8", errors="replace")
+            if truncated:
+                text += f"\n... [truncated by sandbox after {self._MAX_READ_FILE_BYTES} bytes] ..."
+            return text
         except Exception as e:
             logger.error(f"Failed to read file in sandbox: {e}")
             return f"Error: {e}"
@@ -194,11 +229,7 @@ class AioSandbox(Sandbox):
         """
         with self._lock:
             try:
-                if append:
-                    existing = self.read_file(path)
-                    if not existing.startswith("Error:"):
-                        content = existing + content
-                self._client.file.write_file(file=path, content=content)
+                self._client.file.write_file(file=path, content=content, append=append)
             except Exception as e:
                 logger.error(f"Failed to write file in sandbox: {e}")
                 raise
@@ -211,7 +242,15 @@ class AioSandbox(Sandbox):
             truncated = len(filtered) > max_results
             return filtered[:max_results], truncated
 
-        result = self._client.file.list_path(path=path, recursive=True, show_hidden=False)
+        list_path_kwargs: dict[str, object] = {
+            "path": path,
+            "recursive": True,
+            "show_hidden": False,
+        }
+        max_depth = _max_depth_for_glob(pattern)
+        if max_depth is not None:
+            list_path_kwargs["max_depth"] = max_depth
+        result = self._client.file.list_path(**list_path_kwargs)
         entries = result.data.files if result.data and result.data.files else []
         matches: list[str] = []
         root_path = path.rstrip("/") or "/"
@@ -247,13 +286,8 @@ class AioSandbox(Sandbox):
         _re.compile(regex_source, 0 if case_sensitive else _re.IGNORECASE)
         regex = regex_source if case_sensitive else f"(?i){regex_source}"
 
-        if glob is not None:
-            find_result = self._client.file.find_files(path=path, glob=glob)
-            candidate_paths = find_result.data.files if find_result.data and find_result.data.files else []
-        else:
-            list_result = self._client.file.list_path(path=path, recursive=True, show_hidden=False)
-            entries = list_result.data.files if list_result.data and list_result.data.files else []
-            candidate_paths = [entry.path for entry in entries if not entry.is_directory]
+        find_result = self._client.file.find_files(path=path, glob=glob or "**/*")
+        candidate_paths = find_result.data.files if find_result.data and find_result.data.files else []
 
         matches: list[GrepMatch] = []
         truncated = False

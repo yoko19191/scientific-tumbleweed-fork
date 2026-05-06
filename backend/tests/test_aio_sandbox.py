@@ -234,36 +234,58 @@ class TestReadFile:
 
         assert result == "Error: Cannot read binary file with read_file: /test/tool"
 
+    def test_read_file_stops_downloading_binary_after_detection(self, sandbox):
+        consumed = []
+
+        def chunks():
+            yield b"\x7fELF\x02\x01\x01\0binary"
+            consumed.append("second")
+            yield b"large trailing payload"
+
+        sandbox._client.file.download_file = lambda **kwargs: chunks()
+
+        result = sandbox.read_file("/test/tool")
+
+        assert result == "Error: Cannot read binary file with read_file: /test/tool"
+        assert consumed == []
+
+    def test_read_file_truncates_large_stream_without_consuming_tail(self, sandbox):
+        sandbox._MAX_READ_FILE_BYTES = 5
+        consumed = []
+
+        def chunks():
+            yield b"hello"
+            yield b"world"
+            consumed.append("tail")
+            yield b"tail"
+
+        sandbox._client.file.download_file = lambda **kwargs: chunks()
+
+        result = sandbox.read_file("/test/large.txt")
+
+        assert result.startswith("hello")
+        assert "truncated" in result
+        assert consumed == []
+
 
 class TestConcurrentFileWrites:
     """Verify file write paths do not lose concurrent updates."""
 
     def test_append_should_preserve_both_parallel_writes(self, sandbox):
         storage = {"content": "seed\n"}
-        active_reads = 0
+        writes = []
         state_lock = threading.Lock()
-        overlap_detected = threading.Event()
 
-        def overlapping_read_file(path):
-            nonlocal active_reads
+        def write_back(*, file, content, append=False, **kwargs):
             with state_lock:
-                active_reads += 1
-                snapshot = storage["content"]
-                if active_reads == 2:
-                    overlap_detected.set()
-
-            overlap_detected.wait(0.05)
-
-            with state_lock:
-                active_reads -= 1
-
-            return snapshot
-
-        def write_back(*, file, content, **kwargs):
-            storage["content"] = content
+                writes.append({"file": file, "content": content, "append": append})
+                if append:
+                    storage["content"] += content
+                else:
+                    storage["content"] = content
             return SimpleNamespace(data=SimpleNamespace())
 
-        sandbox.read_file = overlapping_read_file
+        sandbox.read_file = MagicMock(side_effect=AssertionError("append should not read existing content"))
         sandbox._client.file.write_file = write_back
 
         barrier = threading.Barrier(2)
@@ -283,3 +305,4 @@ class TestConcurrentFileWrites:
             thread.join()
 
         assert storage["content"] in {"seed\nA\nB\n", "seed\nB\nA\n"}
+        assert [write["append"] for write in writes] == [True, True]

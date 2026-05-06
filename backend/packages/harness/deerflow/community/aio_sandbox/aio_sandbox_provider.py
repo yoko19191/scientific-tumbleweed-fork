@@ -18,6 +18,7 @@ import signal
 import threading
 import time
 import uuid
+import weakref
 
 try:
     import fcntl
@@ -94,7 +95,7 @@ class AioSandboxProvider(SandboxProvider):
         self._sandboxes: dict[str, AioSandbox] = {}  # sandbox_id -> AioSandbox instance
         self._sandbox_infos: dict[str, SandboxInfo] = {}  # sandbox_id -> SandboxInfo (for destroy)
         self._thread_sandboxes: dict[str, str] = {}  # thread_id -> sandbox_id
-        self._thread_locks: dict[str, threading.Lock] = {}  # thread_id -> in-process lock
+        self._thread_locks: weakref.WeakValueDictionary[str, threading.Lock] = weakref.WeakValueDictionary()  # thread_id -> in-process lock
         self._last_activity: dict[str, float] = {}  # sandbox_id -> last activity timestamp
         # Warm pool: released sandboxes whose containers are still running.
         # Maps sandbox_id -> (SandboxInfo, release_timestamp).
@@ -416,9 +417,52 @@ class AioSandboxProvider(SandboxProvider):
     def _get_thread_lock(self, thread_id: str) -> threading.Lock:
         """Get or create an in-process lock for a specific thread_id."""
         with self._lock:
-            if thread_id not in self._thread_locks:
-                self._thread_locks[thread_id] = threading.Lock()
-            return self._thread_locks[thread_id]
+            lock = self._thread_locks.get(thread_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._thread_locks[thread_id] = lock
+            return lock
+
+    def _try_reclaim_warm_sandbox(self, sandbox_id: str, cache_key: str, thread_id: str | None) -> str | None:
+        """Move a warm-pool sandbox back to active use if it is still usable."""
+        with self._lock:
+            item = self._warm_pool.pop(sandbox_id, None)
+
+        if item is None:
+            return None
+
+        info, _ = item
+        if not self._is_warm_sandbox_reclaimable(info):
+            self._destroy_unusable_warm_sandbox(sandbox_id, info)
+            return None
+
+        sandbox = AioSandbox(id=sandbox_id, base_url=info.sandbox_url)
+        with self._lock:
+            self._sandboxes[sandbox_id] = sandbox
+            self._sandbox_infos[sandbox_id] = info
+            self._last_activity[sandbox_id] = time.time()
+            self._thread_sandboxes[cache_key] = sandbox_id
+        logger.info(f"Reclaimed warm-pool sandbox {sandbox_id} for thread {thread_id} at {info.sandbox_url}")
+        return sandbox_id
+
+    def _is_warm_sandbox_reclaimable(self, info: SandboxInfo) -> bool:
+        if not info.sandbox_url:
+            logger.warning(f"Warm-pool sandbox {info.sandbox_id} has no sandbox_url; discarding")
+            return False
+        if not self._backend.is_alive(info):
+            logger.warning(f"Warm-pool sandbox {info.sandbox_id} is no longer running; discarding")
+            return False
+        if not wait_for_sandbox_ready(info.sandbox_url, timeout=5):
+            logger.warning(f"Warm-pool sandbox {info.sandbox_id} is not healthy at {info.sandbox_url}; discarding")
+            return False
+        return True
+
+    def _destroy_unusable_warm_sandbox(self, sandbox_id: str, info: SandboxInfo) -> None:
+        try:
+            self._backend.destroy(info)
+            logger.info(f"Destroyed unusable warm-pool sandbox {sandbox_id}")
+        except Exception as e:
+            logger.error(f"Failed to destroy unusable warm-pool sandbox {sandbox_id}: {e}")
 
     # ── Core: acquire / get / release / shutdown ─────────────────────────
 
@@ -476,16 +520,9 @@ class AioSandboxProvider(SandboxProvider):
 
         # ── Layer 1.5: Warm pool (container still running, no cold-start) ──
         if cache_key:
-            with self._lock:
-                if sandbox_id in self._warm_pool:
-                    info, _ = self._warm_pool.pop(sandbox_id)
-                    sandbox = AioSandbox(id=sandbox_id, base_url=info.sandbox_url)
-                    self._sandboxes[sandbox_id] = sandbox
-                    self._sandbox_infos[sandbox_id] = info
-                    self._last_activity[sandbox_id] = time.time()
-                    self._thread_sandboxes[cache_key] = sandbox_id
-                    logger.info(f"Reclaimed warm-pool sandbox {sandbox_id} for thread {thread_id} at {info.sandbox_url}")
-                    return sandbox_id
+            reclaimed = self._try_reclaim_warm_sandbox(sandbox_id, cache_key, thread_id)
+            if reclaimed is not None:
+                return reclaimed
 
         # ── Layer 2: Backend discovery + create (protected by cross-process lock) ──
         # Use a file lock so that two processes racing to create the same sandbox
@@ -526,15 +563,10 @@ class AioSandboxProvider(SandboxProvider):
                             logger.info(f"Reusing in-process sandbox {existing_id} for thread {thread_id} (post-lock check)")
                             self._last_activity[existing_id] = time.time()
                             return existing_id
-                    if sandbox_id in self._warm_pool:
-                        info, _ = self._warm_pool.pop(sandbox_id)
-                        sandbox = AioSandbox(id=sandbox_id, base_url=info.sandbox_url)
-                        self._sandboxes[sandbox_id] = sandbox
-                        self._sandbox_infos[sandbox_id] = info
-                        self._last_activity[sandbox_id] = time.time()
-                        self._thread_sandboxes[cache_key] = sandbox_id
-                        logger.info(f"Reclaimed warm-pool sandbox {sandbox_id} for thread {thread_id} (post-lock check)")
-                        return sandbox_id
+                reclaimed = self._try_reclaim_warm_sandbox(sandbox_id, cache_key, thread_id)
+                if reclaimed is not None:
+                    logger.info(f"Reclaimed warm-pool sandbox {sandbox_id} for thread {thread_id} (post-lock check)")
+                    return reclaimed
 
                 # Backend discovery: another process may have created the container.
                 discovered = self._backend.discover(sandbox_id)

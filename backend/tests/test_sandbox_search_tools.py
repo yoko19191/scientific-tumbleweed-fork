@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from deerflow.community.aio_sandbox.aio_sandbox import AioSandbox
 from deerflow.sandbox.exceptions import SandboxRuntimeError
@@ -201,10 +201,11 @@ def test_grep_tool_invalid_regex_returns_error(tmp_path, monkeypatch) -> None:
 def test_aio_sandbox_glob_include_dirs_filters_nested_ignored(monkeypatch) -> None:
     with patch("deerflow.community.aio_sandbox.aio_sandbox.AioSandboxClient"):
         sandbox = AioSandbox(id="test-sandbox", base_url="http://localhost:8080")
-    monkeypatch.setattr(
-        sandbox._client.file,
-        "list_path",
-        lambda **kwargs: SimpleNamespace(
+    list_path_calls = []
+
+    def list_path(**kwargs):
+        list_path_calls.append(kwargs)
+        return SimpleNamespace(
             data=SimpleNamespace(
                 files=[
                     SimpleNamespace(name="src", path="/mnt/workspace/src"),
@@ -213,7 +214,12 @@ def test_aio_sandbox_glob_include_dirs_filters_nested_ignored(monkeypatch) -> No
                     SimpleNamespace(name="lib", path="/mnt/workspace/node_modules/lib"),
                 ]
             )
-        ),
+        )
+
+    monkeypatch.setattr(
+        sandbox._client.file,
+        "list_path",
+        list_path,
     )
 
     matches, truncated = sandbox.glob("/mnt/workspace", "**", include_dirs=True)
@@ -222,6 +228,7 @@ def test_aio_sandbox_glob_include_dirs_filters_nested_ignored(monkeypatch) -> No
     assert "/mnt/workspace/node_modules" not in matches
     assert "/mnt/workspace/node_modules/lib" not in matches
     assert truncated is False
+    assert list_path_calls == [{"path": "/mnt/workspace", "recursive": True, "show_hidden": False}]
 
 
 def test_aio_sandbox_grep_invalid_regex_raises() -> None:
@@ -257,19 +264,10 @@ def test_aio_sandbox_grep_parses_json(monkeypatch) -> None:
         sandbox = AioSandbox(id="test-sandbox", base_url="http://localhost:8080")
     monkeypatch.setattr(
         sandbox._client.file,
-        "list_path",
-        lambda **kwargs: SimpleNamespace(
-            data=SimpleNamespace(
-                files=[
-                    SimpleNamespace(
-                        name="app.py",
-                        path="/mnt/user-data/workspace/app.py",
-                        is_directory=False,
-                    )
-                ]
-            )
-        ),
+        "find_files",
+        lambda **kwargs: SimpleNamespace(data=SimpleNamespace(files=["/mnt/user-data/workspace/app.py"])),
     )
+    monkeypatch.setattr(sandbox._client.file, "list_path", MagicMock(side_effect=AssertionError("grep should not list directories")))
     monkeypatch.setattr(
         sandbox._client.file,
         "search_in_file",
@@ -364,24 +362,33 @@ def test_aio_sandbox_glob_include_dirs_enforces_root_boundary(monkeypatch) -> No
     assert truncated is False
 
 
+def test_aio_sandbox_glob_include_dirs_bounds_non_recursive_patterns(monkeypatch) -> None:
+    with patch("deerflow.community.aio_sandbox.aio_sandbox.AioSandboxClient"):
+        sandbox = AioSandbox(id="test-sandbox", base_url="http://localhost:8080")
+    list_path_calls = []
+
+    def list_path(**kwargs):
+        list_path_calls.append(kwargs)
+        return SimpleNamespace(data=SimpleNamespace(files=[SimpleNamespace(name="src", path="/mnt/workspace/src")]))
+
+    monkeypatch.setattr(sandbox._client.file, "list_path", list_path)
+
+    matches, truncated = sandbox.glob("/mnt/workspace", "src", include_dirs=True)
+
+    assert matches == ["/mnt/workspace/src"]
+    assert truncated is False
+    assert list_path_calls == [{"path": "/mnt/workspace", "recursive": True, "show_hidden": False, "max_depth": 1}]
+
+
 def test_aio_sandbox_grep_skips_mismatched_line_number_payloads(monkeypatch) -> None:
     with patch("deerflow.community.aio_sandbox.aio_sandbox.AioSandboxClient"):
         sandbox = AioSandbox(id="test-sandbox", base_url="http://localhost:8080")
     monkeypatch.setattr(
         sandbox._client.file,
-        "list_path",
-        lambda **kwargs: SimpleNamespace(
-            data=SimpleNamespace(
-                files=[
-                    SimpleNamespace(
-                        name="app.py",
-                        path="/mnt/user-data/workspace/app.py",
-                        is_directory=False,
-                    )
-                ]
-            )
-        ),
+        "find_files",
+        lambda **kwargs: SimpleNamespace(data=SimpleNamespace(files=["/mnt/user-data/workspace/app.py"])),
     )
+    monkeypatch.setattr(sandbox._client.file, "list_path", MagicMock(side_effect=AssertionError("grep should not list directories")))
     monkeypatch.setattr(
         sandbox._client.file,
         "search_in_file",

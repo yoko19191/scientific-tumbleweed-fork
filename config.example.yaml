@@ -26,7 +26,7 @@ log_level: info
 # Track LLM token usage per model call (input/output/total tokens)
 # Logs at info level via TokenUsageMiddleware
 token_usage:
-  enabled: false
+  enabled: true
 
 # ============================================================================
 # Models Configuration
@@ -39,7 +39,7 @@ models:
     description: 最新小号鲸鱼, 1M 超长上下文，性价比王者
     use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
     model: deepseek-v4-flash
-    api_key: $OPENAI_API_KEY
+    api_key: $DMXAPI_API_KEY
     api_base: https://www.dmxapi.cn/v1
     timeout: 180
     max_retries: 5
@@ -60,7 +60,7 @@ models:
     description: 最新大号鲸鱼，1M 超长上下文，超强推理能力
     use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
     model: deepseek-v4-pro
-    api_key: $OPENAI_API_KEY
+    api_key: $DMXAPI_API_KEY
     api_base: https://www.dmxapi.cn/v1
     timeout: 600
     max_retries: 5
@@ -78,18 +78,18 @@ models:
 
   - name: kimi-k2.6
     display_name: Kimi K2.6
-    description: 多模态推理模型，智能体和前端审美强
+    description: 多模态推理模型，智能体积极和前端审美强
     use: deerflow.models.patched_deepseek:PatchedChatDeepSeek
     model: kimi-k2.6
-    api_key: $OPENAI_API_KEY
+    api_key: $DMXAPI_API_KEY
     api_base: https://www.dmxapi.cn/v1
     timeout: 600
     max_retries: 5
     supports_thinking: true
     supports_vision: true
     supports_reasoning_effort: true
-    reasoning_effort_levels: ["high", "max"]
-    max_tokens: 131072
+    #reasoning_effort_levels: ["high", "max"]
+    max_tokens: 98304
     profile:
       max_input_tokens: 262144
     when_thinking_enabled:
@@ -97,12 +97,28 @@ models:
         thinking:
           type: enabled
 
+  - name: mimo-v2.5-pro
+    display_name: MiMO V2.5 Pro
+    description: 小米旗舰模型长程推理能力模型，Agent 效率高
+    use: deerflow.models.patched_openai:PatchedChatOpenAI
+    model: mimo-v2.5-pro
+    api_key: $DMXAPI_API_KEY
+    base_url: https://www.dmxapi.cn/v1
+    timeout: 180
+    max_retries: 5
+    max_tokens: 128000
+    supports_thinking: true
+    supports_vision: false
+    profile:
+      max_input_tokens: 1000000
+
+
   - name: minimax-m2.7
     display_name: MiniMax M2.7
     description: 国产高性价比模型，推理超快(highspeed)
     use: langchain_openai:ChatOpenAI
     model: MiniMax-M2.7-highspeed
-    api_key: $OPENAI_API_KEY
+    api_key: $DMXAPI_API_KEY
     base_url: https://www.dmxapi.cn/v1
     request_timeout: 180
     max_retries: 5
@@ -118,7 +134,7 @@ models:
     description: 谷歌最新旗舰模型，1M 超长上下文，最强多模态能力
     use: deerflow.models.patched_openai:PatchedChatOpenAI
     model: gemini-3.1-pro-preview
-    api_key: $GEMINI_API_KEY
+    api_key: $DMXAPI_API_KEY
     base_url: https://www.dmxapi.cn/v1
     timeout: 180
     max_retries: 5
@@ -135,10 +151,10 @@ models:
 
   - name: gpt-5.5
     display_name: GPT 5.5
-    description: OpenAI 主力模型，动态调节推理能力，高效输出
+    description: OpenAI 主力模型，动态调节推理能力，高效输出可靠品质
     use: langchain_openai:ChatOpenAI
     model: gpt-5.5
-    api_key: $OPENAI_API_KEY
+    api_key: $DMXAPI_API_KEY
     base_url: https://www.dmxapi.cn/v1
     timeout: 180
     max_retries: 5
@@ -158,8 +174,8 @@ models:
     display_name: Claude Sonnet 4.6
     description: Anthropic 主力模型，编程能力强，人机交互体验好
     use: langchain_anthropic:ChatAnthropic
-    model: claude-sonnet-4-6-thinking
-    api_key: $ANTHROPIC_API_KEY
+    model: claude-sonnet-4-6
+    api_key: $DMXAPI_API_KEY
     base_url: https://www.dmxapi.cn
     timeout: 180
     max_retries: 5
@@ -175,26 +191,26 @@ models:
       thinking:
         type: adaptive
 
-  - name: claude-opus-4-6
-    display_name: Claude Opus 4.6
-    description: Anthropic 旗舰，信息整合推理编程 SOTA，贵贵贵贵
-    use: langchain_anthropic:ChatAnthropic
-    model: claude-opus-4-6-thinking
-    api_key: $ANTHROPIC_API_KEY
-    base_url: https://www.dmxapi.cn
-    timeout: 180
-    max_retries: 5
-    max_tokens: 98000
-    profile:
-      max_input_tokens: 1048576
-    supports_vision: true
-    supports_thinking: true
-    supports_reasoning_effort: true
-    reasoning_effort_levels: ["low", "medium", "high", "max"]
-    default_reasoning_effort: high
-    when_thinking_enabled:
-      thinking:
-        type: adaptive
+  # - name: claude-opus-4-6
+  #   display_name: Claude Opus 4.6
+  #   description: Anthropic 旗舰，信息整合推理编程 SOTA，贵贵贵贵
+  #   use: langchain_anthropic:ChatAnthropic
+  #   model: claude-opus-4-6
+  #   api_key: $DMXAPI_API_KEY
+  #   base_url: https://www.dmxapi.cn
+  #   timeout: 180
+  #   max_retries: 5
+  #   max_tokens: 98000
+  #   profile:
+  #     max_input_tokens: 1048576
+  #   supports_vision: true
+  #   supports_thinking: true
+  #   supports_reasoning_effort: true
+  #   reasoning_effort_levels: ["low", "medium", "high", "max"]
+  #   default_reasoning_effort: high
+  #   when_thinking_enabled:
+  #     thinking:
+  #       type: adaptive
 
   
 
@@ -236,6 +252,7 @@ tools:
   #   # Used to limit the scope of search results, only returns content within the specified time range. Set to -1 to disable time filtering
   #   search_time_range: 10
 
+  # ----------------------------------------------------------------------------
   # Web fetch tool (uses Jina AI reader)
   # - name: web_fetch
   #   group: web
@@ -253,6 +270,7 @@ tools:
   #   # Timeout for navigating to the page (in seconds). Set to positive value to enable, -1 to disable
   #   navigation_timeout: 30
 
+  # ----------------------------------------------------------------------------
   # Image search tool (uses DuckDuckGo)
   # Use this to find reference images before image generation
   - name: image_search
@@ -269,6 +287,7 @@ tools:
   #   # Image size filter. Options: "l" (large), "m" (medium), "i" (icon).
   #   image_size: "i"
 
+  # ----------------------------------------------------------------------------
   # Academic search tools (OpenAlex + Semantic Scholar aggregator)
   # Uses OpenAlex as primary source with Semantic Scholar fallback.
   # Set OPENALEX_EMAIL for polite pool access; SEMANTIC_SCHOLAR_API_KEY for higher S2 rate limits.
@@ -365,6 +384,7 @@ tools:
     api_key: $SEMANTIC_SCHOLAR_API_KEY
     openalex_email: $OPENALEX_EMAIL
 
+  # ----------------------------------------------------------------------------
   # File operations tools
   - name: ls
     group: file:read
@@ -402,6 +422,65 @@ tool_search:
   enabled: true
 
 # ============================================================================
+# Permissions Configuration
+# ============================================================================
+# Layered permission model for tool execution.
+# mode options:
+#   allow              - all tools are permitted (backward-compatible)
+#   prompt             - unknown/high-risk tools require interactive approval
+#   workspace_write    - read + workspace-write tools allowed
+#   read_only          - strictly read-only tools
+#   danger_full_access - broad access for trusted local workflows
+
+permissions:
+  enabled: true
+  mode: allow
+  tool_overrides: {}
+  # tool_overrides:
+  #   bash: prompt
+  #   write_file: workspace_write
+
+# ============================================================================
+# Hooks Configuration
+# ============================================================================
+# Optional pre/post tool hooks. A hook entry may use either `command` for an
+# external command or `use` for a Python callable path. `tools: null` means all
+# tools; otherwise list specific tool names.
+
+hooks:
+  enabled: true
+  pre_tool_use: []
+  post_tool_use: []
+  post_tool_use_failure: []
+  # pre_tool_use:
+  #   - command: "python scripts/check_tool_call.py"
+  #     tools: ["bash", "write_file"]
+  # post_tool_use:
+  #   - use: "my_package.hooks:record_tool_use"
+  #     tools: null
+
+# ============================================================================
+# Plugins Configuration
+# ============================================================================
+# Plugin manifests are discovered from these directories when plugin loading is
+# enabled. Paths may be absolute, `~`-relative, or project-relative.
+
+plugins:
+  enabled: true
+  directories:
+    - ~/.deerflow/plugins
+    - .deerflow/plugins
+
+# ============================================================================
+# Skill Evolution Configuration
+# ============================================================================
+# Agent-managed skill creation/modification under skills/custom.
+
+skill_evolution:
+  enabled: false
+  moderation_model_name: null # null = use primary chat model
+
+# ============================================================================
 # Sandbox Configuration
 # ============================================================================
 # Choose between local sandbox (direct execution) or Docker-based AIO sandbox
@@ -429,42 +508,109 @@ tool_search:
 # Uncomment to use:
 sandbox:
   use: deerflow.community.aio_sandbox:AioSandboxProvider
-#
-#   # Optional: Container image to use (works with both Docker and Apple Container)
-#   # Default: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest
-#   # Recommended: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest (works on both x86_64 and arm64)
-  image: scientific-tumbleweed-aio-sandbox:arm64-20260427
-  environment:
-    DMXAPI_API_KEY: $DMXAPI_API_KEY
-#   # Optional: Base port for sandbox containers (default: 8080)
-#   # port: 8080
 
-#   # Optional: Maximum number of concurrent sandbox containers (default: 3)
-#   # When the limit is reached the least-recently-used sandbox is evicted to
-#   # make room for new ones. Use a positive integer here; omit this field to use the default.
-#   # replicas: 3
-#
-#   # Optional: Prefix for container names (default: scientific-tumbleweed-sandbox)
-#   # container_prefix: scientific-tumbleweed-sandbox
-#
-#   # Optional: Additional mount directories from host to container
-#   # NOTE: Skills directory is automatically mounted from skills.path to skills.container_path
-#   # mounts:
-#   #   # Other custom mounts
-#   #   - host_path: /path/on/host
-#   #     container_path: /home/user/shared
-#   #     read_only: false
-#   #
-#   #   # Scientific Tumbleweed will surface configured container_path values to the agent,
-#   #   # so it can directly read/write mounted directories such as /home/user/shared
-#
-#   # Optional: Environment variables to inject into the sandbox container
-#   # Values starting with $ will be resolved from host environment variables
-#   # environment:
-#   #   NODE_ENV: production
-#   #   DEBUG: "false"
-#   #   API_KEY: $MY_API_KEY        # Reads from host's MY_API_KEY env var
-#   #   DATABASE_URL: $DATABASE_URL  # Reads from host's DATABASE_URL env var
+  # Host bash execution applies only to LocalSandboxProvider. It is kept false
+  # here so switching providers does not accidentally enable host shell access.
+  allow_host_bash: false
+
+  # Container image to use (works with both Docker and Apple Container)
+  # Default: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest
+  # Recommended: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest (works on both x86_64 and arm64)
+  image: scientific-tumbleweed-aio-sandbox:arm64-20260427
+
+  # Base port for sandbox containers.
+  port: 8080
+
+  # Maximum number of concurrent sandbox containers. When the limit is reached,
+  # the least-recently-used sandbox is evicted to make room.
+  replicas: 3
+
+  # Prefix for local sandbox container names.
+  container_prefix: scientific-tumbleweed-sandbox
+
+  # Idle timeout in seconds before a sandbox is released. Set to 0 to disable.
+  idle_timeout: 600
+
+  # Tool output truncation limits (characters). Set to 0 to disable truncation.
+  bash_output_max_chars: 20000
+  read_file_output_max_chars: 50000
+  ls_output_max_chars: 20000
+
+  # Additional mount directories from host to container.
+  # NOTE: Skills directory is automatically mounted from skills.path to
+  # skills.container_path. Keep this empty unless you need extra shared folders.
+  mounts: []
+  # mounts:
+  #   - host_path: /path/on/host
+  #     container_path: /home/user/shared
+  #     read_only: false
+
+  # Environment variables injected into the sandbox container.
+  # Values starting with $ are resolved from host environment variables at
+  # config-load time; leave optional keys commented unless they are present in
+  # your `.env`, otherwise config loading will fail.
+  environment:
+    # Shared gateway/model key used by image-generation and ppt-master(openai).
+    DMXAPI_API_KEY: $DMXAPI_API_KEY
+
+    # image-generation skill and ppt-master openai backend defaults.
+    IMAGE_BACKEND: openai
+    OPENAI_MODEL: gpt-image-2
+    OPENAI_BASE_URL: https://www.dmxapi.cn/v1
+
+    # ppt-master optional image backends. Uncomment only the backend you use.
+    # OPENAI_API_KEY: $OPENAI_API_KEY
+    # GEMINI_API_KEY: $GEMINI_API_KEY
+    # GEMINI_MODEL: gemini-3.1-flash-image-preview
+    # GEMINI_BASE_URL: https://your-gemini-compatible-endpoint
+    # MINIMAX_API_KEY: $MINIMAX_API_KEY
+    # MINIMAX_MODEL: image-01
+    # MINIMAX_BASE_URL: https://api.minimax.io/v1/image_generation
+    # QWEN_API_KEY: $QWEN_API_KEY
+    # DASHSCOPE_API_KEY: $DASHSCOPE_API_KEY
+    # QWEN_MODEL: qwen-image-2.0-pro
+    # QWEN_BASE_URL: https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis
+    # ZHIPU_API_KEY: $ZHIPU_API_KEY
+    # BIGMODEL_API_KEY: $BIGMODEL_API_KEY
+    # ZHIPU_MODEL: glm-image
+    # ZHIPU_BASE_URL: https://open.bigmodel.cn/api/paas/v4/images/generations
+    # VOLCENGINE_API_KEY: $VOLCENGINE_API_KEY
+    # ARK_API_KEY: $ARK_API_KEY
+    # VOLCENGINE_MODEL: doubao-seedream
+    # VOLCENGINE_BASE_URL: https://operator.las.cn-beijing.volces.com/api/v1/images/generations
+    # STABILITY_API_KEY: $STABILITY_API_KEY
+    # STABILITY_MODEL: stable-image-core
+    # STABILITY_BASE_URL: https://api.stability.ai
+    # BFL_API_KEY: $BFL_API_KEY
+    # BFL_MODEL: flux-pro-1.1-ultra
+    # BFL_BASE_URL: https://api.bfl.ai
+    # IDEOGRAM_API_KEY: $IDEOGRAM_API_KEY
+    # IDEOGRAM_MODEL: ideogram-v3
+    # IDEOGRAM_BASE_URL: https://api.ideogram.ai
+    # SILICONFLOW_API_KEY: $SILICONFLOW_API_KEY
+    # SILICONFLOW_MODEL: Qwen/Qwen-Image
+    # SILICONFLOW_BASE_URL: https://api.siliconflow.cn/v1/images/generations
+    # FAL_KEY: $FAL_KEY
+    # FAL_API_KEY: $FAL_API_KEY
+    # FAL_MODEL: fal-ai/imagen3/fast
+    # FAL_BASE_URL: https://fal.run
+    # REPLICATE_API_TOKEN: $REPLICATE_API_TOKEN
+    # REPLICATE_API_KEY: $REPLICATE_API_KEY
+    # REPLICATE_MODEL: black-forest-labs/flux-1.1-pro
+    # REPLICATE_BASE_URL: https://api.replicate.com/v1/predictions
+    # OPENROUTER_API_KEY: $OPENROUTER_API_KEY
+    # OPENROUTER_MODEL: google/gemini-3.1-flash-image-preview
+    # OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+
+    # NCBI skills: ncbi-entrez-skill, ncbi-pmc-skill, ncbi-blast-skill.
+    # NCBI_API_KEY: $NCBI_API_KEY
+    # NCBI_EUTILS_API_KEY: $NCBI_EUTILS_API_KEY
+    # NCBI_EMAIL: $NCBI_EMAIL
+    NCBI_TOOL: scientific-tumbleweed
+
+    # chart-visualization skill optional service routing.
+    # VIS_REQUEST_SERVER: $VIS_REQUEST_SERVER
+    # SERVICE_ID: $SERVICE_ID
 
 # Option 3: Provisioner-managed AIO Sandbox (docker-compose-dev)
 # Each sandbox_id gets a dedicated Pod in k3s, managed by the provisioner.
@@ -480,22 +626,30 @@ sandbox:
 # Subagents are background workers delegated tasks by the lead agent
 
 subagents:
+  timeout_seconds: 900
+  max_turns: null
+  model: null
   agents:
     verification:
       model: gpt-5.5
       timeout_seconds: 600
+      max_turns: null
     plan:
       model: claude-opus-4-6
       timeout_seconds: 600
+      max_turns: null
     general-purpose:
       model: kimi-k2.6
       timeout_seconds: 1800
+      max_turns: null
     explore:
       model: deepseek-v4-flash
       timeout_seconds: 1800
+      max_turns: null
     bash:
       model: gpt-5.5
       timeout_seconds: 1800
+      max_turns: null
 
 # ============================================================================
 # ACP Agents Configuration
@@ -533,7 +687,7 @@ subagents:
 skills:
   # Path to skills directory on the host (relative to project root or absolute)
   # Default: ../skills (relative to backend directory)
-  # Uncomment to customize:
+  path: null
   # path: /absolute/path/to/custom/skills
 
   # Path where skills are mounted in the sandbox container
@@ -551,6 +705,12 @@ title:
   max_words: 6
   max_chars: 60
   model_name: null # Use default model (first model in models list)
+  prompt_template: |
+    Generate a concise title (max {max_words} words) for this conversation.
+    User: {user_msg}
+    Assistant: {assistant_msg}
+
+    Return ONLY the title in user's language, no quotes, no explanation.
 
 # ============================================================================
 # Summarization Configuration
@@ -600,6 +760,13 @@ summarization:
   # The prompt should guide the model to extract important context
   summary_prompt: null
 
+  # Preserve recently-read skill files across summarization so an active skill's
+  # instructions are not accidentally compacted away.
+  preserve_recent_skill_count: 5
+  preserve_recent_skill_tokens: 25000
+  preserve_recent_skill_tokens_per_skill: 5000
+  skill_file_read_tool_names: ["read_file", "read", "view", "cat"]
+
 # ============================================================================
 # Memory Configuration
 # ============================================================================
@@ -608,12 +775,22 @@ summarization:
 memory:
   enabled: true
   storage_path: memory.json # Path relative to backend directory
+  storage_class: deerflow.agents.memory.storage.FileMemoryStorage
   debounce_seconds: 30 # Wait time before processing queued updates
   model_name: null # Use default model
   max_facts: 100 # Maximum number of facts to store
   fact_confidence_threshold: 0.7 # Minimum confidence for storing facts
   injection_enabled: true # Whether to inject memory into system prompt
   max_injection_tokens: 2000 # Maximum tokens for memory injection
+
+# ============================================================================
+# Circuit Breaker Configuration
+# ============================================================================
+# Trips after repeated LLM failures, then waits before allowing recovery.
+
+circuit_breaker:
+  failure_threshold: 5
+  recovery_timeout_sec: 60
 
 # ============================================================================
 # Checkpointer Configuration
@@ -647,6 +824,17 @@ checkpointer:
 # checkpointer:
 #   type: postgres
 #   connection_string: postgresql://user:password@localhost:5432/deerflow
+
+# ============================================================================
+# Stream Bridge Configuration
+# ============================================================================
+# Connects agent workers to SSE endpoints. `memory` is single-process. `redis`
+# is reserved for Redis Streams deployments.
+
+stream_bridge:
+  type: memory
+  redis_url: null
+  queue_maxsize: 256
 
 # ============================================================================
 # IM Channels Configuration
@@ -723,6 +911,12 @@ checkpointer:
 # or custom provider. See backend/docs/GUARDRAILS.md for full documentation.
 #
 # Providers are loaded by class path via resolve_variable (same as models/tools).
+
+guardrails:
+  enabled: false
+  fail_closed: true
+  passport: null
+  provider: null
 
 # --- Option 1: Built-in AllowlistProvider (zero external deps) ---
 # guardrails:

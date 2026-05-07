@@ -7,7 +7,7 @@ description: Use this skill when the user requests to generate, create, or visua
 
 ## Overview
 
-This skill generates high-quality images using DMXAPI's gpt-image-2 model. It reads a plain-text prompt file and calls the API to produce images. Particularly suited for academic and scientific illustrations.
+This skill generates high-quality images using DMXAPI. It defaults to `gpt-image-2`, and can be overridden with `OPENAI_MODEL` or the script's `--model` flag. It reads a plain-text prompt file and calls the API to produce images. Particularly suited for academic and scientific illustrations.
 
 ## Core Capabilities
 
@@ -60,6 +60,7 @@ Parameters:
 - `--quality`: Quality level — `auto` (default), `high`, `medium`, `low`
 - `--n`: Number of images to generate, 1-10 (optional, default: 1)
 - `--timeout`: Request timeout in seconds (optional, default: 180)
+- `--model`: Model name (optional; defaults to `OPENAI_MODEL`, then `gpt-image-2`)
 
 [!NOTE]
 Do NOT read the python file, just call it with the parameters.

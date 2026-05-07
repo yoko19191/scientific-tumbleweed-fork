@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
 """
-OpenAI Compatible Image Generation Backend
+OpenAI-compatible Image Generation Backend
 
-Generates images via OpenAI-compatible APIs (OpenAI, local models like Qwen-Image, etc.).
+Generates images through DMXAPI by default, while keeping OpenAI-compatible
+configuration overrides for custom gateways.
 Used by image_gen.py as a backend module.
 
 Configuration keys:
-  OPENAI_API_KEY   (required) API key
-  OPENAI_BASE_URL  (optional) Custom API endpoint (e.g. http://127.0.0.1:3000/v1)
-  OPENAI_MODEL     (optional) Model name (default: gpt-image-1)
+  DMXAPI_API_KEY   (recommended) DMXAPI key
+  OPENAI_API_KEY   (fallback) OpenAI/OpenAI-compatible key
+  OPENAI_BASE_URL  (optional) Custom base URL or /images/generations endpoint
+  OPENAI_MODEL     (optional) Model name (default: gpt-image-2)
 
 Dependencies:
-  pip install openai Pillow
+  pip install requests Pillow
 """
 
 import base64
 import os
 import time
 import threading
+from urllib.parse import urljoin
 
-from openai import OpenAI
+import requests
 from image_backends.backend_common import (
     MAX_RETRIES,
     is_rate_limit_error,
@@ -38,15 +41,15 @@ from image_backends.backend_common import (
 # Covers common PPT/social media ratios
 ASPECT_RATIO_TO_SIZE = {
     "1:1":  "1024x1024",
-    "16:9": "1792x1024",
-    "9:16": "1024x1792",
+    "16:9": "1536x1024",
+    "9:16": "1024x1536",
     "3:2":  "1536x1024",
     "2:3":  "1024x1536",
     "4:3":  "1536x1024",   # closest available
     "3:4":  "1024x1536",   # closest available
     "4:5":  "1024x1024",   # fallback to square
     "5:4":  "1024x1024",   # fallback to square
-    "21:9": "1792x1024",   # closest wide format
+    "21:9": "1536x1024",   # closest wide format
 }
 
 VALID_ASPECT_RATIOS = list(ASPECT_RATIO_TO_SIZE.keys())
@@ -59,7 +62,16 @@ IMAGE_SIZE_TO_QUALITY = {
     "4K":    "high",
 }
 
-DEFAULT_MODEL = "gpt-image-1"
+DEFAULT_BASE_URL = "https://www.dmxapi.cn/v1"
+DEFAULT_MODEL = "gpt-image-2"
+
+
+def _images_endpoint(base_url: str) -> str:
+    """Resolve a base URL or explicit endpoint to /images/generations."""
+    clean = (base_url or DEFAULT_BASE_URL).strip().rstrip("/")
+    if clean.endswith("/images/generations"):
+        return clean
+    return urljoin(f"{clean}/", "images/generations")
 
 
 # ╔══════════════════════════════════════════════════════════════════╗
@@ -69,11 +81,12 @@ DEFAULT_MODEL = "gpt-image-1"
 def _generate_image(api_key: str, prompt: str, negative_prompt: str = None,
                     aspect_ratio: str = "1:1", image_size: str = "1K",
                     output_dir: str = None, filename: str = None,
-                    model: str = DEFAULT_MODEL, base_url: str = None) -> str:
+                    model: str = DEFAULT_MODEL, base_url: str = DEFAULT_BASE_URL) -> str:
     """
-    Image generation via OpenAI-compatible API.
+    Image generation via DMXAPI/OpenAI-compatible image generation endpoint.
 
-    Maps aspect_ratio to OpenAI's size parameter, and image_size to quality.
+    Maps aspect_ratio to a DMXAPI-compatible size parameter, and image_size to
+    quality.
 
     Returns:
         Path of the saved image file
@@ -81,8 +94,6 @@ def _generate_image(api_key: str, prompt: str, negative_prompt: str = None,
     Raises:
         RuntimeError: When generation fails
     """
-    client = OpenAI(api_key=api_key, base_url=base_url)
-
     # Build prompt (OpenAI has no native negative_prompt, append to prompt)
     final_prompt = prompt
     if negative_prompt:
@@ -92,8 +103,9 @@ def _generate_image(api_key: str, prompt: str, negative_prompt: str = None,
     size = ASPECT_RATIO_TO_SIZE.get(aspect_ratio, "1024x1024")
     quality = IMAGE_SIZE_TO_QUALITY.get(image_size, "auto")
 
-    mode_label = f"Proxy: {base_url}" if base_url else "OpenAI API"
-    print(f"[OpenAI - {mode_label}]")
+    endpoint = _images_endpoint(base_url)
+    mode_label = "DMXAPI" if endpoint.startswith("https://www.dmxapi.cn/") else f"Proxy: {endpoint}"
+    print(f"[OpenAI-compatible - {mode_label}]")
     print(f"  Model:        {model}")
     print(f"  Prompt:       {final_prompt[:120]}{'...' if len(final_prompt) > 120 else ''}")
     print(f"  Size:         {size} (from aspect_ratio={aspect_ratio})")
@@ -117,14 +129,23 @@ def _generate_image(api_key: str, prompt: str, negative_prompt: str = None,
     hb_thread.start()
 
     try:
-        resp = client.images.generate(
-            prompt=final_prompt,
-            model=model,
-            size=size,
-            quality=quality,
-            n=1,
-            response_format="b64_json",
+        response = requests.post(
+            endpoint,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            json={
+                "model": model,
+                "prompt": final_prompt,
+                "n": 1,
+                "size": size,
+                "quality": quality,
+            },
+            timeout=180,
         )
+        response.raise_for_status()
+        data = response.json()
     finally:
         heartbeat_stop.set()
         hb_thread.join(timeout=1)
@@ -132,12 +153,21 @@ def _generate_image(api_key: str, prompt: str, negative_prompt: str = None,
     elapsed = time.time() - start_time
     print(f"\n  [DONE] Image generated ({elapsed:.1f}s)")
 
-    if resp is not None and resp.data:
+    items = data.get("data") if isinstance(data, dict) else None
+    if items:
+        first = items[0]
         path = resolve_output_path(prompt, output_dir, filename, ".png")
-        image_data = base64.b64decode(resp.data[0].b64_json)
+        if first.get("b64_json"):
+            image_data = base64.b64decode(first["b64_json"])
+        elif first.get("url"):
+            image_response = requests.get(first["url"], timeout=120)
+            image_response.raise_for_status()
+            image_data = image_response.content
+        else:
+            raise RuntimeError(f"No image payload in API response item: {first}")
         return save_image_bytes(image_data, path)
 
-    raise RuntimeError("No image was generated. The server may have refused the request.")
+    raise RuntimeError(f"No image was generated. Unexpected API response: {data}")
 
 
 # ╔══════════════════════════════════════════════════════════════════╗
@@ -152,8 +182,9 @@ def generate(prompt: str, negative_prompt: str = None,
     OpenAI-compatible image generation with automatic retry.
 
     Reads credentials from the current process environment or the project-root `.env`:
+      DMXAPI_API_KEY (preferred)
       OPENAI_API_KEY
-      OPENAI_BASE_URL
+      OPENAI_BASE_URL (optional; defaults to https://www.dmxapi.cn/v1)
       OPENAI_MODEL (optional override)
 
     Args:
@@ -163,18 +194,19 @@ def generate(prompt: str, negative_prompt: str = None,
         image_size: Image size, mapped to OpenAI quality
         output_dir: Output directory
         filename: Output filename (without extension)
-        model: Model name (default: gpt-image-1)
+        model: Model name (default: gpt-image-2)
         max_retries: Maximum number of retries
 
     Returns:
         Path of the saved image file
     """
-    api_key = os.environ.get("OPENAI_API_KEY")
-    base_url = os.environ.get("OPENAI_BASE_URL")
+    api_key = os.environ.get("DMXAPI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    base_url = os.environ.get("OPENAI_BASE_URL") or DEFAULT_BASE_URL
 
     if not api_key:
         raise ValueError(
-            "No API key found. Set OPENAI_API_KEY in the current environment or the project-root .env."
+            "No API key found. Set DMXAPI_API_KEY (recommended) or OPENAI_API_KEY "
+            "in the current environment or the project-root .env."
         )
 
     if model is None:

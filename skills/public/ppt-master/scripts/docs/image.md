@@ -58,6 +58,18 @@ Use provider-specific keys only (e.g. `GEMINI_API_KEY`, `OPENAI_API_KEY`). See `
 
 If you keep multiple providers in one `.env` or environment, `IMAGE_BACKEND` must explicitly select the active provider.
 
+Example `.env` for the OpenAI-compatible backend through DMXAPI:
+
+```env
+IMAGE_BACKEND=openai
+DMXAPI_API_KEY=your-dmxapi-api-key
+# Optional overrides:
+# OPENAI_MODEL=gpt-image-2
+# OPENAI_BASE_URL=https://www.dmxapi.cn/v1
+```
+
+`OPENAI_API_KEY` is still accepted as a fallback for custom OpenAI-compatible gateways, but `DMXAPI_API_KEY` is the recommended key for the default backend path.
+
 Recommendation:
 - Default to the Core tier for routine PPT work
 - Use Extended only when you need a specific model style

@@ -255,6 +255,46 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0.0098 87.47);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Bio Lab palette — per docs/style/DESIGN.md, used by marketing pages only */
+  --lab-bg-main: hsl(42, 24%, 93%);
+  --lab-bg-sub: hsl(38, 18%, 88%);
+  --lab-surface: hsl(40, 24%, 97%);
+  --lab-surface-strong: hsl(210, 20%, 92%);
+  --lab-border: hsl(210, 10%, 75%);
+  --lab-border-soft: hsl(210, 15%, 88%);
+  --lab-divider: hsl(210, 8%, 60%);
+
+  --lab-primary: hsl(225, 76%, 52%);
+  --lab-primary-hover: hsl(225, 82%, 60%);
+  --lab-primary-active: hsl(225, 82%, 38%);
+  --lab-primary-soft: hsl(225, 84%, 88%);
+
+  --lab-accent: hsl(24, 98%, 56%);
+  --lab-accent-hover: hsl(24, 100%, 64%);
+  --lab-accent-deep: hsl(24, 82%, 26%);
+  --lab-accent-soft: hsl(24, 100%, 86%);
+
+  --lab-success: hsl(136, 100%, 39%);
+  --lab-success-soft: hsl(136, 92%, 80%);
+  --lab-cyan: hsl(198, 74%, 54%);
+  --lab-cyan-soft: hsl(198, 80%, 88%);
+  --lab-purple: hsl(260, 60%, 60%);
+  --lab-purple-soft: hsl(260, 75%, 92%);
+  --lab-yellow: hsl(50, 85%, 65%);
+  --lab-danger: hsl(357.41, 100%, 22.75%);
+  --lab-danger-soft: hsl(357, 72%, 86%);
+
+  --lab-text-main: hsl(210, 15%, 20%);
+  --lab-text-sub: hsl(210, 10%, 35%);
+  --lab-text-muted: hsl(210, 8%, 48%);
+  --lab-on-primary: hsl(0, 0%, 100%);
+
+  --lab-ink-dark: hsl(210, 18%, 14%);
+  --lab-ink-dark-elevated: hsl(210, 16%, 20%);
+  --lab-ink-dark-border: hsl(210, 12%, 28%);
+  --lab-on-dark: hsl(40, 24%, 97%);
+  --lab-on-dark-muted: hsl(210, 10%, 72%);
 }
 
 .dark {
@@ -381,6 +421,31 @@
     background-clip: text;
     -webkit-text-fill-color: transparent;
     text-fill-color: transparent;
+  }
+
+  .landing-reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition:
+      opacity 700ms ease,
+      transform 700ms ease;
+  }
+
+  .landing-reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    .landing-reveal {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
   }
 }
 

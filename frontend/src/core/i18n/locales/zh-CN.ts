@@ -57,6 +57,338 @@ export const zhCN: Translations = {
     blog: "博客",
   },
 
+  marketing: {
+    nav: {
+      product: "Product",
+      useCase: "Use Case",
+      research: "Research",
+      blog: "Blog",
+      pricing: "Pricing",
+      about: "About",
+      tryNow: "立即试用",
+      talkToUs: "联系我们",
+      readVision: "了解方法论",
+    },
+    footer: {
+      note:
+        "面向生物学团队的智能体研究平台：自动化生信分析，保留真实引用，让每一步研究都可追溯。",
+      columns: [
+        { title: "产品", links: ["工作台", "技能", "沙箱"] },
+        { title: "公司", links: ["关于", "Research", "Blog"] },
+        { title: "可信赖", links: ["有记录", "默认私有", "可扩展"] },
+      ],
+    },
+    landing: {
+      toc: [
+        { href: "#hero", label: "概览" },
+        { href: "#workbench", label: "工作台" },
+        { href: "#scenario", label: "场景层" },
+        { href: "#capability", label: "能力层" },
+        { href: "#compute", label: "计算层" },
+        { href: "#different", label: "差异化" },
+        { href: "#method", label: "方法论" },
+        { href: "#trusted", label: "可信赖" },
+        { href: "#cta", label: "立即开始" },
+      ],
+      hero: {
+        badge: "AI Native",
+        headline: "Agentic Labbench\nfor Biologist\nin One",
+        subhead:
+          "从问题定义、假设生成，到生信分析与实验结果解读\n用自然语言驱动你的研究。",
+      },
+      workbench: {
+        headline: "用自然语言驱动研究流程",
+        body:
+          "科学风滚草把生物学问题、智能体协作、生信自动化和引用追溯放在同一个工作台里。研究者提出问题，系统拆解任务、执行分析、核对证据，并把结果组织成可继续审阅的交付物。",
+        items: [
+          {
+            title: "智能体驱动生物学研究",
+            body: "从问题定义到假设生成，智能体负责拆解路径、分配任务并汇总结果。",
+          },
+          {
+            title: "自动化生信工作流",
+            body: "把重复的分析步骤交给沙箱执行，减少手工脚本、环境切换和结果搬运。",
+          },
+          {
+            title: "引用真实可追溯",
+            body: "结论必须带来源。数据库返回、文献依据和运行记录都能回看。",
+          },
+        ],
+      },
+      scenario: {
+        headline: "从研究问题到可审阅结果。",
+        subhead:
+          "围绕智能体驱动研究、自动化生信和真实引用，覆盖生物学团队最常见的分析链路。",
+        cards: [
+          {
+            title: "定义问题与生成假设",
+            quote:
+              '"我有一个疾病表型和一组初步线索，帮我整理可检验的研究假设。"',
+            result:
+              "系统会把问题拆成可执行的研究路径，标出证据缺口，并给出后续分析优先级。",
+          },
+          {
+            title: "自动化公共数据分析",
+            quote:
+              '"帮我复盘一个公共组学数据集，给出质量控制、分群、差异信号和可解释结果。"',
+            result:
+              "智能体会规划生信流程并在沙箱中执行，返回图表、分析文件和可复查的运行记录。",
+          },
+          {
+            title: "评估靶点与机制证据",
+            quote:
+              '"这个靶点是否值得继续推进？请把支持、反对和不确定证据分开。"',
+            result:
+              "系统会整合多类证据，输出结构化判断，并保留每条结论对应的真实来源。",
+          },
+          {
+            title: "把证据写成报告",
+            quote: '"请把这轮分析整理成可以发给 PI 或项目组讨论的报告。"',
+            result:
+              "系统会生成带引用的研究说明，区分事实、推断和待验证问题，方便团队继续决策。",
+          },
+        ],
+        note:
+          "这里强调的是工作方式：智能体负责推进流程，沙箱负责执行分析，所有结论都要回到真实引用。",
+      },
+      capability: {
+        headline: "能力层——真实工具与真实数据源。",
+        subhead:
+          "这一层展示系统实际接入的数据库、文献源和生信分析能力。其他页面讲工作方式，这里讲可调用的底层能力。",
+        columns: [
+          {
+            metric: "50+",
+            title: "生命科学数据库原生接入。",
+            body:
+              "人类遗传、变异、表达、蛋白、结构、化合物、药物、通路、临床试验，都可以从同一个对话里调出来。",
+            chips: [
+              "GWAS Catalog",
+              "gnomAD",
+              "ClinVar",
+              "Open Targets",
+              "GTEx",
+              "UniProt",
+              "AlphaFold DB",
+              "ChEMBL",
+              "ClinicalTrials.gov",
+            ],
+          },
+          {
+            metric: "40M+",
+            title: "文献、检索、阅读和引用。",
+            body:
+              "PubMed、PMC Open Access、bioRxiv、medRxiv、Semantic Scholar citation graph，再加上能带引用写综述的 agents。",
+            chips: [
+              "PubMed",
+              "PMC OA",
+              "bioRxiv",
+              "Semantic Scholar",
+              "deep-research",
+              "LaTeX + BibTeX",
+            ],
+          },
+          {
+            metric: "8",
+            title: "端到端组学分析模态。",
+            body:
+              "从原始文件到论文图，按问题选择数据库、CLI 和分析流程。",
+            chips: [
+              "Bulk RNA-seq",
+              "single-cell RNA-seq",
+              "spatial",
+              "ChIP / ATAC",
+              "variants",
+              "proteomics",
+              "metabolomics",
+              "microbiome",
+            ],
+          },
+        ],
+        workflows: [
+          { label: "Bulk RNA-seq", text: "QC ➡️ align ➡️ quantify ➡️ DE ➡️ enrichment" },
+          { label: "scRNA-seq", text: "matrix ➡️ QC ➡️ cluster ➡️ annotate ➡️ marker" },
+          { label: "Variant calling", text: "align ➡️ call ➡️ filter ➡️ annotate" },
+          { label: "Proteomics", text: "search ➡️ quantify ➡️ DE ➡️ pathway" },
+        ],
+        note:
+          "你不用先想清楚该调哪个库、跑哪个命令。Agent 会组合这些能力，结果里的 accession、peak、p-value 也能回溯。",
+      },
+      compute: {
+        headline: "自动化生信，从对话进入执行。",
+        subhead:
+          "智能体将研究意图转化为可执行任务，沙箱负责运行分析，验证环节负责检查结果和引用。",
+        sandboxTitle: "面向生信分析的可执行沙箱。",
+        sandboxBody:
+          "沙箱保存运行状态、输入输出和生成文件，使分析过程可以继续、可以复查，也可以交给团队成员审阅。",
+        intelligenceTitle: "智能体协作层。",
+        agents: [
+          { title: "Lead", body: "拆解研究目标，安排执行路径，整合最终结果。" },
+          { title: "Explore", body: "检索证据和背景信息，只读不改动分析环境。" },
+          { title: "Plan", body: "生成分析方案，明确输入、输出和验证标准。" },
+          { title: "General", body: "在沙箱中执行分析任务，生成文件和图表。" },
+          { title: "Verify", body: "检查结果一致性、引用来源和潜在错误。" },
+        ],
+        note:
+          "对研究者来说，入口仍然是自然语言；对系统来说，背后是可审计的任务执行链。",
+      },
+      different: {
+        headline: "不是通用聊天助手，而是研究工作台。",
+        rows: [
+          {
+            label: "研究推进方式",
+            generic: "一次性回答",
+            tumbleweed: "智能体拆解任务、执行分析并汇总证据",
+          },
+          {
+            label: "生信分析",
+            generic: "需要用户自行准备环境和脚本",
+            tumbleweed: "从自然语言生成分析任务，并在沙箱中自动执行",
+          },
+          {
+            label: "引用来源",
+            generic: "容易混入不可验证结论",
+            tumbleweed: "结论绑定真实来源和原始记录",
+          },
+          {
+            label: "结果验证",
+            generic: "主要依赖用户自行判断",
+            tumbleweed: "验证智能体先检查一致性与证据链",
+          },
+          {
+            label: "团队协作",
+            generic: "对话结果难以沉淀",
+            tumbleweed: "分析文件、引用和运行记录可复查、可交接",
+          },
+        ],
+        note:
+          "Scientific Tumbleweed 的重点不是生成一段漂亮回答，而是把研究过程推进到可验证、可复现、可协作的状态。",
+      },
+      method: {
+        headline:
+          "面向跨模态、跨组学的复杂系统分析。",
+        subhead:
+          "现代生物学问题往往同时涉及遗传、表达、表型、文献、实验结果和计算模型。难点不只是获取数据，而是把不同模态、不同组学层次放在同一套分析框架里解释。",
+        trigger: "展开看看",
+        acts: [
+          {
+            title: "Act I · 问题建模",
+            body:
+              "从自然语言问题出发，系统先明确研究对象、假设边界、可用证据和需要补齐的数据类型。",
+          },
+          {
+            title: "Act II · 跨组学整合",
+            body:
+              "将遗传、转录组、空间组学、蛋白、代谢、微生物组等信号纳入同一条分析链，减少单一证据造成的偏差。",
+          },
+          {
+            title: "Act III · 跨模态解释",
+            body:
+              "把结构化数据、文献证据、实验结果和计算输出放在同一份报告中解释，区分事实、推断和待验证假设。",
+          },
+          {
+            title: "Act IV · 系统级验证",
+            body:
+              "智能体反复检查证据链、分析步骤和引用来源，帮助团队在复杂系统层面形成可审阅的研究判断。",
+          },
+        ],
+        quote:
+          "复杂生物系统不能靠单次回答理解。它需要能持续整合证据、执行分析并接受审阅的工作台。",
+      },
+      trusted: {
+        headline: "面向真实研究流程的可信基础。",
+        cards: [
+          { title: "智能体驱动", body: "任务拆解、分析执行、结果汇总和验证由分工明确的智能体协作完成。" },
+          { title: "自动化生信", body: "将自然语言问题转化为可执行分析流程，沉淀文件、图表和运行记录。" },
+          { title: "真实引用", body: "所有关键结论都需要绑定来源，便于团队审阅、复查和继续推进。" },
+        ],
+        badges: ["OpenAI", "Anthropic", "DeepSeek", "Qwen", "local vLLM", "Claude Code", "Cursor", "Windsurf", "Zed"],
+      },
+      finalCta: {
+        headline: "用自然语言启动下一次研究",
+        subhead:
+          "从假设生成到生信分析，再到结果解读与引用核查，让智能体把研究流程真正跑起来",
+      },
+    },
+    pages: {
+      product: {
+        eyebrow: "Product",
+        headline: "产品能力总览。",
+        subhead:
+          "了解智能体协作、生信自动化、真实引用、沙箱执行、数据源接入和企业部署选项。",
+        cards: [
+          { title: "Integrated Biology Environment", body: "把问题定义、数据调用、分析执行、结果解释和引用追溯放在同一工作环境中。" },
+          { title: "Sandbox", body: "面向可复现分析的执行环境，保留输入、输出、生成文件和运行记录。" },
+          { title: "Skill System", body: "面向生命科学数据源和研究任务的 typed skills，支持持续扩展。" },
+          { title: "Agent Behavior", body: "Lead、Explore、Plan、General、Verify 分工协作，避免单一模型承担全部步骤。" },
+          { title: "Memory & Session", body: "项目上下文、原始 payload、生成文件和 run history 都可以沉淀到 workspace。" },
+          { title: "Deployment", body: "Enterprise 可讨论私有 workspace、VPC、本地模型、SSO 和私有数据源接入。" },
+        ],
+      },
+      useCase: {
+        eyebrow: "Use Case",
+        headline: "面向真实生物学问题的工作流。",
+        subhead:
+          "从自然语言问题开始，由智能体拆解任务、自动化执行生信分析，并输出带真实引用的结果。",
+        cards: [
+          { title: "候选靶点优先级", body: "整合多层证据，形成可讨论、可追溯的候选靶点排序。" },
+          { title: "药物再利用评估", body: "区分支持、反对和不确定证据，辅助团队决定是否继续推进。" },
+          { title: "公共组学数据复盘", body: "自动化完成质量控制、主要分析步骤和结果解释，输出文件与图表。" },
+          { title: "蛋白靶点评估", body: "从机制、表达、通路和安全性等维度组织证据。" },
+          { title: "因果推断分析", body: "整理假设、输入条件和分析结果，生成可复查的因果判断。" },
+          { title: "文献综述与报告", body: "检索、阅读、交叉检查并形成带引用的研究报告。" },
+        ],
+      },
+      research: {
+        eyebrow: "Research",
+        headline: "Research，敬请期待。",
+        subhead:
+          "我们在写一些更长的文章：agent behavior、skill system design，还有真实生物学任务上的 benchmark。",
+        subscribe: "上线提醒",
+        footer: "如果你正在用 Scientific Tumbleweed 做研究，欢迎来聊。真实问题比 demo 更重要。",
+        cards: [
+          { title: "占位研究札记", meta: "准备中", body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer posuere erat a ante venenatis dapibus." },
+          { title: "占位 benchmark", meta: "准备中", body: "Sed posuere consectetur est at lobortis. Donec ullamcorper nulla non metus auctor fringilla." },
+          { title: "占位方法文章", meta: "准备中", body: "Aenean lacinia bibendum nulla sed consectetur. Cras mattis consectetur purus sit amet fermentum." },
+        ],
+      },
+      blog: {
+        eyebrow: "Blog",
+        headline: "Blog，敬请期待。",
+        subhead:
+          "产品更新、教程和一些使用记录会放在这里。第一批文章还在写。",
+        subscribe: "订阅提醒",
+        cards: [
+          { title: "占位文章标题一", meta: "栏目：Release", body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit." },
+          { title: "占位文章标题二", meta: "栏目：Community", body: "Ut enim ad minim veniam, quis nostrud exercitation." },
+          { title: "占位文章标题三", meta: "栏目：Tutorial", body: "Duis aute irure dolor in reprehenderit in voluptate." },
+        ],
+      },
+      pricing: {
+        eyebrow: "Pricing",
+        headline: "Pricing，敬请期待。",
+        subhead:
+          "个人、课题组和企业方案还在确认。现在先联系我们，我们按你的场景来谈。",
+        cards: [
+          { title: "Starter", meta: "Contact us", body: "给个人研究者预留。正式价格和条款还没有发布。" },
+          { title: "Team", meta: "Contact us", body: "给实验室和课题组预留。适合多人共享项目、文件和运行记录。" },
+          { title: "Enterprise", meta: "Contact us", body: "给生物医药企业和平台团队预留。可讨论私有 / VPC 部署、SSO、SLA、定制 skill 和私有数据源接入。" },
+        ],
+      },
+      about: {
+        eyebrow: "About",
+        headline: "生物学家值得更好的工具。",
+        subhead:
+          "今天的生物医学研究跨越多种组学、实验模态、数据库和证据类型。研究者需要的是能执行、能追溯、能协作的研究工作台。",
+        cards: [
+          { title: "Manifesto", body: "好的研究工作台应该能执行分析、保留来源，并让团队复查每一步。" },
+          { title: "Integrated Biology Environment", body: "对话、skills、沙箱执行、artifacts、memory 和 verification 共同构成研究闭环。" },
+          { title: "Origin", body: "我们关注 agentic work 在生物学研究中的落地，同时坚持科学可追溯性。" },
+          { title: "Contact", body: "试点、部署和研究合作，请联系团队。" },
+        ],
+      },
+    },
+  },
+
   // Welcome
   welcome: {
     greeting: "你好，欢迎回来！",

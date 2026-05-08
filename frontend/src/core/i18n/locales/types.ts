@@ -1,5 +1,110 @@
 import type { LucideIcon } from "lucide-react";
 
+type MarketingNavKey =
+  | "product"
+  | "useCase"
+  | "research"
+  | "blog"
+  | "pricing"
+  | "about";
+
+type MarketingCard = {
+  body?: string;
+  label?: string;
+  meta?: string;
+  quote?: string;
+  result?: string;
+  title: string;
+};
+
+type MarketingPage = {
+  eyebrow?: string;
+  headline: string;
+  subhead: string;
+  cards: MarketingCard[];
+};
+
+type MarketingTranslations = {
+  nav: Record<MarketingNavKey, string> & {
+    tryNow: string;
+    talkToUs: string;
+    readVision: string;
+  };
+  footer: {
+    columns: { links: string[]; title: string }[];
+    note: string;
+  };
+  landing: {
+    toc: { href: string; label: string }[];
+    hero: {
+      badge: string;
+      headline: string;
+      subhead: string;
+    };
+    workbench: {
+      headline: string;
+      body: string;
+      items: MarketingCard[];
+    };
+    scenario: {
+      headline: string;
+      subhead: string;
+      cards: MarketingCard[];
+      note: string;
+    };
+    capability: {
+      headline: string;
+      subhead: string;
+      columns: (MarketingCard & { chips: string[]; metric: string })[];
+      workflows: { label: string; text: string }[];
+      note: string;
+    };
+    compute: {
+      headline: string;
+      subhead: string;
+      sandboxTitle: string;
+      sandboxBody: string;
+      intelligenceTitle: string;
+      agents: MarketingCard[];
+      note: string;
+    };
+    different: {
+      headline: string;
+      rows: { generic: string; label: string; tumbleweed: string }[];
+      note: string;
+    };
+    method: {
+      headline: string;
+      subhead: string;
+      trigger: string;
+      acts: MarketingCard[];
+      quote: string;
+    };
+    trusted: {
+      headline: string;
+      cards: MarketingCard[];
+      badges: string[];
+    };
+    finalCta: {
+      headline: string;
+      subhead: string;
+    };
+  };
+  pages: {
+    product: MarketingPage;
+    useCase: MarketingPage;
+    research: MarketingPage & {
+      subscribe: string;
+      footer: string;
+    };
+    blog: MarketingPage & {
+      subscribe: string;
+    };
+    pricing: MarketingPage;
+    about: MarketingPage;
+  };
+};
+
 export interface Translations {
   // Locale meta
   locale: {
@@ -44,6 +149,8 @@ export interface Translations {
     docs: string;
     blog: string;
   };
+
+  marketing: MarketingTranslations;
 
   // Welcome
   welcome: {

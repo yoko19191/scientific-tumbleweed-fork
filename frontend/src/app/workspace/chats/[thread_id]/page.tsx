@@ -182,11 +182,15 @@ export default function ChatPage() {
               <ThreadTitle threadId={threadId} thread={thread} />
             </div>
             <div className="flex items-center gap-2">
-              <TokenUsageIndicator
-                enabled={tokenUsageEnabled}
-                messages={thread.messages}
-              />
-              <SandboxTrigger />
+              {!isNewThread && (
+                <>
+                  <TokenUsageIndicator
+                    enabled={tokenUsageEnabled}
+                    messages={thread.messages}
+                  />
+                  <SandboxTrigger />
+                </>
+              )}
               <ExportTrigger threadId={threadId} />
               <ArtifactTrigger />
             </div>

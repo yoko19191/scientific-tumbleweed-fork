@@ -47,6 +47,7 @@ import { useThread } from "../messages/context";
 import { Tooltip } from "../tooltip";
 
 import { useArtifacts } from "./context";
+import { CsvViewer } from "./csv-viewer";
 
 export function ArtifactFileDetail({
   className,
@@ -86,7 +87,9 @@ export function ArtifactFileDetail({
   }, [filepath, isWriteFile, isSkillFile]);
   const isImageFile = useMemo(() => checkImageFile(filepath), [filepath]);
   const isSupportPreview = useMemo(() => {
-    return language === "html" || language === "markdown";
+    return (
+      language === "html" || language === "markdown" || language === "csv"
+    );
   }, [language]);
   const { content } = useArtifactContent({
     threadId,
@@ -295,14 +298,12 @@ export function ArtifactFileDetail({
         </div>
       </ArtifactHeader>
       <ArtifactContent className="p-0">
-        {isSupportPreview &&
-          viewMode === "preview" &&
-          (language === "markdown" || language === "html") && (
-            <ArtifactFilePreview
-              content={displayContent}
-              language={language ?? "text"}
-            />
-          )}
+        {isSupportPreview && viewMode === "preview" && (
+          <ArtifactFilePreview
+            content={displayContent}
+            language={language ?? "text"}
+          />
+        )}
         {isCodeFile && viewMode === "code" && (
           <CodeEditor
             className="size-full resize-none rounded-none border-none"
@@ -390,6 +391,9 @@ export function ArtifactFilePreview({
         src={htmlPreviewUrl}
       />
     );
+  }
+  if (language === "csv") {
+    return <CsvViewer className="size-full" content={content ?? ""} />;
   }
   return null;
 }

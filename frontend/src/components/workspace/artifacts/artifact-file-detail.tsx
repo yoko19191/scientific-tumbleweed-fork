@@ -1,4 +1,5 @@
 import {
+  ArrowLeftIcon,
   Code2Icon,
   CopyIcon,
   DownloadIcon,
@@ -57,7 +58,7 @@ export function ArtifactFileDetail({
   threadId: string;
 }) {
   const { t } = useI18n();
-  const { artifacts, setOpen, select } = useArtifacts();
+  const { artifacts, setOpen, select, back } = useArtifacts();
   const isWriteFile = useMemo(() => {
     return filepathFromProps.startsWith("write-file:");
   }, [filepathFromProps]);
@@ -137,13 +138,23 @@ export function ArtifactFileDetail({
     <Artifact className={cn(className)}>
       <ArtifactHeader className="px-2">
         <div className="flex items-center gap-2">
+          {!isWriteFile && (
+            <ArtifactAction
+              icon={ArrowLeftIcon}
+              label={t.common.backToFiles}
+              tooltip={t.common.backToFiles}
+              onClick={back}
+            />
+          )}
           <ArtifactTitle>
             {isWriteFile ? (
               <div className="px-2">{getFileName(filepath)}</div>
             ) : (
               <Select value={filepath} onValueChange={select}>
                 <SelectTrigger className="border-none bg-transparent! shadow-none select-none focus:outline-0 active:outline-0">
-                  <SelectValue placeholder="Select a file" />
+                  <SelectValue placeholder="Select a file">
+                    {getFileName(filepath)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent className="select-none">
                   <SelectGroup>

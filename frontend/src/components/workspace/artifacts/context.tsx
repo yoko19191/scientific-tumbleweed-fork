@@ -17,6 +17,7 @@ export interface ArtifactsContextType {
   autoSelect: boolean;
   select: (artifact: string, autoSelect?: boolean) => void;
   deselect: () => void;
+  back: () => void;
 
   open: boolean;
   autoOpen: boolean;
@@ -24,6 +25,11 @@ export interface ArtifactsContextType {
 
   fileManagerOpen: boolean;
   setFileManagerOpen: (open: boolean) => void;
+
+  fileManagerPath: string | null;
+  setFileManagerPath: (path: string | null) => void;
+
+  selectFromFileManager: (artifact: string, originPath: string) => void;
 }
 
 const ArtifactsContext = createContext<ArtifactsContextType | undefined>(
@@ -43,11 +49,14 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   );
   const [autoOpen, setAutoOpen] = useState(true);
   const [fileManagerOpen, setFileManagerOpenState] = useState(false);
+  const [fileManagerPath, setFileManagerPath] = useState<string | null>(null);
+  const [fileOrigin, setFileOrigin] = useState<string | null>(null);
   const { setOpen: setSidebarOpen } = useSidebar();
 
   const select = useCallback(
     (artifact: string, autoSelect = false) => {
       setSelectedArtifact(artifact);
+      setFileOrigin(null);
       if (env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true") {
         setSidebarOpen(false);
       }
@@ -58,11 +67,37 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     [setSidebarOpen, setSelectedArtifact, setAutoSelect],
   );
 
+  const selectFromFileManager = useCallback(
+    (artifact: string, originPath: string) => {
+      setSelectedArtifact(artifact);
+      setFileOrigin(originPath);
+      setAutoSelect(false);
+      if (env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true") {
+        setSidebarOpen(false);
+      }
+    },
+    [setSidebarOpen],
+  );
+
   const deselect = useCallback(() => {
     setSelectedArtifact(null);
+    setFileOrigin(null);
     setAutoSelect(true);
     setOpen(false);
   }, []);
+
+  const back = useCallback(() => {
+    if (fileOrigin != null) {
+      setFileManagerPath(fileOrigin);
+      setFileManagerOpenState(true);
+      setSelectedArtifact(null);
+      setFileOrigin(null);
+      setAutoSelect(false);
+      return;
+    }
+    setSelectedArtifact(null);
+    setAutoSelect(false);
+  }, [fileOrigin]);
 
   const value: ArtifactsContextType = {
     artifacts,
@@ -82,15 +117,21 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     selectedArtifact,
     select,
     deselect,
+    back,
+    selectFromFileManager,
 
     fileManagerOpen,
     setFileManagerOpen: (isOpen: boolean) => {
       setFileManagerOpenState(isOpen);
       if (isOpen) {
         setSelectedArtifact(null);
+        setFileOrigin(null);
         setOpen(true);
       }
     },
+
+    fileManagerPath,
+    setFileManagerPath,
   };
 
   return (

@@ -33,14 +33,55 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatModifiedTime(modifiedSec: number): string {
+  const date = new Date(modifiedSec * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  const startOfThisYear = new Date(now.getFullYear(), 0, 1);
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hhmm = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+
+  if (date >= startOfToday) {
+    return hhmm;
+  }
+  if (date >= startOfYesterday) {
+    return `Yesterday ${hhmm}`;
+  }
+  if (date >= startOfThisYear) {
+    return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${hhmm}`;
+  }
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export function SandboxFileManager({ threadId }: { threadId: string }) {
-  const { select, setOpen, setFileManagerOpen } = useArtifacts();
-  const [currentPath, setCurrentPath] = useState("mnt/user-data");
+  const {
+    setOpen,
+    setFileManagerOpen,
+    selectFromFileManager,
+    fileManagerPath,
+    setFileManagerPath,
+  } = useArtifacts();
+  const [currentPath, setCurrentPath] = useState(
+    fileManagerPath ?? "mnt/user-data",
+  );
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
   const [forwardStack, setForwardStack] = useState<string[]>([]);
+
+  useEffect(() => {
+    setFileManagerPath(currentPath);
+  }, [currentPath, setFileManagerPath]);
 
   useEffect(() => {
     setLoading(true);
@@ -95,11 +136,11 @@ export function SandboxFileManager({ threadId }: { threadId: string }) {
         navigateTo(`${currentPath}/${entry.name}`);
       } else {
         const fullPath = `/${currentPath}/${entry.name}`;
-        select(fullPath);
+        selectFromFileManager(fullPath, currentPath);
         setFileManagerOpen(false);
       }
     },
-    [currentPath, navigateTo, select, setFileManagerOpen],
+    [currentPath, navigateTo, selectFromFileManager, setFileManagerOpen],
   );
 
   const pathSegments = currentPath.split("/").filter(Boolean);
@@ -205,8 +246,16 @@ export function SandboxFileManager({ threadId }: { threadId: string }) {
                 <span className="min-w-0 flex-1 truncate text-sm">
                   {entry.name}
                 </span>
+                {entry.type === "file" && entry.modified != null && (
+                  <span
+                    className="text-muted-foreground shrink-0 text-xs tabular-nums"
+                    title={new Date(entry.modified * 1000).toLocaleString()}
+                  >
+                    {formatModifiedTime(entry.modified)}
+                  </span>
+                )}
                 {entry.type === "file" && entry.size != null && (
-                  <span className="text-muted-foreground shrink-0 text-xs">
+                  <span className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums">
                     {formatFileSize(entry.size)}
                   </span>
                 )}

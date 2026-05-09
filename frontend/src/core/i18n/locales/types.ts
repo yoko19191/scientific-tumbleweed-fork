@@ -121,6 +121,8 @@ export interface Translations {
     share: string;
     openInNewWindow: string;
     close: string;
+    back: string;
+    backToFiles: string;
     more: string;
     search: string;
     download: string;

@@ -44,7 +44,6 @@ export function TokenUsageIndicator({
           )}
         >
           <CoinsIcon size={14} />
-          <span>{t.tokenUsage.label}</span>
           <span className="font-mono">
             {usage ? formatTokenCount(usage.totalTokens) : "-"}
           </span>

@@ -56,7 +56,11 @@ export function ThreadTitle({
     return null;
   }
   return (
-    <FlipDisplay uniqueKey={threadId}>
+    <FlipDisplay
+      uniqueKey={threadId}
+      className="min-w-0 flex-1"
+      innerClassName="truncate"
+    >
       {title}
     </FlipDisplay>
   );

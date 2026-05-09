@@ -60,9 +60,10 @@ export function ExportTrigger({ threadId }: { threadId: string }) {
           <Button
             className="text-muted-foreground hover:text-foreground"
             variant="ghost"
+            size="icon"
+            aria-label={t.common.export}
           >
             <Download />
-            {t.common.export}
           </Button>
         </DropdownMenuTrigger>
       </Tooltip>

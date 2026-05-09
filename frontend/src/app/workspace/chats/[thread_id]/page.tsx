@@ -178,7 +178,7 @@ export default function ChatPage() {
                 : "bg-background/80 shadow-xs backdrop-blur",
             )}
           >
-            <div className="flex w-full items-center text-sm font-medium">
+            <div className="flex min-w-0 flex-1 items-center text-sm font-medium">
               <ThreadTitle threadId={threadId} thread={thread} />
             </div>
             <div className="flex items-center gap-2">

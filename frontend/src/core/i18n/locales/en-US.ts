@@ -51,6 +51,8 @@ export const enUS: Translations = {
     exportAsMarkdown: "Export as Markdown",
     exportAsJSON: "Export as JSON",
     exportSuccess: "Conversation exported",
+    noPreviewTitle: "No preview for this file type",
+    noPreviewDescription: "Download it to view.",
   },
 
   // Home

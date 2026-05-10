@@ -26,11 +26,20 @@ import { getFileIcon } from "@/core/utils/files";
 import { cn } from "@/lib/utils";
 
 import { useArtifacts } from "./context";
+import { CursorTooltip } from "./cursor-tooltip";
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function splitFileName(name: string) {
+  const lastDot = name.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot === name.length - 1) {
+    return { stem: name, ext: "" };
+  }
+  return { stem: name.slice(0, lastDot), ext: name.slice(lastDot) };
 }
 
 function formatModifiedTime(modifiedSec: number): string {
@@ -229,38 +238,48 @@ export function SandboxFileManager({ threadId }: { threadId: string }) {
         )}
         {!loading && !error && entries.length > 0 && (
           <div className="flex flex-col">
-            {entries.map((entry) => (
-              <button
-                key={entry.name}
-                type="button"
-                className="hover:bg-muted/50 flex items-center gap-3 px-4 py-2 text-left transition-colors"
-                onClick={() => handleEntryClick(entry)}
-              >
-                <span className="text-muted-foreground shrink-0">
-                  {entry.type === "dir" ? (
-                    <FolderIcon className="size-4" />
-                  ) : (
-                    getFileIcon(entry.name, "size-4")
+            {entries.map((entry) => {
+              const { stem, ext } = splitFileName(entry.name);
+              return (
+                <button
+                  key={entry.name}
+                  type="button"
+                  className="hover:bg-muted/50 flex items-center gap-3 px-4 py-2 text-left transition-colors"
+                  onClick={() => handleEntryClick(entry)}
+                >
+                  <span className="text-muted-foreground shrink-0">
+                    {entry.type === "dir" ? (
+                      <FolderIcon className="size-4" />
+                    ) : (
+                      getFileIcon(entry.name, "size-4")
+                    )}
+                  </span>
+                  <CursorTooltip content={entry.name} delay={300}>
+                    <span className="flex min-w-0 flex-1 items-baseline text-sm">
+                      <span className="truncate">
+                        {entry.type === "dir" ? entry.name : stem}
+                      </span>
+                      {entry.type === "file" && ext && (
+                        <span className="shrink-0">{ext}</span>
+                      )}
+                    </span>
+                  </CursorTooltip>
+                  {entry.type === "file" && entry.modified != null && (
+                    <span
+                      className="text-muted-foreground shrink-0 text-xs tabular-nums"
+                      title={new Date(entry.modified * 1000).toLocaleString()}
+                    >
+                      {formatModifiedTime(entry.modified)}
+                    </span>
                   )}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {entry.name}
-                </span>
-                {entry.type === "file" && entry.modified != null && (
-                  <span
-                    className="text-muted-foreground shrink-0 text-xs tabular-nums"
-                    title={new Date(entry.modified * 1000).toLocaleString()}
-                  >
-                    {formatModifiedTime(entry.modified)}
-                  </span>
-                )}
-                {entry.type === "file" && entry.size != null && (
-                  <span className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums">
-                    {formatFileSize(entry.size)}
-                  </span>
-                )}
-              </button>
-            ))}
+                  {entry.type === "file" && entry.size != null && (
+                    <span className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums">
+                      {formatFileSize(entry.size)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </ArtifactContent>

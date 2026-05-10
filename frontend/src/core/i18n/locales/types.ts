@@ -145,6 +145,8 @@ export interface Translations {
     exportAsMarkdown: string;
     exportAsJSON: string;
     exportSuccess: string;
+    noPreviewTitle: string;
+    noPreviewDescription: string;
   };
 
   home: {

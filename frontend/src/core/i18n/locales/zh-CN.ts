@@ -51,6 +51,8 @@ export const zhCN: Translations = {
     exportAsMarkdown: "导出为 Markdown",
     exportAsJSON: "导出为 JSON",
     exportSuccess: "对话已导出",
+    noPreviewTitle: "此类文件不支持预览",
+    noPreviewDescription: "请下载后查看",
   },
 
   // Home

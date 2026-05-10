@@ -4,6 +4,7 @@ import {
   CopyIcon,
   DownloadIcon,
   EyeIcon,
+  FileQuestionIcon,
   LoaderIcon,
   PackageIcon,
   RotateCcwIcon,
@@ -24,6 +25,7 @@ import {
   ArtifactHeader,
   ArtifactTitle,
 } from "@/components/ai-elements/artifact";
+import { Button } from "@/components/ui/button";
 import { Select, SelectItem } from "@/components/ui/select";
 import {
   SelectContent,
@@ -335,9 +337,10 @@ export function ArtifactFileDetail({
           </div>
         )}
         {!isCodeFile && !isImageFile && (
-          <iframe
-            className="size-full"
-            src={urlOfArtifact({ filepath, threadId, isMock })}
+          <ArtifactNoPreview
+            filepath={filepath}
+            threadId={threadId}
+            isMock={isMock}
           />
         )}
       </ArtifactContent>
@@ -396,4 +399,41 @@ export function ArtifactFilePreview({
     return <CsvViewer className="size-full" content={content ?? ""} />;
   }
   return null;
+}
+
+function ArtifactNoPreview({
+  filepath,
+  threadId,
+  isMock,
+}: {
+  filepath: string;
+  threadId: string;
+  isMock?: boolean;
+}) {
+  const { t } = useI18n();
+  const downloadUrl = urlOfArtifact({
+    filepath,
+    threadId,
+    download: true,
+    isMock,
+  });
+  return (
+    <div className="flex size-full flex-col items-center justify-center gap-4 px-6 text-center">
+      <FileQuestionIcon className="text-muted-foreground size-10" />
+      <div className="space-y-1">
+        <div className="text-foreground text-sm font-medium">
+          {t.common.noPreviewTitle}
+        </div>
+        <div className="text-muted-foreground text-xs">
+          {t.common.noPreviewDescription}
+        </div>
+      </div>
+      <Button variant="outline" size="sm" asChild>
+        <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
+          <DownloadIcon className="size-4" />
+          {t.common.download}
+        </a>
+      </Button>
+    </div>
+  );
 }

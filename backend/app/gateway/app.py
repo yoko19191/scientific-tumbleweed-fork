@@ -87,21 +87,34 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     auth_config = get_auth_config()
 
-    # Initialise the shared Postgres pool + application schema.
-    # The pool defaults to POSTGRES_DSN, falling back to the checkpointer DSN.
-    # We always stand the pool up (even when auth is on SQLite) so later
-    # migrations (memory/cache/channels) can share it without re-wiring.
-    from deerflow.db import close_pool, ensure_schema, init_pool
+    # Initialise the shared Postgres engine + application schema.
+    # The engine defaults to POSTGRES_DSN, falling back to the checkpointer DSN.
+    # We always stand it up (even when auth is on SQLite) so later migrations
+    # (memory/cache/channels) can share it without re-wiring.
+    from deerflow.db import (
+        close_engine,
+        close_pool,
+        ensure_schema,
+        init_engine,
+        init_pool,
+    )
 
+    db_engine = None
     db_pool = None
     try:
+        db_engine = await init_engine()
+        await ensure_schema(db_engine)
+        # Legacy asyncpg pool is still used by a handful of call sites that
+        # need a raw ``asyncpg.Pool`` object (e.g. PostgresUserRepository
+        # while it awaits the SQLModel rewrite). Standing it up alongside
+        # the engine keeps those paths working during the migration.
         db_pool = await init_pool()
-        await ensure_schema(db_pool)
+        app.state.db_engine = db_engine
         app.state.db_pool = db_pool
-        logger.info("Postgres pool + application schema ready")
+        logger.info("Postgres engine + pool + application schema ready")
     except Exception:
         logger.exception(
-            "Postgres pool initialisation failed; auth backend will fall back to SQLite "
+            "Postgres initialisation failed; auth backend will fall back to SQLite "
             "if configured, and memory/cache features that require Postgres will be unavailable"
         )
 
@@ -180,16 +193,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("Failed to stop tool_cache vacuum task")
 
-    # Close the Postgres pool on shutdown.
-    try:
-        await asyncio.wait_for(close_pool(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
-    except TimeoutError:
-        logger.warning(
-            "Postgres pool shutdown exceeded %.1fs; proceeding with worker exit.",
-            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
-        )
-    except Exception:
-        logger.exception("Failed to close Postgres pool")
+    # Close the Postgres engine + asyncpg pool on shutdown.
+    for closer, label in (
+        (close_pool, "asyncpg pool"),
+        (close_engine, "SQLAlchemy engine"),
+    ):
+        try:
+            await asyncio.wait_for(closer(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.warning(
+                "%s shutdown exceeded %.1fs; proceeding with worker exit.",
+                label,
+                _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            logger.exception("Failed to close %s", label)
 
     logger.info("Shutting down API Gateway")
 

@@ -1,10 +1,8 @@
 """Singleton asyncpg connection pool for application-owned Postgres tables.
 
-The DSN is resolved from (in priority order):
-1. explicit ``dsn`` parameter passed to :func:`init_pool`
-2. ``POSTGRES_DSN`` environment variable
-3. LangGraph checkpointer config's ``connection_string`` (so we share the
-   same database as checkpointer/store by default)
+Retained as a thin adapter for callers that still want a raw asyncpg pool
+(e.g. LangGraph utilities that expect a ``Pool`` object). New code should
+prefer :mod:`deerflow.db.engine` (SQLAlchemy async engine + AsyncSession).
 
 ``init_pool`` is idempotent — calling it twice with the same DSN is a no-op.
 """
@@ -12,8 +10,9 @@ The DSN is resolved from (in priority order):
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING
+
+from deerflow.db.dsn import resolve_dsn, to_asyncpg_dsn
 
 if TYPE_CHECKING:
     import asyncpg
@@ -22,42 +21,6 @@ logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
 _pool_dsn: str | None = None
-
-
-def _resolve_dsn(explicit: str | None = None) -> str:
-    """Resolve the DSN from parameter → env → checkpointer config."""
-    if explicit:
-        return _expand_env(explicit)
-
-    env_dsn = os.getenv("POSTGRES_DSN")
-    if env_dsn:
-        return env_dsn
-
-    # Fall back to the checkpointer's DSN so we don't duplicate config.
-    try:
-        from deerflow.config.checkpointer_config import get_checkpointer_config
-
-        cp_config = get_checkpointer_config()
-        if cp_config and cp_config.type == "postgres" and cp_config.connection_string:
-            return _expand_env(cp_config.connection_string)
-    except Exception:
-        # Config not loaded yet or import failure — caller must supply DSN.
-        pass
-
-    raise RuntimeError(
-        "Cannot resolve Postgres DSN. Set POSTGRES_DSN environment variable "
-        "or configure checkpointer.connection_string in config.yaml."
-    )
-
-
-def _expand_env(value: str) -> str:
-    """Expand a leading ``$VAR`` reference the same way app_config.py does."""
-    if value.startswith("$"):
-        expanded = os.getenv(value[1:])
-        if not expanded:
-            raise RuntimeError(f"Environment variable {value[1:]} is not set")
-        return expanded
-    return value
 
 
 async def init_pool(
@@ -76,7 +39,7 @@ async def init_pool(
 
     global _pool, _pool_dsn
 
-    resolved = _resolve_dsn(dsn)
+    resolved = to_asyncpg_dsn(resolve_dsn(dsn))
 
     if _pool is not None:
         if _pool_dsn != resolved:

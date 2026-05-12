@@ -2,18 +2,19 @@
 
 Backends
 --------
-- :class:`PostgresChannelStore` (default): rows live in the ``channel_threads``
-  Postgres table. Shared across gateway replicas.
-- :class:`FileChannelStore` (fallback): the legacy JSON-file store, kept as a
-  testing convenience and an offline-mode fallback when no Postgres DSN is
-  available.
+- :class:`PostgresChannelStore` (default): rows live in the
+  ``channel_threads`` Postgres table accessed through SQLModel /
+  SQLAlchemy. Shared across gateway replicas.
+- :class:`FileChannelStore` (fallback): the legacy JSON-file store, kept
+  as a testing convenience and an offline-mode fallback when no Postgres
+  engine is available.
 
 Selection
 ---------
 :class:`ChannelStore` is a factory function that returns the configured
 backend. Tests and call sites that still pass ``path=...`` get a
-:class:`FileChannelStore` instance transparently — this preserves the old
-signature exactly.
+:class:`FileChannelStore` instance transparently — this preserves the
+old signature exactly.
 """
 
 from __future__ import annotations
@@ -25,11 +26,13 @@ import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from psycopg_pool import ConnectionPool
+from sqlalchemy import delete, or_, select
+
+from deerflow.db.models.channel_thread import ChannelThread as ChannelThreadRow
 
 logger = logging.getLogger(__name__)
 
@@ -197,80 +200,37 @@ class FileChannelStore(_BaseChannelStore):
 
 
 # ---------------------------------------------------------------------------
-# Postgres backend
+# Postgres backend (SQLModel sync session)
 # ---------------------------------------------------------------------------
-
-
-def _resolve_dsn() -> str:
-    """Resolve the Postgres DSN the same way ``deerflow.db.pool`` does."""
-    env_dsn = os.getenv("POSTGRES_DSN")
-    if env_dsn:
-        return env_dsn
-
-    try:
-        from deerflow.config.checkpointer_config import get_checkpointer_config
-
-        cp_config = get_checkpointer_config()
-        if cp_config and cp_config.type == "postgres" and cp_config.connection_string:
-            conn_str = cp_config.connection_string
-            if conn_str.startswith("$"):
-                expanded = os.getenv(conn_str[1:])
-                if expanded:
-                    return expanded
-            else:
-                return conn_str
-    except Exception:
-        pass
-
-    raise RuntimeError("POSTGRES_DSN is not configured.")
-
-
-_SHARED_POOLS: dict[str, ConnectionPool] = {}
-_SHARED_POOLS_LOCK = threading.Lock()
-
-
-def _get_shared_pool(dsn: str) -> ConnectionPool:
-    from psycopg_pool import ConnectionPool
-
-    with _SHARED_POOLS_LOCK:
-        pool = _SHARED_POOLS.get(dsn)
-        if pool is not None:
-            return pool
-        pool = ConnectionPool(
-            conninfo=dsn,
-            min_size=1,
-            max_size=4,
-            open=False,
-            kwargs={"autocommit": True},
-        )
-        pool.open(wait=True, timeout=15.0)
-        _SHARED_POOLS[dsn] = pool
-        return pool
 
 
 class PostgresChannelStore(_BaseChannelStore):
     """PostgreSQL-backed channel thread store.
 
     Schema is created by :func:`deerflow.db.setup.ensure_schema` at gateway
-    startup — this class assumes the ``channel_threads`` table exists.
+    startup — this class assumes the ``channel_threads`` table exists. All
+    DB access goes through the shared sync SQLAlchemy engine in
+    :mod:`deerflow.db`.
     """
 
-    def __init__(self, dsn: str | None = None) -> None:
-        self._dsn = dsn or _resolve_dsn()
+    def __init__(self) -> None:
+        # Trigger early failure if the engine isn't initialised; that lets
+        # the factory function fall through to ``FileChannelStore``.
+        from deerflow.db import get_sync_engine
 
-    def _pool(self) -> ConnectionPool:
-        return _get_shared_pool(self._dsn)
+        get_sync_engine()
 
     # -- public API --------------------------------------------------------
 
     def get_thread_id(self, channel_name: str, chat_id: str, topic_id: str | None = None) -> str | None:
-        with self._pool().connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT thread_id FROM channel_threads WHERE key = %s",
-                (self._key(channel_name, chat_id, topic_id),),
-            )
-            row = cur.fetchone()
-        return str(row[0]) if row else None
+        from deerflow.db import sync_session_scope
+
+        key = self._key(channel_name, chat_id, topic_id)
+        with sync_session_scope() as session:
+            row = session.execute(
+                select(ChannelThreadRow.thread_id).where(ChannelThreadRow.key == key)
+            ).scalar_one_or_none()
+        return str(row) if row else None
 
     def set_thread_id(
         self,
@@ -281,56 +241,66 @@ class PostgresChannelStore(_BaseChannelStore):
         topic_id: str | None = None,
         user_id: str = "",
     ) -> None:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        from deerflow.db import sync_session_scope
+
         key = self._key(channel_name, chat_id, topic_id)
-        with self._pool().connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO channel_threads (key, thread_id, user_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (key) DO UPDATE
-                    SET thread_id = EXCLUDED.thread_id,
-                        user_id   = EXCLUDED.user_id,
-                        updated_at = NOW()
-                """,
-                (key, thread_id, user_id),
+        now = datetime.now(timezone.utc)
+
+        with sync_session_scope() as session:
+            stmt = (
+                pg_insert(ChannelThreadRow)
+                .values(
+                    key=key,
+                    thread_id=thread_id,
+                    user_id=user_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                .on_conflict_do_update(
+                    index_elements=[ChannelThreadRow.key],
+                    set_=dict(
+                        thread_id=thread_id,
+                        user_id=user_id,
+                        updated_at=now,
+                    ),
+                )
             )
+            session.execute(stmt)
 
     def remove(self, channel_name: str, chat_id: str, topic_id: str | None = None) -> bool:
-        with self._pool().connection() as conn, conn.cursor() as cur:
-            if topic_id is not None:
-                cur.execute(
-                    "DELETE FROM channel_threads WHERE key = %s",
-                    (self._key(channel_name, chat_id, topic_id),),
-                )
-                return (cur.rowcount or 0) > 0
+        from deerflow.db import sync_session_scope
 
-            # Delete the base mapping and any topic-specific children.
+        with sync_session_scope() as session:
+            if topic_id is not None:
+                key = self._key(channel_name, chat_id, topic_id)
+                result = session.execute(
+                    delete(ChannelThreadRow).where(ChannelThreadRow.key == key)
+                )
+                return (result.rowcount or 0) > 0
+
             base_key = self._key(channel_name, chat_id)
             prefix = base_key + ":"
-            cur.execute(
-                "DELETE FROM channel_threads WHERE key = %s OR key LIKE %s",
-                (base_key, prefix + "%"),
+            result = session.execute(
+                delete(ChannelThreadRow).where(
+                    or_(
+                        ChannelThreadRow.key == base_key,
+                        ChannelThreadRow.key.like(prefix + "%"),
+                    )
+                )
             )
-            return (cur.rowcount or 0) > 0
+            return (result.rowcount or 0) > 0
 
     def list_entries(self, channel_name: str | None = None) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        with self._pool().connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT key,
-                       thread_id,
-                       user_id,
-                       EXTRACT(EPOCH FROM created_at)::double precision AS created_at,
-                       EXTRACT(EPOCH FROM updated_at)::double precision AS updated_at
-                  FROM channel_threads
-                """
-            )
-            rows = cur.fetchall()
+        from deerflow.db import sync_session_scope
 
+        with sync_session_scope() as session:
+            rows = session.execute(select(ChannelThreadRow)).scalars().all()
+
+        results: list[dict[str, Any]] = []
         for row in rows:
-            key, thread_id, user_id, created_at, updated_at = row
-            parts = str(key).split(":", 2)
+            parts = row.key.split(":", 2)
             ch = parts[0]
             chat = parts[1] if len(parts) > 1 else ""
             topic = parts[2] if len(parts) > 2 else None
@@ -339,10 +309,10 @@ class PostgresChannelStore(_BaseChannelStore):
             item: dict[str, Any] = {
                 "channel_name": ch,
                 "chat_id": chat,
-                "thread_id": str(thread_id),
-                "user_id": user_id or "",
-                "created_at": float(created_at) if created_at is not None else 0.0,
-                "updated_at": float(updated_at) if updated_at is not None else 0.0,
+                "thread_id": row.thread_id,
+                "user_id": row.user_id or "",
+                "created_at": row.created_at.timestamp() if row.created_at else 0.0,
+                "updated_at": row.updated_at.timestamp() if row.updated_at else 0.0,
             }
             if topic is not None:
                 item["topic_id"] = topic
@@ -360,10 +330,11 @@ def ChannelStore(path: str | Path | None = None) -> _BaseChannelStore:  # noqa: 
 
     - When ``path`` is provided, always returns a :class:`FileChannelStore`
       targeting that path. Used by tests and explicit file-backed callers.
-    - Otherwise, prefer :class:`PostgresChannelStore` when a DSN is
-      resolvable; fall back to :class:`FileChannelStore` on failure.
+    - Otherwise, prefer :class:`PostgresChannelStore` when the sync DB
+      engine is initialised; fall back to :class:`FileChannelStore` on
+      failure (engine not initialised, DB unreachable, etc).
     - Set ``DEERFLOW_CHANNEL_STORE_BACKEND=file`` to force the file backend
-      regardless of DSN availability (useful for single-file deployments).
+      regardless of DB availability (useful for single-file deployments).
     """
     if path is not None:
         return FileChannelStore(path=path)
@@ -379,3 +350,4 @@ def ChannelStore(path: str | Path | None = None) -> _BaseChannelStore:  # noqa: 
             "PostgresChannelStore unavailable (%s); falling back to FileChannelStore", exc
         )
         return FileChannelStore()
+

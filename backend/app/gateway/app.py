@@ -94,20 +94,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from deerflow.db import (
         close_engine,
         close_pool,
+        close_sync_engine,
         ensure_schema,
         init_engine,
         init_pool,
+        init_sync_engine,
     )
 
     db_engine = None
     db_pool = None
     try:
         db_engine = await init_engine()
+        # Sync engine shares the same DSN; used by repositories whose public
+        # interface is synchronous (memory storage, tool cache, channel store).
+        init_sync_engine()
         await ensure_schema(db_engine)
         # Legacy asyncpg pool is still used by a handful of call sites that
-        # need a raw ``asyncpg.Pool`` object (e.g. PostgresUserRepository
-        # while it awaits the SQLModel rewrite). Standing it up alongside
-        # the engine keeps those paths working during the migration.
+        # need a raw ``asyncpg.Pool`` object. Standing it up alongside the
+        # engine keeps those paths working during the migration.
         db_pool = await init_pool()
         app.state.db_engine = db_engine
         app.state.db_pool = db_pool
@@ -193,21 +197,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             logger.exception("Failed to stop tool_cache vacuum task")
 
-    # Close the Postgres engine + asyncpg pool on shutdown.
-    for closer, label in (
-        (close_pool, "asyncpg pool"),
-        (close_engine, "SQLAlchemy engine"),
-    ):
-        try:
-            await asyncio.wait_for(closer(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
-        except TimeoutError:
-            logger.warning(
-                "%s shutdown exceeded %.1fs; proceeding with worker exit.",
-                label,
-                _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
-            )
-        except Exception:
-            logger.exception("Failed to close %s", label)
+    # Close the Postgres engines + asyncpg pool on shutdown.
+    try:
+        await asyncio.wait_for(close_pool(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logger.warning(
+            "asyncpg pool shutdown exceeded %.1fs; proceeding with worker exit.",
+            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Failed to close asyncpg pool")
+
+    # Sync engine dispose is synchronous but cheap; wrap so a stuck close
+    # cannot block worker exit past the shared deadline.
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(close_sync_engine),
+            timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        logger.warning(
+            "SQLAlchemy sync engine shutdown exceeded %.1fs; proceeding with worker exit.",
+            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Failed to close SQLAlchemy sync engine")
+
+    try:
+        await asyncio.wait_for(close_engine(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logger.warning(
+            "SQLAlchemy async engine shutdown exceeded %.1fs; proceeding with worker exit.",
+            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Failed to close SQLAlchemy async engine")
 
     logger.info("Shutting down API Gateway")
 

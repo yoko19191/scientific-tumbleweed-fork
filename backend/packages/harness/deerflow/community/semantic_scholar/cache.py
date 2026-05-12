@@ -181,15 +181,17 @@ def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> TTLCache:
         try:
             from deerflow.community.semantic_scholar.postgres_cache import (
                 PostgresTTLCache,
-                _resolve_dsn,
             )
+            from deerflow.db import get_sync_engine
 
-            dsn = _resolve_dsn()
-            key = (f"postgres::{dsn}", max(1, hot_max_entries))
+            # Will raise if the sync engine is not initialised yet — in
+            # that case we fall through to the SQLite fallback below.
+            engine_url = str(get_sync_engine().url)
+            key = (f"postgres::{engine_url}", max(1, hot_max_entries))
             with _CACHE_INSTANCES_LOCK:
                 cache = _CACHE_INSTANCES.get(key)
                 if cache is None:
-                    cache = PostgresTTLCache(hot_max_entries=hot_max_entries, dsn=dsn)
+                    cache = PostgresTTLCache(hot_max_entries=hot_max_entries)
                     _CACHE_INSTANCES[key] = cache
                 return cache
         except Exception as exc:

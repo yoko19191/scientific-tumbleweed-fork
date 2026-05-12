@@ -143,7 +143,7 @@ All persistent state lives in a single PostgreSQL instance (default image: `para
 - **LangGraph-owned tables** (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `store`, …): created automatically by `AsyncPostgresSaver.setup()` / `AsyncPostgresStore.setup()` on first boot. DSN comes from `config.yaml → checkpointer.connection_string` (set to `$POSTGRES_DSN` by default).
 - **App-owned tables** (`users`, `user_memory`, `tool_cache`, `channel_threads`): created idempotently by `deerflow.db.setup.ensure_schema()` in the gateway lifespan, guarded by a Postgres advisory lock.
 - **Shared pool**: `deerflow.db.init_pool()` returns a module-level `asyncpg.Pool`. Sync call sites (memory, tool cache, channel store) use their own small `psycopg_pool.ConnectionPool` against the same DSN.
-- **Legacy SQLite / JSON**: archived in place as `*.legacy` under `backend/.deer-flow/`. Not re-imported. See `backend/docs/MIGRATION.md` and `backend/docs/POSTGRES_SCHEMA.md`.
+- **Legacy SQLite / JSON**: archived under `backend/.deer-flow-legacy/` (sibling of `.deer-flow/`). Not re-imported. Can be removed once you no longer need it. See `backend/docs/MIGRATION.md` and `backend/docs/POSTGRES_SCHEMA.md`.
 
 Required environment: `POSTGRES_DSN` (or the individual `POSTGRES_DB / USER / PASSWORD / HOST_PORT` if you use `docker compose`). The `paradedb` service in `docker-compose*.yaml` provides this out of the box; `gateway` and `langgraph` `depends_on: paradedb: service_healthy`.
 

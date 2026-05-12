@@ -7,7 +7,7 @@ files to **PostgreSQL (ParadeDB)** as the single persistence backend.
 - Target image: `paradedb/paradedb:0.23.4-pg18` (Postgres 18 + pgvector +
   pg_search/BM25 + pg_stat_statements)
 - Strategy: **archive-then-restart**. No row-level migration. All legacy
-  SQLite/JSON files are renamed with a `.legacy` suffix and left on disk
+  SQLite/JSON files are moved under `backend/.deer-flow-legacy/` and kept
   as a read-only snapshot.
 
 ## Why we did it
@@ -90,20 +90,28 @@ live via `pg_dump` after the first boot against Postgres).
 
 ## Legacy files (archived, NOT migrated)
 
-All written by the gateway on startup. They stay on disk until an
-operator deletes them.
+Round 1 introduced per-subsystem one-shot archival blocks in the gateway
+lifespan. Round 2 retires those blocks and consolidates everything into
+a single sibling tree outside `backend/.deer-flow/`:
 
 ```text
-backend/.deer-flow/
+backend/.deer-flow-legacy/
 ├── checkpoints.db.legacy          (4.1GB, ex-LangGraph sqlite)
 ├── checkpoints.db-wal.legacy
 ├── checkpoints.db-shm.legacy
 ├── users.db.legacy                (24KB)
-├── memory.json.legacy             (global, if it existed)
-├── users/<uuid>/memory.json.legacy
-├── cache/academic_search.db.legacy  (816MB of S2/OpenAlex responses)
-└── channels/store.json.legacy     (if IM channels had been used)
+├── cache/
+│   └── academic_search.db.legacy  (816MB of S2/OpenAlex responses)
+└── users/<uuid>/
+    └── memory.json.legacy         (per-user memory snapshots)
 ```
+
+`backend/.deer-flow/` now only holds live runtime data (sandbox
+`threads/` workspaces, a per-user `users/<uuid>/threads/` tree, etc.).
+
+Need to read the old data? `sqlite3 backend/.deer-flow-legacy/checkpoints.db.legacy`
+still opens it read-only. Once you no longer need it,
+`rm -rf backend/.deer-flow-legacy/` is the complete cleanup.
 
 Reasoning behind the archive-and-forget choice:
 
@@ -113,7 +121,7 @@ Reasoning behind the archive-and-forget choice:
 - Memory and cache rebuild organically as agents run.
 - Channel mappings rebuild the next time an IM message arrives.
 
-Need to read the old data? `sqlite3 backend/.deer-flow/checkpoints.db.legacy`
+Need to read the old data? `sqlite3 backend/.deer-flow-legacy/checkpoints.db.legacy`
 still opens it read-only.
 
 ## Verification

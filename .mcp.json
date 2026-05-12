@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json.schemastore.org/mcp.json",
+  "_comment": [
+    "Project-level MCP servers for Claude Code. Committed to the repo so",
+    "every contributor (and Claude) gets the same toolbox on clone.",
+    "For Claude Code settings unrelated to MCP, see .claude/settings.json."
+  ],
+  "mcpServers": {
+    "postgres": {
+      "_comment": [
+        "Connects Claude Code to the local ParadeDB instance started by",
+        "docker/docker-compose-dev.yaml. Host is 'localhost' because this",
+        "process runs outside the docker network; port matches",
+        "POSTGRES_HOST_PORT in .env.example (default 5432). Credentials",
+        "match the docker-compose defaults and are safe to commit because",
+        "the service is only exposed on the developer's loopback."
+      ],
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://scientifictumbleweed:scientifictumbleweed@localhost:5432/scientifictumbleweed"
+      ]
+    }
+  }
+}

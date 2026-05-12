@@ -26,19 +26,19 @@ services:
   # Persistent state for LangGraph checkpointer/store and application
   # tables (users, user_memory, tool_cache, channel_threads).
   paradedb:
-    image: paradedb/paradedb:0.21.13-pg16
+    image: paradedb/paradedb:0.23.4-pg18
     container_name: scientific-tumbleweed-paradedb
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
-      - POSTGRES_DB=${POSTGRES_DB:-deerflow}
-      - POSTGRES_USER=${POSTGRES_USER:-deerflow}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-deerflow}
+      - POSTGRES_DB=${POSTGRES_DB:-scientifictumbleweed}
+      - POSTGRES_USER=${POSTGRES_USER:-scientifictumbleweed}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scientifictumbleweed}
     volumes:
-      - paradedb_data:/var/lib/postgresql/data
+      - paradedb_data:/var/lib/postgresql
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deerflow} -d ${POSTGRES_DB:-deerflow}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scientifictumbleweed} -d ${POSTGRES_DB:-scientifictumbleweed}"]
       interval: 5s
       timeout: 5s
       retries: 10

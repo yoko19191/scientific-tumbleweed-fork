@@ -3,7 +3,7 @@
 > 本文档记录 LangGraph 切到 PostgreSQL 后，由 `langgraph-checkpoint-postgres` / `langgraph.store.postgres` 自动创建的 schema，作为阶段 2+ 设计应用自建表时的对照参考。
 >
 > 生成时间：2026-05-11
-> 环境：`paradedb/paradedb:0.21.13-pg16` + `langgraph-checkpoint-postgres>=3.0.3`
+> 环境：`paradedb/paradedb:0.23.4-pg18` + `langgraph-checkpoint-postgres>=3.0.3`
 > LangGraph 版本：`1.0.x`（`langgraph>=1.0.6,<1.0.10`）
 
 ---
@@ -12,15 +12,15 @@
 
 | 项 | 值 |
 |----|-----|
-| 镜像 | `paradedb/paradedb:0.21.13-pg16`（PostgreSQL 16.13 + pgvector 0.8.1 + pg_search 0.23.2 + PostGIS 3.6.3） |
-| DSN | `postgresql://deerflow:deerflow@paradedb:5432/deerflow` |
+| 镜像 | `paradedb/paradedb:0.23.4-pg18`（PostgreSQL 16.13 + pgvector 0.8.1 + pg_search 0.23.2 + PostGIS 3.6.3） |
+| DSN | `postgresql://scientifictumbleweed:scientifictumbleweed@paradedb:5432/scientifictumbleweed` |
 | 容器名 | `scientific-tumbleweed-paradedb` |
 | 初始化脚本 | `docker/postgres/init.sql`（幂等创建 `vector` / `pg_search` / `pg_stat_statements` 扩展） |
 
 连通性验证：
 
 ```bash
-docker exec scientific-tumbleweed-paradedb psql -U deerflow -d deerflow -c "\dx"
+docker exec scientific-tumbleweed-paradedb psql -U scientifictumbleweed -d scientifictumbleweed -c "\dx"
 ```
 
 ParadeDB 镜像 bootstrap 完成后，以下扩展已预装可用：
@@ -228,12 +228,12 @@ checkpoint_migrations    24 kB
 第一次 `psql` 连进去会看到：
 
 ```
-WARNING: database "deerflow" has a collation version mismatch
+WARNING: database "scientifictumbleweed" has a collation version mismatch
 DETAIL: The database was created using collation version 2.41,
         but the operating system provides version 2.36.
 ```
 
-原因：paradedb 镜像的 glibc 与某些 psql client 不一致。无需处理；若报警恼人可运行 `ALTER DATABASE deerflow REFRESH COLLATION VERSION;`。
+原因：paradedb 镜像的 glibc 与某些 psql client 不一致。无需处理；若报警恼人可运行 `ALTER DATABASE scientifictumbleweed REFRESH COLLATION VERSION;`。
 
 ### 5.2 Docker compose 网络一致性
 ParadeDB 服务必须加入和 gateway/langgraph 相同的 project（`scientific-tumbleweed-dev`）。否则 compose 会尝试建新网络，与已有子网冲突并报 `Pool overlaps with other one on this address space`。
@@ -254,19 +254,19 @@ BG_JOB_ISOLATED_LOOPS=true
 
 ```bash
 # 列出所有表
-docker exec scientific-tumbleweed-paradedb psql -U deerflow -d deerflow -c "\dt"
+docker exec scientific-tumbleweed-paradedb psql -U scientifictumbleweed -d scientifictumbleweed -c "\dt"
 
 # 查看表 DDL
-docker exec scientific-tumbleweed-paradedb pg_dump -U deerflow -d deerflow --schema-only -t public.checkpoints
+docker exec scientific-tumbleweed-paradedb pg_dump -U scientifictumbleweed -d scientifictumbleweed --schema-only -t public.checkpoints
 
 # 查看索引
-docker exec scientific-tumbleweed-paradedb psql -U deerflow -d deerflow -c "\di public.*"
+docker exec scientific-tumbleweed-paradedb psql -U scientifictumbleweed -d scientifictumbleweed -c "\di public.*"
 
 # 查看迁移版本
-docker exec scientific-tumbleweed-paradedb psql -U deerflow -d deerflow -c "SELECT v FROM checkpoint_migrations ORDER BY v; SELECT v FROM store_migrations ORDER BY v;"
+docker exec scientific-tumbleweed-paradedb psql -U scientifictumbleweed -d scientifictumbleweed -c "SELECT v FROM checkpoint_migrations ORDER BY v; SELECT v FROM store_migrations ORDER BY v;"
 
 # 表大小
-docker exec scientific-tumbleweed-paradedb psql -U deerflow -d deerflow -c "SELECT relname, pg_size_pretty(pg_total_relation_size(oid)) FROM pg_class WHERE relkind='r' AND relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='public') ORDER BY pg_total_relation_size(oid) DESC;"
+docker exec scientific-tumbleweed-paradedb psql -U scientifictumbleweed -d scientifictumbleweed -c "SELECT relname, pg_size_pretty(pg_total_relation_size(oid)) FROM pg_class WHERE relkind='r' AND relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='public') ORDER BY pg_total_relation_size(oid) DESC;"
 ```
 
 ---

@@ -138,7 +138,7 @@ CI runs these regression tests for every pull request via [.github/workflows/bac
 
 ### Persistence Layer
 
-All persistent state lives in a single PostgreSQL instance (default image: `paradedb/paradedb:0.21.13-pg16`, which bundles pgvector and pg_search/BM25).
+All persistent state lives in a single PostgreSQL instance (default image: `paradedb/paradedb:0.23.4-pg18`, which bundles pgvector and pg_search/BM25).
 
 - **LangGraph-owned tables** (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `store`, …): created automatically by `AsyncPostgresSaver.setup()` / `AsyncPostgresStore.setup()` on first boot. DSN comes from `config.yaml → checkpointer.connection_string` (set to `$POSTGRES_DSN` by default).
 - **App-owned tables** (`users`, `user_memory`, `tool_cache`, `channel_threads`): created idempotently by `deerflow.db.setup.ensure_schema()` in the gateway lifespan, guarded by a Postgres advisory lock.

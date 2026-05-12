@@ -4,7 +4,7 @@ This document records how Scientific Tumbleweed moved off SQLite + local JSON
 files to **PostgreSQL (ParadeDB)** as the single persistence backend.
 
 - Branch: `feature/postgres-migration`
-- Target image: `paradedb/paradedb:0.21.13-pg16` (Postgres 16 + pgvector +
+- Target image: `paradedb/paradedb:0.23.4-pg18` (Postgres 18 + pgvector +
   pg_search/BM25 + pg_stat_statements)
 - Strategy: **archive-then-restart**. No row-level migration. All legacy
   SQLite/JSON files are renamed with a `.legacy` suffix and left on disk
@@ -177,10 +177,10 @@ Rolling back does NOT re-import the archived data; rename
 ```bash
 # Full dump (schema + data) — backup target for Phase 2+.
 docker exec scientific-tumbleweed-paradedb \
-  pg_dump -U deerflow -d deerflow > backup-$(date +%Y%m%d).sql
+  pg_dump -U scientifictumbleweed -d scientifictumbleweed > backup-$(date +%Y%m%d).sql
 
 # Per-table row counts.
-docker exec scientific-tumbleweed-paradedb psql -U deerflow -d deerflow -c "
+docker exec scientific-tumbleweed-paradedb psql -U scientifictumbleweed -d scientifictumbleweed -c "
   SELECT relname, n_live_tup AS live_rows
     FROM pg_stat_user_tables
    WHERE schemaname = 'public'

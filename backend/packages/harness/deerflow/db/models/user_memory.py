@@ -11,9 +11,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Index
+from sqlalchemy import Column, DateTime, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Column, Field, SQLModel
+from sqlmodel import Field, SQLModel
 
 
 def _utc_now() -> datetime:
@@ -26,18 +26,19 @@ class UserMemory(SQLModel, table=True):
     user_id: str = Field(primary_key=True, nullable=False)
     data: dict[str, Any] = Field(
         default_factory=dict,
-        sa_column=Column(JSONB, nullable=False, server_default="'{}'::jsonb"),
+        sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     )
     version: int = Field(default=0, nullable=False)
     updated_at: datetime = Field(
         default_factory=_utc_now,
-        nullable=False,
-        sa_column_kwargs={"server_default": "NOW()"},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("NOW()"),
+        ),
     )
 
     __table_args__ = (
-        # GIN on the whole JSONB for future @>/? queries. Matches the
-        # shape LangGraph uses for its ``store.value`` column.
         Index(
             "idx_user_memory_data_gin",
             "data",

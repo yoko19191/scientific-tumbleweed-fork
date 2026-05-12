@@ -10,9 +10,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Index
+from sqlalchemy import Column, DateTime, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Column, Field, SQLModel
+from sqlmodel import Field, SQLModel
 
 
 def _utc_now() -> datetime:
@@ -29,10 +29,18 @@ class ToolCacheEntry(SQLModel, table=True):
     )
     created_at: datetime = Field(
         default_factory=_utc_now,
-        nullable=False,
-        sa_column_kwargs={"server_default": "NOW()"},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("NOW()"),
+        ),
     )
-    expires_at: datetime = Field(nullable=False)
+    expires_at: datetime = Field(
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+        ),
+    )
 
     __table_args__ = (
         Index("idx_tool_cache_expires_at", "expires_at"),

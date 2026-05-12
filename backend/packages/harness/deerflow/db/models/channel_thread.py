@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Index
+from sqlalchemy import Column, DateTime, Index, text
 from sqlmodel import Field, SQLModel
 
 
@@ -24,18 +24,22 @@ class ChannelThread(SQLModel, table=True):
     user_id: str = Field(default="", nullable=False)
     created_at: datetime = Field(
         default_factory=_utc_now,
-        nullable=False,
-        sa_column_kwargs={"server_default": "NOW()"},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("NOW()"),
+        ),
     )
     updated_at: datetime = Field(
         default_factory=_utc_now,
-        nullable=False,
-        sa_column_kwargs={"server_default": "NOW()"},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("NOW()"),
+        ),
     )
 
     __table_args__ = (
-        # Supports the "remove all mappings for a chat" path which
-        # scans by key prefix.
         Index(
             "idx_channel_threads_key_prefix",
             "key",

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Index
+from sqlalchemy import Column, DateTime, Index, text
 from sqlmodel import Field, SQLModel
 
 
@@ -30,8 +30,11 @@ class User(SQLModel, table=True):
     system_role: str = Field(default="user", nullable=False)
     created_at: datetime = Field(
         default_factory=_utc_now,
-        nullable=False,
-        sa_column_kwargs={"server_default": "NOW()"},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("NOW()"),
+        ),
     )
     oauth_provider: str | None = Field(default=None, nullable=True)
     oauth_id: str | None = Field(default=None, nullable=True)
@@ -39,9 +42,6 @@ class User(SQLModel, table=True):
     token_version: int = Field(default=0, nullable=False)
 
     __table_args__ = (
-        # Partial unique index on (oauth_provider, oauth_id) mirrors the
-        # sqlite setup: OAuth identities must be unique when present, but
-        # local-password users (with both fields NULL) don't collide.
         Index(
             "idx_users_oauth_identity",
             "oauth_provider",

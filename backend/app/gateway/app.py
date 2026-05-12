@@ -119,16 +119,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
 
     # Select UserRepository backend based on config.
-    if auth_config.repository_backend == "postgres" and db_pool is not None:
+    if auth_config.repository_backend == "postgres" and db_engine is not None:
         from app.gateway.auth.repositories.postgres import PostgresUserRepository
 
-        user_repo = PostgresUserRepository(pool=db_pool)
+        user_repo = PostgresUserRepository()
         logger.info("Auth subsystem initialised (JWT + Postgres)")
     else:
         from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
 
         user_repo = SQLiteUserRepository()
-        reason = "explicit sqlite backend" if auth_config.repository_backend == "sqlite" else "pool unavailable"
+        reason = "explicit sqlite backend" if auth_config.repository_backend == "sqlite" else "engine unavailable"
         logger.info("Auth subsystem initialised (JWT + SQLite; %s)", reason)
 
     auth_provider = LocalAuthProvider(user_repo)

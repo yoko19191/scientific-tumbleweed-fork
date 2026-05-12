@@ -40,6 +40,31 @@ logger = logging.getLogger(__name__)
 _SHUTDOWN_HOOK_TIMEOUT_SECONDS = 5.0
 
 
+# Interval between tool_cache vacuum sweeps. Postgres takes care of
+# concurrency; running on every pod is safe (a single DELETE is cheap).
+_TOOL_CACHE_VACUUM_INTERVAL_SECONDS = 60 * 60  # 1 hour
+
+
+async def _run_tool_cache_vacuum_loop() -> None:
+    """Background task that periodically deletes expired ``tool_cache`` rows."""
+    from deerflow.community.semantic_scholar.postgres_cache import PostgresTTLCache
+
+    # Small initial delay so we don't collide with schema setup on first boot.
+    await asyncio.sleep(30)
+    while True:
+        try:
+            await asyncio.to_thread(PostgresTTLCache.vacuum_expired)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("tool_cache vacuum sweep failed; will retry next interval")
+
+        try:
+            await asyncio.sleep(_TOOL_CACHE_VACUUM_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            return
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
@@ -59,10 +84,122 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize auth subsystem
     from app.gateway.auth.config import get_auth_config
     from app.gateway.auth.local_provider import LocalAuthProvider
-    from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
 
     auth_config = get_auth_config()
-    user_repo = SQLiteUserRepository()
+
+    # Initialise the shared Postgres pool + application schema.
+    # The pool defaults to POSTGRES_DSN, falling back to the checkpointer DSN.
+    # We always stand the pool up (even when auth is on SQLite) so later
+    # migrations (memory/cache/channels) can share it without re-wiring.
+    from deerflow.db import close_pool, ensure_schema, init_pool
+
+    db_pool = None
+    try:
+        db_pool = await init_pool()
+        await ensure_schema(db_pool)
+        app.state.db_pool = db_pool
+        logger.info("Postgres pool + application schema ready")
+    except Exception:
+        logger.exception(
+            "Postgres pool initialisation failed; auth backend will fall back to SQLite "
+            "if configured, and memory/cache features that require Postgres will be unavailable"
+        )
+
+    # Select UserRepository backend based on config.
+    if auth_config.repository_backend == "postgres" and db_pool is not None:
+        from app.gateway.auth.repositories.postgres import PostgresUserRepository
+
+        user_repo = PostgresUserRepository(pool=db_pool)
+        logger.info("Auth subsystem initialised (JWT + Postgres)")
+
+        # Archive the legacy SQLite users DB if present. A one-time rename
+        # makes the old data read-only; we don't migrate rows because the
+        # migration plan explicitly opts for "start fresh, archive old".
+        try:
+            from pathlib import Path
+
+            legacy_db = Path(".deer-flow/users.db")
+            archive_path = Path(".deer-flow/users.db.legacy")
+            if legacy_db.exists() and not archive_path.exists():
+                legacy_db.rename(archive_path)
+                logger.warning(
+                    "Archived legacy SQLite users DB: %s -> %s. Its rows are "
+                    "NOT migrated; users need to re-register on the Postgres backend.",
+                    legacy_db,
+                    archive_path,
+                )
+        except Exception:
+            logger.exception("Failed to archive legacy users.db")
+
+        # Archive the legacy memory.json files similarly. The Postgres
+        # backend starts empty; per-user memory rebuilds on first agent
+        # interaction. We archive both the global file and each user's file.
+        try:
+            from pathlib import Path
+
+            legacy_roots: list[Path] = [Path(".deer-flow/memory.json")]
+            users_root = Path(".deer-flow/users")
+            if users_root.exists():
+                legacy_roots.extend(users_root.glob("*/memory.json"))
+            for legacy_memory in legacy_roots:
+                if not legacy_memory.exists():
+                    continue
+                archive = legacy_memory.with_suffix(".json.legacy")
+                if archive.exists():
+                    continue
+                legacy_memory.rename(archive)
+                logger.warning(
+                    "Archived legacy memory file: %s -> %s. Not migrated to Postgres.",
+                    legacy_memory,
+                    archive,
+                )
+        except Exception:
+            logger.exception("Failed to archive legacy memory.json files")
+
+        # Archive the legacy cache/academic_search.db. The Postgres tool_cache
+        # table starts empty; cached rows rebuild naturally as agents query.
+        try:
+            from pathlib import Path
+
+            cache_root = Path(".deer-flow/cache")
+            if cache_root.exists():
+                for legacy_cache in cache_root.glob("*.db"):
+                    archive = legacy_cache.with_suffix(".db.legacy")
+                    if archive.exists():
+                        continue
+                    legacy_cache.rename(archive)
+                    logger.warning(
+                        "Archived legacy tool cache DB: %s -> %s. Not migrated to Postgres.",
+                        legacy_cache,
+                        archive,
+                    )
+        except Exception:
+            logger.exception("Failed to archive legacy tool cache DBs")
+
+        # Archive the legacy channels/store.json. The Postgres
+        # channel_threads table takes over; existing mappings are not
+        # migrated — IM channels will re-learn them on first message.
+        try:
+            from pathlib import Path
+
+            legacy_channels = Path(".deer-flow/channels/store.json")
+            archive_path = legacy_channels.with_suffix(".json.legacy")
+            if legacy_channels.exists() and not archive_path.exists():
+                legacy_channels.rename(archive_path)
+                logger.warning(
+                    "Archived legacy channel store: %s -> %s. Not migrated to Postgres.",
+                    legacy_channels,
+                    archive_path,
+                )
+        except Exception:
+            logger.exception("Failed to archive legacy channels/store.json")
+    else:
+        from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
+
+        user_repo = SQLiteUserRepository()
+        reason = "explicit sqlite backend" if auth_config.repository_backend == "sqlite" else "pool unavailable"
+        logger.info("Auth subsystem initialised (JWT + SQLite; %s)", reason)
+
     auth_provider = LocalAuthProvider(user_repo)
     app.state.auth_config = auth_config
     app.state.auth_provider = auth_provider
@@ -72,7 +209,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.gateway.deps import set_local_provider
     set_local_provider(auth_provider)
 
-    logger.info("Auth subsystem initialised (JWT + SQLite)")
+    # Periodic vacuum for tool_cache — runs every hour while the app is up.
+    # Only started when the Postgres pool is available; on the sqlite
+    # fallback the per-cache DELETE-on-read path already evicts expired rows.
+    tool_cache_vacuum_task: asyncio.Task | None = None
+    if db_pool is not None:
+        tool_cache_vacuum_task = asyncio.create_task(
+            _run_tool_cache_vacuum_loop(), name="tool_cache_vacuum"
+        )
+
+    app.state.tool_cache_vacuum_task = tool_cache_vacuum_task
 
     # Initialize LangGraph runtime components (StreamBridge, RunManager, checkpointer, store)
     async with langgraph_runtime(app):
@@ -104,6 +250,28 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
         except Exception:
             logger.exception("Failed to stop channel service")
+
+    # Cancel the tool_cache vacuum loop on shutdown.
+    vacuum_task = getattr(app.state, "tool_cache_vacuum_task", None)
+    if vacuum_task is not None and not vacuum_task.done():
+        vacuum_task.cancel()
+        try:
+            await asyncio.wait_for(vacuum_task, timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+        except (TimeoutError, asyncio.CancelledError):
+            pass
+        except Exception:
+            logger.exception("Failed to stop tool_cache vacuum task")
+
+    # Close the Postgres pool on shutdown.
+    try:
+        await asyncio.wait_for(close_pool(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logger.warning(
+            "Postgres pool shutdown exceeded %.1fs; proceeding with worker exit.",
+            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Failed to close Postgres pool")
 
     logger.info("Shutting down API Gateway")
 

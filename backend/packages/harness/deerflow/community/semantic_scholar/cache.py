@@ -1,19 +1,37 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
 import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Any
+from typing import Any, Protocol
 
 from deerflow.runtime.store._sqlite_utils import ensure_sqlite_parent_dir, resolve_sqlite_conn_str
 
+logger = logging.getLogger(__name__)
+
 _CACHE_SCHEMA_VERSION = "v1"
-_CACHE_INSTANCES: dict[tuple[str, int], "SQLiteTTLCache"] = {}
+_CACHE_INSTANCES: dict[tuple[str, int], "TTLCache"] = {}
 _CACHE_INSTANCES_LOCK = threading.Lock()
+
+
+class TTLCache(Protocol):
+    """Common interface for the sqlite/postgres TTL caches.
+
+    Kept minimal — just what ``tools.py`` callers use.
+    """
+
+    @property
+    def db_path(self) -> str: ...
+
+    def get(self, cache_key: str) -> Any | None: ...
+
+    def set(self, cache_key: str, tool_name: str, value: Any, ttl_seconds: int) -> Any: ...
 
 
 def _normalize_for_cache(value: Any) -> Any:
@@ -138,7 +156,49 @@ class SQLiteTTLCache:
         return value
 
 
-def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> SQLiteTTLCache:
+def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> TTLCache:
+    """Return the TTL cache backing the given ``db_path``.
+
+    Historically this always returned a :class:`SQLiteTTLCache`; after the
+    Postgres migration the preferred backend is
+    :class:`PostgresTTLCache` so all tool caches live in one place.
+
+    Selection rules (checked in order):
+
+    1. If ``DEERFLOW_TOOL_CACHE_BACKEND=sqlite`` is set, always use sqlite.
+       Useful for tests that want a tmp file.
+    2. If a Postgres DSN is resolvable (via ``POSTGRES_DSN`` or the
+       checkpointer config), return the shared
+       :class:`PostgresTTLCache` — ``db_path`` is ignored.
+    3. Otherwise fall back to SQLite at the legacy ``db_path``.
+
+    The function name is kept for backward compatibility with callers in
+    ``tools.py`` — the return type is the shared :class:`TTLCache` protocol.
+    """
+    backend_override = os.getenv("DEERFLOW_TOOL_CACHE_BACKEND", "").strip().lower()
+
+    if backend_override != "sqlite":
+        try:
+            from deerflow.community.semantic_scholar.postgres_cache import (
+                PostgresTTLCache,
+                _resolve_dsn,
+            )
+
+            dsn = _resolve_dsn()
+            key = (f"postgres::{dsn}", max(1, hot_max_entries))
+            with _CACHE_INSTANCES_LOCK:
+                cache = _CACHE_INSTANCES.get(key)
+                if cache is None:
+                    cache = PostgresTTLCache(hot_max_entries=hot_max_entries, dsn=dsn)
+                    _CACHE_INSTANCES[key] = cache
+                return cache
+        except Exception as exc:
+            logger.warning(
+                "PostgresTTLCache unavailable (%s); falling back to SQLite at %s",
+                exc,
+                db_path,
+            )
+
     resolved = resolve_sqlite_conn_str(db_path)
     key = (resolved, max(1, hot_max_entries))
     with _CACHE_INSTANCES_LOCK:
@@ -147,3 +207,7 @@ def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> SQLiteTTLC
             cache = SQLiteTTLCache(db_path=resolved, hot_max_entries=hot_max_entries)
             _CACHE_INSTANCES[key] = cache
         return cache
+
+
+# Preferred public name for new callers.
+get_tool_cache = get_sqlite_ttl_cache

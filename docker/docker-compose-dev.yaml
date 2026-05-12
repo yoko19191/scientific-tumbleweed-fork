@@ -14,6 +14,32 @@
 # Access: http://localhost:2026
 
 services:
+  # ── PostgreSQL (ParadeDB: includes pgvector + pg_search for BM25) ──────
+  # Persistent state for LangGraph checkpointer/store and application
+  # tables (users, user_memory, tool_cache, channel_threads).
+  # Port 5432 is exposed to the host so you can inspect the schema with psql.
+  paradedb:
+    image: paradedb/paradedb:0.21.13-pg16
+    container_name: scientific-tumbleweed-paradedb
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-deerflow}
+      - POSTGRES_USER=${POSTGRES_USER:-deerflow}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-deerflow}
+    volumes:
+      - paradedb_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-deerflow} -d ${POSTGRES_DB:-deerflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - scientific-tumbleweed-dev
+    restart: unless-stopped
+
   # ── Sandbox Provisioner ────────────────────────────────────────────────
   # Manages per-sandbox Pod + Service lifecycle in the host Kubernetes
   # cluster via the K8s API.
@@ -179,6 +205,9 @@ services:
     extra_hosts:
       # For Linux: map host.docker.internal to host gateway
       - "host.docker.internal:host-gateway"
+    depends_on:
+      paradedb:
+        condition: service_healthy
     networks:
       - scientific-tumbleweed-dev
     restart: unless-stopped
@@ -236,6 +265,9 @@ services:
     extra_hosts:
       # For Linux: map host.docker.internal to host gateway
       - "host.docker.internal:host-gateway"
+    depends_on:
+      paradedb:
+        condition: service_healthy
     networks:
       - scientific-tumbleweed-dev
     restart: unless-stopped
@@ -247,6 +279,7 @@ volumes:
   langgraph-venv:
   gateway-uv-cache:
   langgraph-uv-cache:
+  paradedb_data:
 
 networks:
   scientific-tumbleweed-dev:

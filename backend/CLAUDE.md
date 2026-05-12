@@ -136,6 +136,17 @@ CI runs these regression tests for every pull request via [.github/workflows/bac
 
 ## Architecture
 
+### Persistence Layer
+
+All persistent state lives in a single PostgreSQL instance (default image: `paradedb/paradedb:0.21.13-pg16`, which bundles pgvector and pg_search/BM25).
+
+- **LangGraph-owned tables** (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `store`, …): created automatically by `AsyncPostgresSaver.setup()` / `AsyncPostgresStore.setup()` on first boot. DSN comes from `config.yaml → checkpointer.connection_string` (set to `$POSTGRES_DSN` by default).
+- **App-owned tables** (`users`, `user_memory`, `tool_cache`, `channel_threads`): created idempotently by `deerflow.db.setup.ensure_schema()` in the gateway lifespan, guarded by a Postgres advisory lock.
+- **Shared pool**: `deerflow.db.init_pool()` returns a module-level `asyncpg.Pool`. Sync call sites (memory, tool cache, channel store) use their own small `psycopg_pool.ConnectionPool` against the same DSN.
+- **Legacy SQLite / JSON**: archived in place as `*.legacy` under `backend/.deer-flow/`. Not re-imported. See `backend/docs/MIGRATION.md` and `backend/docs/POSTGRES_SCHEMA.md`.
+
+Required environment: `POSTGRES_DSN` (or the individual `POSTGRES_DB / USER / PASSWORD / HOST_PORT` if you use `docker compose`). The `paradedb` service in `docker-compose*.yaml` provides this out of the box; `gateway` and `langgraph` `depends_on: paradedb: service_healthy`.
+
 ### Harness / App Split
 
 The backend is split into two layers with a strict dependency direction:
@@ -373,7 +384,7 @@ Bridges external messaging platforms (Feishu, Slack, Telegram) to the Scientific
 - `queue.py` - Debounced update queue (per-thread deduplication, configurable wait time)
 - `prompt.py` - Prompt templates for memory updates
 
-**Data Structure** (stored in `backend/.deer-flow/memory.json`):
+**Data Structure** (stored in Postgres table `user_memory`, one row per user; `user_id='__global__'` for the legacy unscoped memory). Prior to the migration this lived in `backend/.deer-flow/memory.json` — see `backend/docs/MIGRATION.md`:
 - **User Context**: `workContext`, `personalContext`, `topOfMind` (1-3 sentence summaries)
 - **History**: `recentMonths`, `earlierContext`, `longTermBackground`
 - **Facts**: Discrete facts with `id`, `content`, `category` (preference/knowledge/context/behavior/goal), `confidence` (0-1), `createdAt`, `source`
@@ -389,7 +400,8 @@ Focused regression coverage for the updater lives in `backend/tests/test_memory_
 
 **Configuration** (`config.yaml` → `memory`):
 - `enabled` / `injection_enabled` - Master switches
-- `storage_path` - Path to memory.json
+- `storage_path` - Legacy path to `memory.json` when the file backend is selected; ignored by the default Postgres backend
+- `storage_class` - Backend class path; default `deerflow.agents.memory.postgres_storage.PostgresMemoryStorage`. Switch to `deerflow.agents.memory.storage.FileMemoryStorage` to fall back to the legacy JSON file
 - `debounce_seconds` - Wait time before processing (default: 30)
 - `model_name` - LLM for updates (null = default model)
 - `max_facts` / `fact_confidence_threshold` - Fact storage limits (100 / 0.7)

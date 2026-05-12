@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .cache import SQLiteTTLCache, build_cache_key
+from .cache import TTLCache, build_cache_key
 
 GRAPH_API_BASE_URL = "https://api.semanticscholar.org/graph/v1"
 RECOMMENDATIONS_API_BASE_URL = "https://api.semanticscholar.org/recommendations/v1"
@@ -149,7 +149,7 @@ def normalize_relation_preview(entry: dict[str, Any], paper_key: str) -> dict[st
 
 
 class SemanticScholarClient:
-    def __init__(self, settings: SemanticScholarSettings, cache: SQLiteTTLCache) -> None:
+    def __init__(self, settings: SemanticScholarSettings, cache: TTLCache) -> None:
         self._settings = settings
         self._cache = cache
 

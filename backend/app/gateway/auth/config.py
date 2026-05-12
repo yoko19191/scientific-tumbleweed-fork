@@ -3,6 +3,7 @@
 import logging
 import os
 import secrets
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -20,9 +21,21 @@ class AuthConfig(BaseModel):
         description="Secret key for JWT signing. MUST be set via AUTH_JWT_SECRET.",
     )
     token_expiry_days: int = Field(default=7, ge=1, le=30)
+    repository_backend: Literal["postgres", "sqlite"] = Field(
+        default="postgres",
+        description=(
+            "Storage backend for users. Default 'postgres' uses the shared "
+            "asyncpg pool from deerflow.db (production). 'sqlite' keeps the "
+            "legacy .deer-flow/users.db path (tests / single-file mode). "
+            "Override via AUTH_REPOSITORY_BACKEND env var."
+        ),
+    )
     users_db_path: str | None = Field(
         default=None,
-        description="Path to users SQLite DB. Defaults to .deer-flow/users.db",
+        description=(
+            "Legacy SQLite database path. Used only when repository_backend='sqlite'. "
+            "Defaults to .deer-flow/users.db when sqlite backend is selected."
+        ),
     )
     oauth_github_client_id: str | None = Field(default=None)
     oauth_github_client_secret: str | None = Field(default=None)
@@ -45,7 +58,16 @@ def get_auth_config() -> AuthConfig:
                 "For production, add AUTH_JWT_SECRET to your .env file: "
                 'python -c "import secrets; print(secrets.token_urlsafe(32))"'
             )
-        _auth_config = AuthConfig(jwt_secret=jwt_secret)
+        backend = os.environ.get("AUTH_REPOSITORY_BACKEND", "postgres").strip().lower()
+        if backend not in ("postgres", "sqlite"):
+            logger.warning(
+                "Invalid AUTH_REPOSITORY_BACKEND=%r; falling back to 'postgres'", backend
+            )
+            backend = "postgres"
+        _auth_config = AuthConfig(
+            jwt_secret=jwt_secret,
+            repository_backend=backend,  # type: ignore[arg-type]
+        )
     return _auth_config
 
 

@@ -774,8 +774,10 @@ summarization:
 # Stores user context and conversation history for personalized responses
 memory:
   enabled: true
-  storage_path: memory.json # Path relative to backend directory
-  storage_class: deerflow.agents.memory.storage.FileMemoryStorage
+  # Legacy file path — only used by FileMemoryStorage fallback and by the
+  # /api/memory export route. The default Postgres backend ignores this.
+  storage_path: memory.json
+  storage_class: deerflow.agents.memory.postgres_storage.PostgresMemoryStorage
   debounce_seconds: 30 # Wait time before processing queued updates
   model_name: null # Use default model
   max_facts: 100 # Maximum number of facts to store

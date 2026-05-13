@@ -37,6 +37,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.35",
     "sqlmodel>=0.0.22",
     "alembic>=1.13",
+    "opendal>=0.45",
     "langgraph-sdk>=0.1.51",
 ]
 

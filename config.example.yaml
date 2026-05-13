@@ -839,6 +839,30 @@ stream_bridge:
   queue_maxsize: 256
 
 # ============================================================================
+# Object Storage Configuration (OpenDAL)
+# ============================================================================
+# Drives the OpenDAL operator that backs uploads, agent outputs, artifacts,
+# memory archives, and similar persistent files. Default backend is the
+# local filesystem so dev/test work out of the box; switching to MinIO or
+# S3 later is a config-only change.
+#
+# Schemes follow OpenDAL's: see https://opendal.apache.org/docs/services/
+
+storage:
+  backend: fs
+  fs:
+    # Relative paths resolve against the application working directory.
+    root: .deer-flow/storage
+  # MinIO / S3 example — uncomment and switch backend: s3 to enable.
+  # s3:
+  #   endpoint: http://minio:9000
+  #   bucket: scientifictumbleweed
+  #   region: us-east-1
+  #   access_key_id: $MINIO_ACCESS_KEY
+  #   secret_access_key: $MINIO_SECRET_KEY
+  #   root: /
+
+# ============================================================================
 # IM Channels Configuration
 # ============================================================================
 # Connect Scientific Tumbleweed to external messaging platforms.

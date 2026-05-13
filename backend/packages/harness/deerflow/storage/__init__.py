@@ -18,15 +18,23 @@ from deerflow.storage.factory import (
     reset_operators,
 )
 from deerflow.storage.paths import (
+    GLOBAL_SCOPE,
     outputs_key,
     outputs_prefix,
     uploads_key,
     uploads_prefix,
+    user_agent_config_key,
+    user_agent_prefix,
+    user_agent_soul_key,
+    user_agents_prefix,
+    user_extensions_override_key,
+    user_profile_key,
     workspace_key,
     workspace_prefix,
 )
 
 __all__ = [
+    "GLOBAL_SCOPE",
     "describe_operator",
     "get_async_operator",
     "get_operator",
@@ -35,6 +43,12 @@ __all__ = [
     "reset_operators",
     "uploads_key",
     "uploads_prefix",
+    "user_agent_config_key",
+    "user_agent_prefix",
+    "user_agent_soul_key",
+    "user_agents_prefix",
+    "user_extensions_override_key",
+    "user_profile_key",
     "workspace_key",
     "workspace_prefix",
 ]

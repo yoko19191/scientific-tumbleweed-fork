@@ -105,7 +105,7 @@ def get_auth_provider(request: Request):
 
 
 def get_user_repo(request: Request):
-    """Return the :class:`SQLiteUserRepository` singleton, or 503."""
+    """Return the configured :class:`UserRepository` singleton, or 503."""
     repo = getattr(request.app.state, "user_repo", None)
     if repo is None:
         raise HTTPException(status_code=503, detail="User repository not available")

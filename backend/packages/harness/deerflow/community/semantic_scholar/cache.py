@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import threading
 import time
@@ -159,47 +158,38 @@ class SQLiteTTLCache:
 def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> TTLCache:
     """Return the TTL cache backing the given ``db_path``.
 
-    Historically this always returned a :class:`SQLiteTTLCache`; after the
-    Postgres migration the preferred backend is
-    :class:`PostgresTTLCache` so all tool caches live in one place.
+    Historically this returned a :class:`SQLiteTTLCache`; after the
+    Postgres migration the production backend is :class:`PostgresTTLCache`,
+    sharing the module-level sync SQLAlchemy engine. If the engine is not
+    initialised (offline tests, ad-hoc CLI usage) the function transparently
+    falls back to the legacy :class:`SQLiteTTLCache` at ``db_path`` so the
+    test suite and tooling-without-DB paths keep working.
 
-    Selection rules (checked in order):
-
-    1. If ``DEERFLOW_TOOL_CACHE_BACKEND=sqlite`` is set, always use sqlite.
-       Useful for tests that want a tmp file.
-    2. If a Postgres DSN is resolvable (via ``POSTGRES_DSN`` or the
-       checkpointer config), return the shared
-       :class:`PostgresTTLCache` — ``db_path`` is ignored.
-    3. Otherwise fall back to SQLite at the legacy ``db_path``.
-
-    The function name is kept for backward compatibility with callers in
-    ``tools.py`` — the return type is the shared :class:`TTLCache` protocol.
+    The function name is preserved for backward compatibility; the return
+    type is the shared :class:`TTLCache` protocol.
     """
-    backend_override = os.getenv("DEERFLOW_TOOL_CACHE_BACKEND", "").strip().lower()
+    try:
+        from deerflow.community.semantic_scholar.postgres_cache import (
+            PostgresTTLCache,
+        )
+        from deerflow.db import get_sync_engine
 
-    if backend_override != "sqlite":
-        try:
-            from deerflow.community.semantic_scholar.postgres_cache import (
-                PostgresTTLCache,
-            )
-            from deerflow.db import get_sync_engine
-
-            # Will raise if the sync engine is not initialised yet — in
-            # that case we fall through to the SQLite fallback below.
-            engine_url = str(get_sync_engine().url)
-            key = (f"postgres::{engine_url}", max(1, hot_max_entries))
-            with _CACHE_INSTANCES_LOCK:
-                cache = _CACHE_INSTANCES.get(key)
-                if cache is None:
-                    cache = PostgresTTLCache(hot_max_entries=hot_max_entries)
-                    _CACHE_INSTANCES[key] = cache
-                return cache
-        except Exception as exc:
-            logger.warning(
-                "PostgresTTLCache unavailable (%s); falling back to SQLite at %s",
-                exc,
-                db_path,
-            )
+        # Raises if the sync engine is not initialised — we fall through to
+        # the SQLite fallback in that case.
+        engine_url = str(get_sync_engine().url)
+        key = (f"postgres::{engine_url}", max(1, hot_max_entries))
+        with _CACHE_INSTANCES_LOCK:
+            cache = _CACHE_INSTANCES.get(key)
+            if cache is None:
+                cache = PostgresTTLCache(hot_max_entries=hot_max_entries)
+                _CACHE_INSTANCES[key] = cache
+            return cache
+    except Exception as exc:
+        logger.warning(
+            "PostgresTTLCache unavailable (%s); falling back to SQLite at %s",
+            exc,
+            db_path,
+        )
 
     resolved = resolve_sqlite_conn_str(db_path)
     key = (resolved, max(1, hot_max_entries))

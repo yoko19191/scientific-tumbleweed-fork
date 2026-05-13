@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import tempfile
 import threading
 import time
@@ -331,17 +330,11 @@ def ChannelStore(path: str | Path | None = None) -> _BaseChannelStore:  # noqa: 
     - When ``path`` is provided, always returns a :class:`FileChannelStore`
       targeting that path. Used by tests and explicit file-backed callers.
     - Otherwise, prefer :class:`PostgresChannelStore` when the sync DB
-      engine is initialised; fall back to :class:`FileChannelStore` on
-      failure (engine not initialised, DB unreachable, etc).
-    - Set ``DEERFLOW_CHANNEL_STORE_BACKEND=file`` to force the file backend
-      regardless of DB availability (useful for single-file deployments).
+      engine is initialised; fall back to :class:`FileChannelStore` if
+      the engine is not initialised (the tests / offline tooling paths).
     """
     if path is not None:
         return FileChannelStore(path=path)
-
-    override = os.getenv("DEERFLOW_CHANNEL_STORE_BACKEND", "").strip().lower()
-    if override == "file":
-        return FileChannelStore()
 
     try:
         return PostgresChannelStore()

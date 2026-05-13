@@ -54,14 +54,20 @@ class PostgresUserRepository(UserRepository):
                 await session.commit()
             except IntegrityError as exc:
                 await session.rollback()
-                # asyncpg surfaces the constraint name inside the DB exception;
-                # SQLAlchemy wraps it in IntegrityError.orig. Look for the
-                # constraint name in the full text of the error.
-                detail = str(exc).lower()
-                if "users_email_key" in detail or "email" in detail:
-                    raise ValueError(f"Email already registered: {user.email}") from exc
-                if "users_username_key" in detail or "username" in detail:
+                # Map the offending unique index name back to the API-level
+                # error. Asyncpg leaves ``.constraint_name`` empty, but the
+                # full error string from Postgres embeds the constraint
+                # name verbatim — match on that so we never confuse an
+                # email collision with a username collision.
+                detail = str(exc)
+                if "users_username_key" in detail:
                     raise ValueError(f"Username already taken: {user.username}") from exc
+                if "users_email_key" in detail:
+                    raise ValueError(f"Email already registered: {user.email}") from exc
+                if "idx_users_oauth_identity" in detail:
+                    raise ValueError(
+                        f"OAuth identity already linked: {user.oauth_provider}/{user.oauth_id}"
+                    ) from exc
                 raise
         return user
 

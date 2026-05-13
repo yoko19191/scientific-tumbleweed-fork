@@ -118,22 +118,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Postgres engine + pool + application schema ready")
     except Exception:
         logger.exception(
-            "Postgres initialisation failed; auth backend will fall back to SQLite "
-            "if configured, and memory/cache features that require Postgres will be unavailable"
+            "Postgres initialisation failed; the gateway cannot serve auth, "
+            "memory, tool cache, or channel-store requests without a working engine"
         )
 
-    # Select UserRepository backend based on config.
-    if auth_config.repository_backend == "postgres" and db_engine is not None:
-        from app.gateway.auth.repositories.postgres import PostgresUserRepository
+    # Production path runs on the SQLModel + SQLAlchemy engine.
+    # SQLiteUserRepository is still imported by the test suite but is no
+    # longer reachable from the runtime configuration.
+    from app.gateway.auth.repositories.postgres import PostgresUserRepository
 
-        user_repo = PostgresUserRepository()
-        logger.info("Auth subsystem initialised (JWT + Postgres)")
-    else:
-        from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
-
-        user_repo = SQLiteUserRepository()
-        reason = "explicit sqlite backend" if auth_config.repository_backend == "sqlite" else "engine unavailable"
-        logger.info("Auth subsystem initialised (JWT + SQLite; %s)", reason)
+    user_repo = PostgresUserRepository()
+    logger.info("Auth subsystem initialised (JWT + Postgres)")
 
     auth_provider = LocalAuthProvider(user_repo)
     app.state.auth_config = auth_config

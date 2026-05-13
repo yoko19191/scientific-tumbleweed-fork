@@ -47,46 +47,86 @@ live via `pg_dump` after the first boot against Postgres).
 
 ### Code
 
-- `backend/packages/harness/deerflow/db/` — new module: async `asyncpg`
-  pool singleton + `ensure_schema()`.
-- `backend/app/gateway/auth/repositories/postgres.py` — new
-  `PostgresUserRepository`. SQLite kept as an opt-in fallback
-  (`AUTH_REPOSITORY_BACKEND=sqlite`).
-- `backend/packages/harness/deerflow/agents/memory/postgres_storage.py` —
-  new `PostgresMemoryStorage`. Uses `psycopg_pool.ConnectionPool` because
-  the `MemoryStorage` interface is sync.
-- `backend/packages/harness/deerflow/community/semantic_scholar/postgres_cache.py` —
-  new `PostgresTTLCache`. `get_sqlite_ttl_cache()` now auto-selects
-  Postgres when the DSN is resolvable and keeps the old name so existing
-  call sites compile unchanged.
-- `backend/app/channels/store.py` — split into `FileChannelStore` (legacy
-  JSON) and `PostgresChannelStore`. Public `ChannelStore(path=None)`
-  became a factory that defaults to Postgres.
+Round 1 landed handwritten asyncpg / psycopg repositories; Round 2
+rebuilt the access layer on SQLAlchemy 2.0 + SQLModel so every table
+has a single source of truth.
+
+- `backend/packages/harness/deerflow/db/` — SQLAlchemy + SQLModel
+  plumbing. `engine.py` owns an async engine + sync engine
+  (psycopg3 driver) sharing one DSN resolver in `dsn.py`; `pool.py`
+  keeps a thin asyncpg pool around for the `pg_advisory_xact_lock`
+  transaction in `setup.ensure_schema()`; `models/` holds the four
+  SQLModel table classes.
+- `backend/alembic/` — Alembic workspace. `env.py` pulls the DSN from
+  `deerflow.db.dsn`, filters autogenerate to SQLModel-owned tables,
+  and stamps the empty baseline at `e35828dc111e`.
+- `scripts/emit_init_sql.py` + `make emit-init-sql` / `make
+  check-init-sql` — regenerates `docker/postgres/init.sql` from the
+  SQLModel metadata so `init.sql` stays the authoritative bootstrap
+  with CI drift detection.
+- `backend/app/gateway/auth/repositories/postgres.py` —
+  `PostgresUserRepository` uses SQLModel `AsyncSession`. Handles
+  `UniqueViolation` by matching the offending index name
+  (`users_email_key`, `users_username_key`,
+  `idx_users_oauth_identity`). SQLite repository is still importable
+  for tests but no longer reachable from runtime config.
+- `backend/packages/harness/deerflow/agents/memory/postgres_storage.py`
+  — `PostgresMemoryStorage` wraps `sync_session_scope` and uses
+  `INSERT … ON CONFLICT DO UPDATE … RETURNING version` for the
+  optimistic-locking upsert.
+- `backend/packages/harness/deerflow/community/semantic_scholar/postgres_cache.py`
+  — `PostgresTTLCache` uses SQLModel selects + `DELETE ... WHERE
+  expires_at <= NOW()` for the vacuum sweep.
+- `backend/app/channels/store.py` — `PostgresChannelStore` uses
+  SQLModel / SQLAlchemy core expressions; `ChannelStore(path=None)`
+  is a factory that defaults to Postgres and falls back to
+  `FileChannelStore` only when the sync engine isn't initialised
+  (tests / offline tooling).
+- `backend/packages/harness/deerflow/storage/` — OpenDAL operator
+  factory + object-key helpers. `StorageConfig` in `config.yaml`
+  drives the backend (`fs` for development, `s3` for MinIO / AWS /
+  Aliyun later). See `backend/docs/STORAGE_GUIDELINES.md` for the
+  decision tree on when to use Postgres vs OpenDAL vs plain `Path`.
 
 ### Config
 
-- `config.yaml`: `checkpointer.type: postgres` + `connection_string: $POSTGRES_DSN`.
-- `backend/packages/harness/deerflow/config/memory_config.py`:
-  `storage_class` default flipped to `PostgresMemoryStorage`.
-- `backend/packages/harness/deerflow/config/auth/config.py`: added
-  `repository_backend: "postgres" | "sqlite"`, default `postgres`, readable
-  from `AUTH_REPOSITORY_BACKEND` env var.
+- `config.yaml` / `config.example.yaml`:
+  - `checkpointer.type: postgres` + `connection_string: $POSTGRES_DSN`
+  - `memory.storage_class: deerflow.agents.memory.postgres_storage.PostgresMemoryStorage`
+  - new `storage:` block driving the OpenDAL backend (default `fs`)
+- `backend/packages/harness/deerflow/config/`:
+  - `memory_config.py`: default `storage_class` flipped to
+    `PostgresMemoryStorage`
+  - `storage_config.py`: new, describes the OpenDAL backend
+  - `app_config.py`: wires both loaders into `AppConfig`
+- `backend/app/gateway/auth/config.py`: runtime backend switch
+  removed. `AUTH_REPOSITORY_BACKEND`,
+  `DEERFLOW_TOOL_CACHE_BACKEND`, and `DEERFLOW_CHANNEL_STORE_BACKEND`
+  are gone; rollback now goes through `git revert`.
 
 ### Docker / env
 
-- `docker/docker-compose.yaml` and `docker-compose-dev.yaml` gained a
-  `paradedb` service with a healthcheck and a named volume (`paradedb_data`).
-- `docker/postgres/init.sql` creates extensions on first run.
-- `.env.example` documents `POSTGRES_DB / _USER / _PASSWORD / _HOST_PORT /
-  _DSN`; `gateway` and `langgraph` `depends_on: paradedb: service_healthy`.
+- `docker/docker-compose.yaml` and `docker-compose-dev.yaml` pin the
+  paradedb image at `paradedb/paradedb:0.23.4-pg18` and mount the
+  data volume at `/var/lib/postgresql` (PG 18 layout requirement).
+- Service credentials are uniformly `scientifictumbleweed`
+  (DB / user / password) across `.env`, `.env.example`,
+  `config.yaml`, MCP config, and docs.
+- `docker/postgres/init.sql` is now a **full** schema bootstrap
+  regenerated from SQLModel; running a new volume boots the complete
+  application schema before gateway starts.
+- `.mcp.json` at the repo root registers the `postgres` MCP server
+  for Claude Code so contributors get SQL query access on clone.
 
 ### Dependencies
 
-- Added: `langgraph-checkpoint-postgres >= 3.0.3`,
-  `psycopg[binary,pool] >= 3.2.0`, `asyncpg >= 0.30.0`.
-- `langgraph-checkpoint-sqlite` moved out of core `dependencies` into
-  `[project.optional-dependencies].sqlite` (kept for tests and the
-  opt-in sqlite fallback).
+- SQLAlchemy + SQLModel + Alembic added:
+  `sqlalchemy[asyncio] >= 2.0.35`, `sqlmodel >= 0.0.22`,
+  `alembic >= 1.13`.
+- OpenDAL added: `opendal >= 0.45`.
+- Legacy asyncpg + psycopg + langgraph-checkpoint-postgres stay on
+  the dependency list; `langgraph-checkpoint-sqlite` is in
+  `optional-dependencies.sqlite` (tests / explicit sqlite path only).
 
 ## Legacy files (archived, NOT migrated)
 
@@ -166,18 +206,28 @@ PY
 
 ## Rolling back
 
-Every migrated subsystem keeps its sqlite/file implementation as a
-non-default fallback:
+Round 2 removed the runtime backend switches that Round 1 introduced
+(`AUTH_REPOSITORY_BACKEND`, `DEERFLOW_TOOL_CACHE_BACKEND`,
+`DEERFLOW_CHANNEL_STORE_BACKEND`, `repository_backend`). Rollback now
+goes through `git revert` rather than configuration:
 
-- `AUTH_REPOSITORY_BACKEND=sqlite` — route auth back to `users.db`.
-- `config.memory.storage_class = deerflow.agents.memory.storage.FileMemoryStorage`
-  — route memory back to JSON files.
-- `DEERFLOW_TOOL_CACHE_BACKEND=sqlite` — force SQLite TTL cache (also
-  auto-selected if DSN can't be resolved).
-- `DEERFLOW_CHANNEL_STORE_BACKEND=file` — force JSON channel store.
-- `checkpointer.type: sqlite` — reverts LangGraph's own persistence.
+- Reverting commit `2a947827` brings the env-var switches back, in
+  case you need to flip a single subsystem to its file/sqlite
+  fallback temporarily.
+- Reverting commit `b59af1a9` (the Round 1 baseline) restores the
+  pre-migration SQLite + JSON setup. Combine with renaming
+  `backend/.deer-flow-legacy/<file>.legacy` back to its original
+  path under `backend/.deer-flow/` to recover the data.
+- The `FileMemoryStorage` / `FileChannelStore` / `SQLiteTTLCache`
+  classes are still importable for tests and local-only flows;
+  setting `config.memory.storage_class =
+  deerflow.agents.memory.storage.FileMemoryStorage` is enough to
+  make memory fall back without a revert.
+- LangGraph itself can be reverted by setting `checkpointer.type:
+  sqlite` in `config.yaml` and reinstalling
+  `langgraph-checkpoint-sqlite` from the optional dependency group.
 
-Rolling back does NOT re-import the archived data; rename
+Rolling back does NOT re-import archived data; rename
 `<file>.legacy` back to the original name first.
 
 ## Operator cheatsheet
@@ -196,4 +246,14 @@ ORDER BY relname;"
 
 # tool_cache manual vacuum (normally runs hourly from gateway).
 psql "$POSTGRES_DSN" -c "DELETE FROM tool_cache WHERE expires_at <= NOW();"
+
+# Regenerate docker/postgres/init.sql from SQLModel metadata
+# after editing a model.
+make emit-init-sql
+make check-init-sql      # CI drift check
+
+# Stamp Alembic at HEAD on a fresh database (init.sql already
+# created the tables).
+docker exec scientific-tumbleweed-gateway \
+  /app/backend/.venv/bin/alembic -c /app/backend/alembic.ini stamp head
 ```

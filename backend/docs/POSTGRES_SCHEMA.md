@@ -274,8 +274,8 @@ docker exec scientific-tumbleweed-paradedb psql -U scientifictumbleweed -d scien
 ## 6. 阶段 1 交付物清单
 
 - [x] `docker/postgres/init.sql` — 幂等创建扩展
-- [x] `docker-compose*.yaml` — 加 `paradedb` 服务（pin 版本 `0.21.13-pg16`）
-- [x] `.env.example` + `.env` — `POSTGRES_DSN` 等变量
+- [x] `docker-compose*.yaml` — 加 `paradedb` 服务（Round 2 pin 版本 `0.23.4-pg18`）
+- [x] `.env.example` + `.env` — `POSTGRES_DSN` 等变量（Round 2 统一命名到 `scientifictumbleweed`）
 - [x] `backend/packages/harness/pyproject.toml` — `langgraph-checkpoint-postgres` + `psycopg[binary,pool]` + `asyncpg`
 - [x] `config.yaml` — `checkpointer.type: postgres` + `connection_string: $POSTGRES_DSN`
 - [x] gateway + langgraph 正常启动并建 schema（10 个 checkpoint migration + 4 个 store migration 已应用）

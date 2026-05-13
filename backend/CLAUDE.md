@@ -142,7 +142,9 @@ All persistent state lives in a single PostgreSQL instance (default image: `para
 
 - **LangGraph-owned tables** (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `store`, …): created automatically by `AsyncPostgresSaver.setup()` / `AsyncPostgresStore.setup()` on first boot. DSN comes from `config.yaml → checkpointer.connection_string` (set to `$POSTGRES_DSN` by default).
 - **App-owned tables** (`users`, `user_memory`, `tool_cache`, `channel_threads`): created idempotently by `deerflow.db.setup.ensure_schema()` in the gateway lifespan, guarded by a Postgres advisory lock.
-- **Shared pool**: `deerflow.db.init_pool()` returns a module-level `asyncpg.Pool`. Sync call sites (memory, tool cache, channel store) use their own small `psycopg_pool.ConnectionPool` against the same DSN.
+- **Shared engines**: `deerflow.db.init_engine()` returns a SQLAlchemy 2.0 `AsyncEngine`; `deerflow.db.init_sync_engine()` returns the matching sync `Engine` for repositories whose public interface is synchronous (memory storage, tool cache, channel store). `deerflow.db.init_pool()` keeps a thin asyncpg pool around for the `pg_advisory_xact_lock` transaction in `ensure_schema`. All three share the DSN resolved by `deerflow.db.dsn.resolve_dsn`.
+- **ORM models**: `deerflow.db.models` defines the SQLModel table classes (`User`, `UserMemory`, `ToolCacheEntry`, `ChannelThread`). `metadata.create_all` is the runtime safety net; `docker/postgres/init.sql` (regenerated with `make emit-init-sql`) is the bootstrap. Alembic baseline lives under `backend/alembic/`.
+- **Object storage**: persistent files (uploads, agent outputs, archives) flow through OpenDAL via `deerflow.storage.get_operator()` / `get_async_operator()`; backend selected by `storage:` in `config.yaml`. See `backend/docs/STORAGE_GUIDELINES.md` for the full decision tree.
 - **Legacy SQLite / JSON**: archived under `backend/.deer-flow-legacy/` (sibling of `.deer-flow/`). Not re-imported. Can be removed once you no longer need it. See `backend/docs/MIGRATION.md` and `backend/docs/POSTGRES_SCHEMA.md`.
 
 Required environment: `POSTGRES_DSN` (or the individual `POSTGRES_DB / USER / PASSWORD / HOST_PORT` if you use `docker compose`). The `paradedb` service in `docker-compose*.yaml` provides this out of the box; `gateway` and `langgraph` `depends_on: paradedb: service_healthy`.
@@ -401,7 +403,7 @@ Focused regression coverage for the updater lives in `backend/tests/test_memory_
 **Configuration** (`config.yaml` → `memory`):
 - `enabled` / `injection_enabled` - Master switches
 - `storage_path` - Legacy path to `memory.json` when the file backend is selected; ignored by the default Postgres backend
-- `storage_class` - Backend class path; default `deerflow.agents.memory.postgres_storage.PostgresMemoryStorage`. Switch to `deerflow.agents.memory.storage.FileMemoryStorage` to fall back to the legacy JSON file
+- `storage_class` - Backend class path; default `deerflow.agents.memory.postgres_storage.PostgresMemoryStorage`. The legacy `FileMemoryStorage` is still importable for tests but is no longer reachable from the runtime configuration after the SQLModel rewrite.
 - `debounce_seconds` - Wait time before processing (default: 30)
 - `model_name` - LLM for updates (null = default model)
 - `max_facts` / `fact_confidence_threshold` - Fact storage limits (100 / 0.7)

@@ -135,7 +135,13 @@ class Paths:
 
     @property
     def user_md_file(self) -> Path:
-        """Path to the global user profile file: `{base_dir}/USER.md`."""
+        """Path to the global user profile file: ``{base_dir}/USER.md``.
+
+        .. deprecated:: Round 2.1
+            Production code uses
+            :func:`deerflow.storage.user_profile_key` (``user_id=None``
+            maps to the ``__global__`` scope). Retained for tests.
+        """
         return self.base_dir / "USER.md"
 
     @property
@@ -162,15 +168,33 @@ class Paths:
         return self.user_dir(user_id) / "memory.json"
 
     def user_md_file_for(self, user_id: str) -> Path:
-        """Per-user profile: ``{base_dir}/users/{user_id}/USER.md``."""
+        """Per-user profile path on disk.
+
+        .. deprecated:: Round 2.1
+            USER.md is no longer addressed through the filesystem in
+            production code. Prefer :func:`deerflow.storage.user_profile_key`
+            and the OpenDAL operator. The helper is kept for tests that
+            still construct fixtures with raw ``Path`` objects.
+        """
         return self.user_dir(user_id) / "USER.md"
 
     def user_agents_dir(self, user_id: str) -> Path:
-        """Per-user custom agents root: ``{base_dir}/users/{user_id}/agents/``."""
+        """Per-user custom agents root.
+
+        .. deprecated:: Round 2.1
+            Custom agents now live in OpenDAL under
+            ``custom-agents/{user_id}/``. Use
+            :func:`deerflow.storage.user_agents_prefix` instead.
+            Retained for tests that still construct fixture trees.
+        """
         return self.user_dir(user_id) / "agents"
 
     def user_agent_dir(self, user_id: str, agent_name: str) -> Path:
-        """Per-user agent directory: ``{base_dir}/users/{user_id}/agents/{name}/``."""
+        """Per-user agent directory.
+
+        .. deprecated:: Round 2.1
+            Use :func:`deerflow.storage.user_agent_prefix` instead.
+        """
         return self.user_agents_dir(user_id) / agent_name.lower()
 
     def user_skills_custom_dir(self, user_id: str) -> Path:
@@ -178,7 +202,14 @@ class Paths:
         return self.user_dir(user_id) / "skills" / "custom"
 
     def user_extensions_config_file(self, user_id: str) -> Path:
-        """Per-user extensions config: ``{base_dir}/users/{user_id}/extensions_config.json``."""
+        """Per-user extensions config path on disk.
+
+        .. deprecated:: Round 2.1
+            Per-user extensions overrides now live in OpenDAL under
+            ``user-extensions/{user_id}/extensions_config.json``. Use
+            :func:`deerflow.storage.user_extensions_override_key` instead.
+            Retained for tests that still construct fixture trees.
+        """
         return self.user_dir(user_id) / "extensions_config.json"
 
     # ── Resolve helpers (user_id=None → global fallback) ─────────────
@@ -190,19 +221,32 @@ class Paths:
         return self.memory_file
 
     def resolve_user_md(self, user_id: str | None = None) -> Path:
-        """Return user-scoped or global USER.md path."""
+        """Return user-scoped or global USER.md path.
+
+        .. deprecated:: Round 2.1
+            See :func:`user_md_file_for`. Production code uses
+            :func:`deerflow.storage.user_profile_key`.
+        """
         if user_id:
             return self.user_md_file_for(user_id)
         return self.user_md_file
 
     def resolve_agents_dir(self, user_id: str | None = None) -> Path:
-        """Return user-scoped or global agents directory."""
+        """Return user-scoped or global agents directory.
+
+        .. deprecated:: Round 2.1
+            Production code uses :func:`deerflow.storage.user_agents_prefix`.
+        """
         if user_id:
             return self.user_agents_dir(user_id)
         return self.agents_dir
 
     def resolve_agent_dir(self, name: str, user_id: str | None = None) -> Path:
-        """Return user-scoped or global agent directory."""
+        """Return user-scoped or global agent directory.
+
+        .. deprecated:: Round 2.1
+            Production code uses :func:`deerflow.storage.user_agent_prefix`.
+        """
         if user_id:
             return self.user_agent_dir(user_id, name)
         return self.agent_dir(name)

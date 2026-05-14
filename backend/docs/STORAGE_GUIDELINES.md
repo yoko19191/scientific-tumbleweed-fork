@@ -3,7 +3,7 @@
 > Where persistent files live, how code should read/write them, and
 > what's still on the path to migrate.
 
-Last updated: Phase F of the Postgres + object-storage work
+Last updated: Phase I (Round 2.1) of the Postgres + object-storage work
 (`feature/postgres-migration`).
 
 ---
@@ -64,6 +64,27 @@ Switching from `fs` to `s3` does not require code changes.
   up and smoke-verified end-to-end through `storage_smoke.py`.
 - `StorageConfig` flows in from `config.yaml` through `AppConfig`; tests
   can rebind via `set_storage_config` + `reset_operators`.
+
+### What Round 2.1 migrated to OpenDAL
+
+The first three call sites moved off `Path` and onto `deerflow.storage`:
+
+| Data | Old path | New OpenDAL key | Helpers |
+|------|----------|-----------------|---------|
+| User profile | `.deer-flow/users/{uid}/USER.md` | `user-profile/{uid|__global__}/USER.md` | `user_profile_key` |
+| Custom agents | `.deer-flow/users/{uid}/agents/{name}/{config.yaml,SOUL.md}` | `custom-agents/{uid|__global__}/{name}/...` | `user_agent_prefix` / `user_agent_config_key` / `user_agent_soul_key` / `user_agents_prefix` |
+| Per-user extensions override | `.deer-flow/users/{uid}/extensions_config.json` | `user-extensions/{uid}/extensions_config.json` | `user_extensions_override_key` |
+
+The matching `Paths` helpers (`user_md_file_for`, `user_agents_dir`,
+`user_agent_dir`, `user_extensions_config_file`, `resolve_user_md`,
+`resolve_agents_dir`, `resolve_agent_dir`) carry `.. deprecated::
+Round 2.1` notices and point at the new keys; they are kept only for
+tests that still construct fixture trees with raw `Path` objects.
+
+The repo-level `<repo>/extensions_config.json` (the **public** MCP
+configuration) is intentionally left on disk — it is read once at
+startup, every user shares it, and editing it is a developer task,
+not a per-user UI flow.
 
 ### What is explicitly deferred
 

@@ -128,6 +128,65 @@ has a single source of truth.
   the dependency list; `langgraph-checkpoint-sqlite` is in
   `optional-dependencies.sqlite` (tests / explicit sqlite path only).
 
+## Round 2.1: user-editable small configs on OpenDAL
+
+Round 2 only put the OpenDAL plumbing in place. Round 2.1 used it to
+move the three "user edits this in the UI" file types off the local
+filesystem so multi-instance deployments stop relying on the gateway
+container's local volume:
+
+| Data | Was at | Now at | Wired by |
+|------|--------|--------|----------|
+| `USER.md` (per-user profile) | `.deer-flow/users/{uid}/USER.md` | `user-profile/{uid|__global__}/USER.md` | `routers/agents.py:GET/PUT /api/agents/user-profile` |
+| Custom agents | `.deer-flow/users/{uid}/agents/{name}/...` | `custom-agents/{uid|__global__}/{name}/{config.yaml,SOUL.md}` | `agents_config.{load_agent_config,load_agent_soul,list_custom_agents}` + `routers/agents.py` (POST/PUT/DELETE/check) |
+| Per-user extensions override | `.deer-flow/users/{uid}/extensions_config.json` | `user-extensions/{uid}/extensions_config.json` | `routers/mcp.py` (`GET/PUT /api/mcp/...`), `routers/skills.py` (`PUT /api/skills/{name}`), `skills/loader.py` |
+
+Key helpers landed in `deerflow.storage`:
+
+```python
+user_profile_key(user_id)
+user_agents_prefix(user_id)
+user_agent_prefix(user_id, agent_name)
+user_agent_config_key(user_id, agent_name)
+user_agent_soul_key(user_id, agent_name)
+user_extensions_override_key(user_id)
+GLOBAL_SCOPE  # "__global__" sentinel for None user_id
+```
+
+Two specific deltas worth calling out for future readers:
+
+- The repo-level **public** `extensions_config.json` (`<repo>/extensions_config.json`)
+  was deliberately left untouched. It is read at startup and shared
+  by every user — moving it into per-user object storage would lose
+  that semantic.
+- `routers/agents.py` exposes the user-profile endpoints under
+  `/api/agents/user-profile` (not `/api/user-profile`) so nginx's
+  existing `/api/agents` location block proxies them to the gateway
+  without an extra rule. The handlers must be declared before the
+  catch-all `GET/PUT/DELETE /api/agents/{name}`; an inline comment in
+  the file documents the ordering invariant.
+
+Things explicitly deferred to the MinIO round:
+
+- `uploads`, `outputs`, `workspace`, `acp-workspace` under
+  `.deer-flow/users/{uid}/threads/{tid}/...` — these are bind-mounted
+  into the sandbox container as `/mnt/user-data/...`. They cannot move
+  to OpenDAL until the sandbox lifecycle is redesigned around
+  pull-execute-push.
+- `skills/custom/` — bind-mounted read-only into the sandbox so agents
+  can `import` skill code by path.
+- `FileMemoryStorage` and `FileChannelStore` fallback classes — kept
+  importable for tests, never reached from the production
+  configuration after Round 2.
+
+Legacy `Paths` helpers carrying the per-user filesystem layout
+(`user_md_file_for`, `user_agents_dir`, `user_agent_dir`,
+`user_extensions_config_file`, plus the `resolve_*` siblings) gained
+`.. deprecated:: Round 2.1` docstrings and are kept only for tests
+that still construct fixture trees with raw `Path` objects. A future
+PR will rewrite those fixtures against the OpenDAL operator and drop
+the helpers outright.
+
 ## Legacy files (archived, NOT migrated)
 
 Round 1 introduced per-subsystem one-shot archival blocks in the gateway

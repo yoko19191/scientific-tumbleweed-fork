@@ -55,11 +55,15 @@ import {
 } from "@/core/threads/hooks";
 import type { AgentThread, AgentThreadState } from "@/core/threads/types";
 import { pathOfThread, titleOfThread } from "@/core/threads/utils";
+import { formatThreadTimestamp } from "@/core/utils/datetime";
 import { env } from "@/env";
 import { isIMEComposing } from "@/lib/ime";
+import { cn } from "@/lib/utils";
+
+import { CursorTooltip } from "./artifacts/cursor-tooltip";
 
 export function RecentChatList() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
   const { thread_id: threadIdFromPath, agent_name: agentNameFromPath } =
@@ -176,19 +180,41 @@ export function RecentChatList() {
             <div className="flex w-full flex-col gap-1">
               {threads.map((thread) => {
                 const isActive = pathOfThread(thread) === pathname;
+                const title = titleOfThread(thread);
+                const timestamp = formatThreadTimestamp(
+                  thread.updated_at,
+                  locale,
+                  t.common.yesterday,
+                );
                 return (
                   <SidebarMenuItem
                     key={thread.thread_id}
                     className="group/side-menu-item"
                   >
-                    <SidebarMenuButton isActive={isActive} asChild>
-                      <div>
-                        <Link
-                          className="text-muted-foreground block w-full whitespace-nowrap group-hover/side-menu-item:overflow-hidden"
-                          href={pathOfThread(thread)}
-                        >
-                          {titleOfThread(thread)}
-                        </Link>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      asChild
+                      className="group-has-data-[sidebar=menu-action]/menu-item:pr-1"
+                    >
+                      <div className="flex w-full items-center gap-2">
+                        <CursorTooltip delay={300} content={title}>
+                          <Link
+                            className="text-muted-foreground min-w-0 flex-1 truncate"
+                            href={pathOfThread(thread)}
+                          >
+                            {title}
+                          </Link>
+                        </CursorTooltip>
+                        {timestamp && (
+                          <span
+                            className={cn(
+                              "text-muted-foreground/70 shrink-0 font-sans text-[10px] font-medium leading-none tracking-tight",
+                              "transition-opacity group-hover/menu-item:opacity-0",
+                            )}
+                          >
+                            {timestamp}
+                          </span>
+                        )}
                         {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -207,10 +233,7 @@ export function RecentChatList() {
                             >
                               <DropdownMenuItem
                                 onSelect={() =>
-                                  handleRenameClick(
-                                    thread.thread_id,
-                                    titleOfThread(thread),
-                                  )
+                                  handleRenameClick(thread.thread_id, title)
                                 }
                               >
                                 <Pencil className="text-muted-foreground" />

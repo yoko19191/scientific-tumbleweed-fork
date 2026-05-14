@@ -147,6 +147,7 @@ export interface Translations {
     exportSuccess: string;
     noPreviewTitle: string;
     noPreviewDescription: string;
+    yesterday: string;
   };
 
   home: {

@@ -53,6 +53,7 @@ export const zhCN: Translations = {
     exportSuccess: "对话已导出",
     noPreviewTitle: "此类文件不支持预览",
     noPreviewDescription: "请下载后查看",
+    yesterday: "昨天",
   },
 
   // Home

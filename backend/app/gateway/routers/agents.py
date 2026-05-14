@@ -2,20 +2,80 @@
 
 import logging
 import re
-import shutil
 
+import opendal
+import opendal.exceptions as opendal_exc
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.deps import get_current_user_id
 from deerflow.config.agents_config import AgentConfig, list_custom_agents, load_agent_config, load_agent_soul
-from deerflow.config.paths import get_paths
+from deerflow.storage import (
+    get_async_operator,
+    get_operator,
+    user_agent_config_key,
+    user_agent_prefix,
+    user_agent_soul_key,
+    user_profile_key,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["agents"])
 
 AGENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
+
+
+def _is_opendal_not_found(exc: BaseException) -> bool:
+    """Return True if the OpenDAL error represents a missing object.
+
+    OpenDAL 0.47 raises ``opendal.exceptions.NotFound`` directly; older
+    releases sometimes bubbled up a plain ``FileNotFoundError`` from the
+    filesystem backend. Cover both.
+    """
+    return isinstance(exc, (opendal_exc.NotFound, FileNotFoundError))
+
+
+def _agent_config_exists(name: str, user_id: str | None) -> bool:
+    """Return True if the agent's config.yaml exists in object storage."""
+    operator = get_operator()
+    try:
+        operator.stat(user_agent_config_key(user_id, name))
+        return True
+    except Exception as exc:
+        if _is_opendal_not_found(exc):
+            return False
+        raise
+
+
+def _delete_agent_objects(name: str, user_id: str | None) -> int:
+    """Delete every object under a custom agent's prefix.
+
+    OpenDAL exposes per-key ``delete`` only — there is no atomic
+    ``delete_prefix`` across all backends. We list the prefix and delete
+    each entry; for the small per-agent layout (config.yaml + SOUL.md +
+    a couple of optional siblings) this is plenty.
+    """
+    operator = get_operator()
+    prefix = user_agent_prefix(user_id, name) + "/"
+
+    try:
+        entries = list(operator.list(prefix))
+    except Exception as exc:
+        if _is_opendal_not_found(exc):
+            return 0
+        raise
+
+    removed = 0
+    for entry in entries:
+        path = entry.path
+        # Skip directory pseudo-entries — they have a trailing slash on
+        # the filesystem backend.
+        if not path or path.endswith("/"):
+            continue
+        operator.delete(path)
+        removed += 1
+    return removed
 
 
 class AgentResponse(BaseModel):
@@ -118,8 +178,69 @@ async def check_agent_name(name: str, user_id: str = Depends(get_current_user_id
     """Check whether an agent name is valid and not yet taken."""
     _validate_agent_name(name)
     normalized = _normalize_agent_name(name)
-    available = not get_paths().resolve_agent_dir(normalized, user_id).exists()
+    available = not _agent_config_exists(normalized, user_id)
     return {"available": available, "name": normalized}
+
+
+class UserProfileResponse(BaseModel):
+    """Response model for the global user profile (USER.md)."""
+
+    content: str | None = Field(default=None, description="USER.md content, or null if not yet created")
+
+
+class UserProfileUpdateRequest(BaseModel):
+    """Request body for setting the global user profile."""
+
+    content: str = Field(default="", description="USER.md content — describes the user's background and preferences")
+
+
+# NOTE: the user-profile routes must be declared BEFORE /agents/{name}
+# so FastAPI's path matcher does not interpret ``user-profile`` as an
+# agent name. Moving the handlers out of registration order broke the
+# original placement in Round 2.1 — keep them here.
+
+
+@router.get(
+    "/agents/user-profile",
+    response_model=UserProfileResponse,
+    summary="Get User Profile",
+    description="Read the global USER.md file that is injected into all custom agents.",
+)
+async def get_user_profile(user_id: str = Depends(get_current_user_id)) -> UserProfileResponse:
+    """Return the current USER.md content."""
+    try:
+        operator = get_async_operator()
+        key = user_profile_key(user_id)
+        try:
+            raw_bytes = await operator.read(key)
+        except Exception as exc:
+            if _is_opendal_not_found(exc):
+                return UserProfileResponse(content=None)
+            raise
+        content = bytes(raw_bytes).decode("utf-8").strip()
+        return UserProfileResponse(content=content or None)
+    except Exception as e:
+        logger.error(f"Failed to read user profile: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to read user profile: {str(e)}")
+
+
+@router.put(
+    "/agents/user-profile",
+    response_model=UserProfileResponse,
+    summary="Update User Profile",
+    description="Write the global USER.md file that is injected into all custom agents.",
+)
+async def update_user_profile(body: UserProfileUpdateRequest, user_id: str = Depends(get_current_user_id)) -> UserProfileResponse:
+    """Create or overwrite USER.md."""
+    try:
+        operator = get_async_operator()
+        key = user_profile_key(user_id)
+        await operator.write(key, body.content.encode("utf-8"))
+        logger.info("Updated USER.md at %s", key)
+        return UserProfileResponse(content=body.content or None)
+    except Exception as e:
+        logger.error(f"Failed to update user profile: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to update user profile: {str(e)}")
 
 
 @router.get(
@@ -155,15 +276,15 @@ async def create_agent_endpoint(body: AgentCreateRequest, user_id: str = Depends
     _validate_agent_name(body.name)
     normalized_name = _normalize_agent_name(body.name)
 
-    agent_dir = get_paths().resolve_agent_dir(normalized_name, user_id)
-
-    if agent_dir.exists():
+    if _agent_config_exists(normalized_name, user_id):
         raise HTTPException(status_code=409, detail=f"Agent '{normalized_name}' already exists")
 
-    try:
-        agent_dir.mkdir(parents=True, exist_ok=True)
+    operator = get_operator()
+    config_key = user_agent_config_key(user_id, normalized_name)
+    soul_key = user_agent_soul_key(user_id, normalized_name)
 
-        # Write config.yaml
+    try:
+        # Build config.yaml payload.
         config_data: dict = {"name": normalized_name}
         if body.description:
             config_data["description"] = body.description
@@ -172,15 +293,11 @@ async def create_agent_endpoint(body: AgentCreateRequest, user_id: str = Depends
         if body.tool_groups is not None:
             config_data["tool_groups"] = body.tool_groups
 
-        config_file = agent_dir / "config.yaml"
-        with open(config_file, "w", encoding="utf-8") as f:
-            yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
+        config_yaml = yaml.dump(config_data, default_flow_style=False, allow_unicode=True)
+        operator.write(config_key, config_yaml.encode("utf-8"))
+        operator.write(soul_key, body.soul.encode("utf-8"))
 
-        # Write SOUL.md
-        soul_file = agent_dir / "SOUL.md"
-        soul_file.write_text(body.soul, encoding="utf-8")
-
-        logger.info(f"Created agent '{normalized_name}' at {agent_dir}")
+        logger.info("Created agent '%s' at %s", normalized_name, config_key)
 
         agent_cfg = load_agent_config(normalized_name, user_id=user_id)
         return _agent_config_to_response(agent_cfg, include_soul=True, user_id=user_id)
@@ -188,9 +305,11 @@ async def create_agent_endpoint(body: AgentCreateRequest, user_id: str = Depends
     except HTTPException:
         raise
     except Exception as e:
-        # Clean up on failure
-        if agent_dir.exists():
-            shutil.rmtree(agent_dir)
+        # Best-effort cleanup on failure.
+        try:
+            _delete_agent_objects(normalized_name, user_id)
+        except Exception:
+            logger.exception("Failed to clean up partially created agent '%s'", normalized_name)
         logger.error(f"Failed to create agent '{body.name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
 
@@ -211,7 +330,9 @@ async def update_agent(name: str, body: AgentUpdateRequest, user_id: str = Depen
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
 
-    agent_dir = get_paths().resolve_agent_dir(name, user_id)
+    operator = get_operator()
+    config_key = user_agent_config_key(user_id, name)
+    soul_key = user_agent_soul_key(user_id, name)
 
     try:
         # Update config if any config fields changed
@@ -230,14 +351,12 @@ async def update_agent(name: str, body: AgentUpdateRequest, user_id: str = Depen
             if new_tool_groups is not None:
                 updated["tool_groups"] = new_tool_groups
 
-            config_file = agent_dir / "config.yaml"
-            with open(config_file, "w", encoding="utf-8") as f:
-                yaml.dump(updated, f, default_flow_style=False, allow_unicode=True)
+            config_yaml = yaml.dump(updated, default_flow_style=False, allow_unicode=True)
+            operator.write(config_key, config_yaml.encode("utf-8"))
 
         # Update SOUL.md if provided
         if body.soul is not None:
-            soul_path = agent_dir / "SOUL.md"
-            soul_path.write_text(body.soul, encoding="utf-8")
+            operator.write(soul_key, body.soul.encode("utf-8"))
 
         logger.info(f"Updated agent '{name}'")
 
@@ -251,57 +370,6 @@ async def update_agent(name: str, body: AgentUpdateRequest, user_id: str = Depen
         raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
 
 
-class UserProfileResponse(BaseModel):
-    """Response model for the global user profile (USER.md)."""
-
-    content: str | None = Field(default=None, description="USER.md content, or null if not yet created")
-
-
-class UserProfileUpdateRequest(BaseModel):
-    """Request body for setting the global user profile."""
-
-    content: str = Field(default="", description="USER.md content — describes the user's background and preferences")
-
-
-@router.get(
-    "/user-profile",
-    response_model=UserProfileResponse,
-    summary="Get User Profile",
-    description="Read the global USER.md file that is injected into all custom agents.",
-)
-async def get_user_profile(user_id: str = Depends(get_current_user_id)) -> UserProfileResponse:
-    """Return the current USER.md content."""
-    try:
-        user_md_path = get_paths().resolve_user_md(user_id)
-        if not user_md_path.exists():
-            return UserProfileResponse(content=None)
-        raw = user_md_path.read_text(encoding="utf-8").strip()
-        return UserProfileResponse(content=raw or None)
-    except Exception as e:
-        logger.error(f"Failed to read user profile: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to read user profile: {str(e)}")
-
-
-@router.put(
-    "/user-profile",
-    response_model=UserProfileResponse,
-    summary="Update User Profile",
-    description="Write the global USER.md file that is injected into all custom agents.",
-)
-async def update_user_profile(body: UserProfileUpdateRequest, user_id: str = Depends(get_current_user_id)) -> UserProfileResponse:
-    """Create or overwrite USER.md."""
-    try:
-        paths = get_paths()
-        user_md_path = paths.resolve_user_md(user_id)
-        user_md_path.parent.mkdir(parents=True, exist_ok=True)
-        user_md_path.write_text(body.content, encoding="utf-8")
-        logger.info(f"Updated USER.md at {user_md_path}")
-        return UserProfileResponse(content=body.content or None)
-    except Exception as e:
-        logger.error(f"Failed to update user profile: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update user profile: {str(e)}")
-
-
 @router.delete(
     "/agents/{name}",
     status_code=204,
@@ -313,14 +381,12 @@ async def delete_agent(name: str, user_id: str = Depends(get_current_user_id)) -
     _validate_agent_name(name)
     name = _normalize_agent_name(name)
 
-    agent_dir = get_paths().resolve_agent_dir(name, user_id)
-
-    if not agent_dir.exists():
+    if not _agent_config_exists(name, user_id):
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
 
     try:
-        shutil.rmtree(agent_dir)
-        logger.info(f"Deleted agent '{name}' from {agent_dir}")
+        removed = _delete_agent_objects(name, user_id)
+        logger.info("Deleted agent '%s' (removed %d objects)", name, removed)
     except Exception as e:
         logger.error(f"Failed to delete agent '{name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to delete agent: {str(e)}")

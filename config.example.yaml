@@ -774,8 +774,10 @@ summarization:
 # Stores user context and conversation history for personalized responses
 memory:
   enabled: true
-  storage_path: memory.json # Path relative to backend directory
-  storage_class: deerflow.agents.memory.storage.FileMemoryStorage
+  # Legacy file path — only used by FileMemoryStorage fallback and by the
+  # /api/memory export route. The default Postgres backend ignores this.
+  storage_path: memory.json
+  storage_class: deerflow.agents.memory.postgres_storage.PostgresMemoryStorage
   debounce_seconds: 30 # Wait time before processing queued updates
   model_name: null # Use default model
   max_facts: 100 # Maximum number of facts to store
@@ -823,7 +825,7 @@ checkpointer:
 # PostgreSQL (multi-process, production):
 # checkpointer:
 #   type: postgres
-#   connection_string: postgresql://user:password@localhost:5432/deerflow
+#   connection_string: postgresql://user:password@localhost:5432/scientifictumbleweed
 
 # ============================================================================
 # Stream Bridge Configuration
@@ -835,6 +837,30 @@ stream_bridge:
   type: memory
   redis_url: null
   queue_maxsize: 256
+
+# ============================================================================
+# Object Storage Configuration (OpenDAL)
+# ============================================================================
+# Drives the OpenDAL operator that backs uploads, agent outputs, artifacts,
+# memory archives, and similar persistent files. Default backend is the
+# local filesystem so dev/test work out of the box; switching to MinIO or
+# S3 later is a config-only change.
+#
+# Schemes follow OpenDAL's: see https://opendal.apache.org/docs/services/
+
+storage:
+  backend: fs
+  fs:
+    # Relative paths resolve against the application working directory.
+    root: .deer-flow/storage
+  # MinIO / S3 example — uncomment and switch backend: s3 to enable.
+  # s3:
+  #   endpoint: http://minio:9000
+  #   bucket: scientifictumbleweed
+  #   region: us-east-1
+  #   access_key_id: $MINIO_ACCESS_KEY
+  #   secret_access_key: $MINIO_SECRET_KEY
+  #   root: /
 
 # ============================================================================
 # IM Channels Configuration

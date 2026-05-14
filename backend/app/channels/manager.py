@@ -15,7 +15,7 @@ import httpx
 from langgraph_sdk.errors import ConflictError
 
 from app.channels.message_bus import InboundMessage, InboundMessageType, MessageBus, OutboundMessage, ResolvedAttachment
-from app.channels.store import ChannelStore
+from app.channels.store import ChannelStore, _BaseChannelStore
 
 logger = logging.getLogger(__name__)
 
@@ -512,7 +512,7 @@ class ChannelManager:
     def __init__(
         self,
         bus: MessageBus,
-        store: ChannelStore,
+        store: _BaseChannelStore,
         *,
         max_concurrency: int = 5,
         langgraph_url: str = DEFAULT_LANGGRAPH_URL,

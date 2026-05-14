@@ -3,15 +3,48 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+import opendal.exceptions as opendal_exc
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.gateway.deps import get_optional_user_id
+from app.gateway.deps import get_current_user_id, get_optional_user_from_request
 from deerflow.config.extensions_config import ExtensionsConfig, get_extensions_config, reload_extensions_config
 from deerflow.config.paths import get_paths
+from deerflow.storage import get_async_operator, user_extensions_override_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["mcp"])
+
+
+def _is_opendal_not_found(exc: BaseException) -> bool:
+    """OpenDAL 0.47 raises ``opendal.exceptions.NotFound``; older releases
+    sometimes bubble up a plain ``FileNotFoundError`` from the filesystem
+    backend."""
+    return isinstance(exc, (opendal_exc.NotFound, FileNotFoundError))
+
+
+async def _load_user_extensions_override(user_id: str) -> dict:
+    """Read the per-user extensions override JSON. Returns empty dict on miss."""
+    operator = get_async_operator()
+    try:
+        raw = bytes(await operator.read(user_extensions_override_key(user_id)))
+    except Exception as exc:
+        if _is_opendal_not_found(exc):
+            return {}
+        logger.warning("Failed to read per-user extensions config for user %s", user_id, exc_info=True)
+        return {}
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        logger.warning("Per-user extensions config for user %s is not valid JSON", user_id, exc_info=True)
+        return {}
+
+
+async def _save_user_extensions_override(user_id: str, data: dict) -> None:
+    """Persist the per-user extensions override JSON."""
+    operator = get_async_operator()
+    payload = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+    await operator.write(user_extensions_override_key(user_id), payload)
 
 
 class McpOAuthConfigResponse(BaseModel):
@@ -83,18 +116,15 @@ async def get_mcp_configuration(request: Request) -> McpConfigResponse:
     config = get_extensions_config()
     servers = {name: McpServerConfigResponse(**server.model_dump()) for name, server in config.mcp_servers.items()}
 
-    user_id = get_optional_user_id(request)
-    if user_id:
-        user_ext_file = get_paths().user_extensions_config_file(user_id)
-        if user_ext_file.is_file():
-            try:
-                user_data = json.loads(user_ext_file.read_text(encoding="utf-8"))
-                user_mcp = user_data.get("mcpServers", {})
-                for name, overrides in user_mcp.items():
-                    if name in servers and "enabled" in overrides:
-                        servers[name] = servers[name].model_copy(update={"enabled": overrides["enabled"]})
-            except Exception:
-                logger.warning("Failed to read per-user extensions config for user %s", user_id, exc_info=True)
+    # Anonymous callers see the public config; logged-in users get the
+    # per-user override merged on top.
+    user = await get_optional_user_from_request(request)
+    if user is not None:
+        user_data = await _load_user_extensions_override(str(user.id))
+        user_mcp = user_data.get("mcpServers", {}) if isinstance(user_data, dict) else {}
+        for name, overrides in user_mcp.items():
+            if name in servers and isinstance(overrides, dict) and "enabled" in overrides:
+                servers[name] = servers[name].model_copy(update={"enabled": overrides["enabled"]})
 
     return McpConfigResponse(mcp_servers=servers)
 
@@ -126,40 +156,34 @@ class McpServerEnabledRequest(BaseModel):
     summary="Toggle per-user MCP server enabled state",
     description="Enable or disable an MCP server for the authenticated user.",
 )
-async def set_mcp_server_enabled(name: str, body: McpServerEnabledRequest, request: Request) -> dict:
+async def set_mcp_server_enabled(
+    name: str,
+    body: McpServerEnabledRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
     """Toggle an MCP server on/off for the authenticated user.
 
-    Writes only the enabled field to users/{user_id}/extensions_config.json
-    mcpServers section, preserving existing skills entries.
+    Writes only the enabled field to the per-user extensions override
+    object, preserving existing skills entries.
 
     Raises:
         HTTPException 401: If not logged in.
         HTTPException 404: If server name not in global config.
     """
-    user_id = get_optional_user_id(request)
-    if user_id is None:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
     global_config = get_extensions_config()
     if name not in global_config.mcp_servers:
         raise HTTPException(status_code=404, detail=f"MCP server not found: {name}")
 
-    user_ext_file = get_paths().user_extensions_config_file(user_id)
-    user_ext_file.parent.mkdir(parents=True, exist_ok=True)
-
-    # Load existing user config to preserve skills and other entries
-    if user_ext_file.is_file():
-        try:
-            user_data = json.loads(user_ext_file.read_text(encoding="utf-8"))
-        except Exception:
-            user_data = {}
-    else:
+    # Load existing per-user overrides so we can preserve unrelated keys
+    # (skills, other mcpServers entries).
+    user_data = await _load_user_extensions_override(user_id)
+    if not isinstance(user_data, dict):
         user_data = {}
 
     mcp_section = user_data.setdefault("mcpServers", {})
     server_entry = mcp_section.setdefault(name, {})
     server_entry["enabled"] = body.enabled
-    user_ext_file.write_text(json.dumps(user_data, indent=2), encoding="utf-8")
+    await _save_user_extensions_override(user_id, user_data)
 
     logger.info("User %s set MCP server %r enabled=%s", user_id, name, body.enabled)
     return {"success": True, "name": name, "enabled": body.enabled}

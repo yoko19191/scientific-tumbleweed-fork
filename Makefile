@@ -1,6 +1,6 @@
 # DeerFlow - Unified Development Environment
 
-.PHONY: help config config-upgrade check install setup doctor dev dev-pro dev-daemon dev-daemon-pro start start-pro start-daemon start-daemon-pro stop up up-pro down clean dev-clean docker-init docker-start docker-start-pro docker-stop docker-logs docker-logs-frontend docker-logs-gateway
+.PHONY: help config config-upgrade check install setup doctor dev dev-pro dev-daemon dev-daemon-pro start start-pro start-daemon start-daemon-pro stop up up-pro down clean dev-clean docker-init docker-start docker-start-pro docker-stop docker-logs docker-logs-frontend docker-logs-gateway emit-init-sql check-init-sql
 
 BASH ?= bash
 BACKEND_UV_RUN = cd backend && uv run
@@ -221,3 +221,18 @@ up-pro:
 # Stop and remove production containers
 down:
 	@$(RUN_WITH_GIT_BASH) ./scripts/deploy.sh down
+
+# ==========================================
+# Database schema
+# ==========================================
+
+# Regenerate docker/postgres/init.sql from SQLModel metadata.
+# Run this after changing any file under
+# backend/packages/harness/deerflow/db/models/.
+emit-init-sql:
+	@$(BACKEND_UV_RUN) python ../scripts/emit_init_sql.py
+
+# CI-friendly drift check: fails if docker/postgres/init.sql is out of
+# sync with the SQLModel metadata.
+check-init-sql:
+	@$(BACKEND_UV_RUN) python ../scripts/emit_init_sql.py --check

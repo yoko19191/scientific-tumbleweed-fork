@@ -1,19 +1,36 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Any
+from typing import Any, Protocol
 
 from deerflow.runtime.store._sqlite_utils import ensure_sqlite_parent_dir, resolve_sqlite_conn_str
 
+logger = logging.getLogger(__name__)
+
 _CACHE_SCHEMA_VERSION = "v1"
-_CACHE_INSTANCES: dict[tuple[str, int], "SQLiteTTLCache"] = {}
+_CACHE_INSTANCES: dict[tuple[str, int], "TTLCache"] = {}
 _CACHE_INSTANCES_LOCK = threading.Lock()
+
+
+class TTLCache(Protocol):
+    """Common interface for the sqlite/postgres TTL caches.
+
+    Kept minimal — just what ``tools.py`` callers use.
+    """
+
+    @property
+    def db_path(self) -> str: ...
+
+    def get(self, cache_key: str) -> Any | None: ...
+
+    def set(self, cache_key: str, tool_name: str, value: Any, ttl_seconds: int) -> Any: ...
 
 
 def _normalize_for_cache(value: Any) -> Any:
@@ -138,7 +155,42 @@ class SQLiteTTLCache:
         return value
 
 
-def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> SQLiteTTLCache:
+def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> TTLCache:
+    """Return the TTL cache backing the given ``db_path``.
+
+    Historically this returned a :class:`SQLiteTTLCache`; after the
+    Postgres migration the production backend is :class:`PostgresTTLCache`,
+    sharing the module-level sync SQLAlchemy engine. If the engine is not
+    initialised (offline tests, ad-hoc CLI usage) the function transparently
+    falls back to the legacy :class:`SQLiteTTLCache` at ``db_path`` so the
+    test suite and tooling-without-DB paths keep working.
+
+    The function name is preserved for backward compatibility; the return
+    type is the shared :class:`TTLCache` protocol.
+    """
+    try:
+        from deerflow.community.semantic_scholar.postgres_cache import (
+            PostgresTTLCache,
+        )
+        from deerflow.db import get_sync_engine
+
+        # Raises if the sync engine is not initialised — we fall through to
+        # the SQLite fallback in that case.
+        engine_url = str(get_sync_engine().url)
+        key = (f"postgres::{engine_url}", max(1, hot_max_entries))
+        with _CACHE_INSTANCES_LOCK:
+            cache = _CACHE_INSTANCES.get(key)
+            if cache is None:
+                cache = PostgresTTLCache(hot_max_entries=hot_max_entries)
+                _CACHE_INSTANCES[key] = cache
+            return cache
+    except Exception as exc:
+        logger.warning(
+            "PostgresTTLCache unavailable (%s); falling back to SQLite at %s",
+            exc,
+            db_path,
+        )
+
     resolved = resolve_sqlite_conn_str(db_path)
     key = (resolved, max(1, hot_max_entries))
     with _CACHE_INSTANCES_LOCK:
@@ -147,3 +199,7 @@ def get_sqlite_ttl_cache(db_path: str, hot_max_entries: int = 256) -> SQLiteTTLC
             cache = SQLiteTTLCache(db_path=resolved, hot_max_entries=hot_max_entries)
             _CACHE_INSTANCES[key] = cache
         return cache
+
+
+# Preferred public name for new callers.
+get_tool_cache = get_sqlite_ttl_cache

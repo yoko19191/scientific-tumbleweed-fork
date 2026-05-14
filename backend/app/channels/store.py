@@ -1,4 +1,21 @@
-"""ChannelStore — persists IM chat-to-Scientific Tumbleweed thread mappings."""
+"""ChannelStore — persists IM chat-to-Scientific Tumbleweed thread mappings.
+
+Backends
+--------
+- :class:`PostgresChannelStore` (default): rows live in the
+  ``channel_threads`` Postgres table accessed through SQLModel /
+  SQLAlchemy. Shared across gateway replicas.
+- :class:`FileChannelStore` (fallback): the legacy JSON-file store, kept
+  as a testing convenience and an offline-mode fallback when no Postgres
+  engine is available.
+
+Selection
+---------
+:class:`ChannelStore` is a factory function that returns the configured
+backend. Tests and call sites that still pass ``path=...`` get a
+:class:`FileChannelStore` instance transparently — this preserves the
+old signature exactly.
+"""
 
 from __future__ import annotations
 
@@ -7,13 +24,63 @@ import logging
 import tempfile
 import threading
 import time
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from sqlalchemy import delete, or_, select
+
+from deerflow.db.models.channel_thread import ChannelThread as ChannelThreadRow
 
 logger = logging.getLogger(__name__)
 
 
-class ChannelStore:
+# ---------------------------------------------------------------------------
+# Interface
+# ---------------------------------------------------------------------------
+
+
+class _BaseChannelStore(ABC):
+    """Common API for all channel stores."""
+
+    @staticmethod
+    def _key(channel_name: str, chat_id: str, topic_id: str | None = None) -> str:
+        if topic_id:
+            return f"{channel_name}:{chat_id}:{topic_id}"
+        return f"{channel_name}:{chat_id}"
+
+    @abstractmethod
+    def get_thread_id(
+        self, channel_name: str, chat_id: str, topic_id: str | None = None
+    ) -> str | None: ...
+
+    @abstractmethod
+    def set_thread_id(
+        self,
+        channel_name: str,
+        chat_id: str,
+        thread_id: str,
+        *,
+        topic_id: str | None = None,
+        user_id: str = "",
+    ) -> None: ...
+
+    @abstractmethod
+    def remove(
+        self, channel_name: str, chat_id: str, topic_id: str | None = None
+    ) -> bool: ...
+
+    @abstractmethod
+    def list_entries(self, channel_name: str | None = None) -> list[dict[str, Any]]: ...
+
+
+# ---------------------------------------------------------------------------
+# File backend (legacy JSON)
+# ---------------------------------------------------------------------------
+
+
+class FileChannelStore(_BaseChannelStore):
     """JSON-file-backed store that maps IM conversations to Scientific Tumbleweed threads.
 
     Data layout (on disk)::
@@ -29,8 +96,7 @@ class ChannelStore:
         }
 
     The store is intentionally simple — a single JSON file that is atomically
-    rewritten on every mutation. For production workloads with high concurrency,
-    this can be swapped for a proper database backend.
+    rewritten on every mutation.
     """
 
     def __init__(self, path: str | Path | None = None) -> None:
@@ -69,18 +135,9 @@ class ChannelStore:
             Path(fd.name).unlink(missing_ok=True)
             raise
 
-    # -- key helpers -------------------------------------------------------
-
-    @staticmethod
-    def _key(channel_name: str, chat_id: str, topic_id: str | None = None) -> str:
-        if topic_id:
-            return f"{channel_name}:{chat_id}:{topic_id}"
-        return f"{channel_name}:{chat_id}"
-
     # -- public API --------------------------------------------------------
 
     def get_thread_id(self, channel_name: str, chat_id: str, topic_id: str | None = None) -> str | None:
-        """Look up the Scientific Tumbleweed thread_id for a given IM conversation/topic."""
         entry = self._data.get(self._key(channel_name, chat_id, topic_id))
         return entry["thread_id"] if entry else None
 
@@ -93,7 +150,6 @@ class ChannelStore:
         topic_id: str | None = None,
         user_id: str = "",
     ) -> None:
-        """Create or update the mapping for an IM conversation/topic."""
         with self._lock:
             key = self._key(channel_name, chat_id, topic_id)
             now = time.time()
@@ -107,16 +163,7 @@ class ChannelStore:
             self._save()
 
     def remove(self, channel_name: str, chat_id: str, topic_id: str | None = None) -> bool:
-        """Remove a mapping.
-
-        If ``topic_id`` is provided, only that specific conversation/topic mapping is removed.
-        If ``topic_id`` is omitted, all mappings whose key starts with
-        ``"<channel_name>:<chat_id>"`` (including topic-specific ones) are removed.
-
-        Returns True if at least one mapping was removed.
-        """
         with self._lock:
-            # Remove a specific conversation/topic mapping.
             if topic_id is not None:
                 key = self._key(channel_name, chat_id, topic_id)
                 if key in self._data:
@@ -125,7 +172,6 @@ class ChannelStore:
                     return True
                 return False
 
-            # Remove all mappings for this channel/chat_id (base and any topic-specific keys).
             prefix = self._key(channel_name, chat_id)
             keys_to_delete = [k for k in self._data if k == prefix or k.startswith(prefix + ":")]
             if not keys_to_delete:
@@ -137,7 +183,6 @@ class ChannelStore:
             return True
 
     def list_entries(self, channel_name: str | None = None) -> list[dict[str, Any]]:
-        """List all stored mappings, optionally filtered by channel."""
         results = []
         for key, entry in self._data.items():
             parts = key.split(":", 2)
@@ -151,3 +196,151 @@ class ChannelStore:
                 item["topic_id"] = topic
             results.append(item)
         return results
+
+
+# ---------------------------------------------------------------------------
+# Postgres backend (SQLModel sync session)
+# ---------------------------------------------------------------------------
+
+
+class PostgresChannelStore(_BaseChannelStore):
+    """PostgreSQL-backed channel thread store.
+
+    Schema is created by :func:`deerflow.db.setup.ensure_schema` at gateway
+    startup — this class assumes the ``channel_threads`` table exists. All
+    DB access goes through the shared sync SQLAlchemy engine in
+    :mod:`deerflow.db`.
+    """
+
+    def __init__(self) -> None:
+        # Trigger early failure if the engine isn't initialised; that lets
+        # the factory function fall through to ``FileChannelStore``.
+        from deerflow.db import get_sync_engine
+
+        get_sync_engine()
+
+    # -- public API --------------------------------------------------------
+
+    def get_thread_id(self, channel_name: str, chat_id: str, topic_id: str | None = None) -> str | None:
+        from deerflow.db import sync_session_scope
+
+        key = self._key(channel_name, chat_id, topic_id)
+        with sync_session_scope() as session:
+            row = session.execute(
+                select(ChannelThreadRow.thread_id).where(ChannelThreadRow.key == key)
+            ).scalar_one_or_none()
+        return str(row) if row else None
+
+    def set_thread_id(
+        self,
+        channel_name: str,
+        chat_id: str,
+        thread_id: str,
+        *,
+        topic_id: str | None = None,
+        user_id: str = "",
+    ) -> None:
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        from deerflow.db import sync_session_scope
+
+        key = self._key(channel_name, chat_id, topic_id)
+        now = datetime.now(timezone.utc)
+
+        with sync_session_scope() as session:
+            stmt = (
+                pg_insert(ChannelThreadRow)
+                .values(
+                    key=key,
+                    thread_id=thread_id,
+                    user_id=user_id,
+                    created_at=now,
+                    updated_at=now,
+                )
+                .on_conflict_do_update(
+                    index_elements=[ChannelThreadRow.key],
+                    set_=dict(
+                        thread_id=thread_id,
+                        user_id=user_id,
+                        updated_at=now,
+                    ),
+                )
+            )
+            session.execute(stmt)
+
+    def remove(self, channel_name: str, chat_id: str, topic_id: str | None = None) -> bool:
+        from deerflow.db import sync_session_scope
+
+        with sync_session_scope() as session:
+            if topic_id is not None:
+                key = self._key(channel_name, chat_id, topic_id)
+                result = session.execute(
+                    delete(ChannelThreadRow).where(ChannelThreadRow.key == key)
+                )
+                return (result.rowcount or 0) > 0
+
+            base_key = self._key(channel_name, chat_id)
+            prefix = base_key + ":"
+            result = session.execute(
+                delete(ChannelThreadRow).where(
+                    or_(
+                        ChannelThreadRow.key == base_key,
+                        ChannelThreadRow.key.like(prefix + "%"),
+                    )
+                )
+            )
+            return (result.rowcount or 0) > 0
+
+    def list_entries(self, channel_name: str | None = None) -> list[dict[str, Any]]:
+        from deerflow.db import sync_session_scope
+
+        with sync_session_scope() as session:
+            rows = session.execute(select(ChannelThreadRow)).scalars().all()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            parts = row.key.split(":", 2)
+            ch = parts[0]
+            chat = parts[1] if len(parts) > 1 else ""
+            topic = parts[2] if len(parts) > 2 else None
+            if channel_name and ch != channel_name:
+                continue
+            item: dict[str, Any] = {
+                "channel_name": ch,
+                "chat_id": chat,
+                "thread_id": row.thread_id,
+                "user_id": row.user_id or "",
+                "created_at": row.created_at.timestamp() if row.created_at else 0.0,
+                "updated_at": row.updated_at.timestamp() if row.updated_at else 0.0,
+            }
+            if topic is not None:
+                item["topic_id"] = topic
+            results.append(item)
+        return results
+
+
+# ---------------------------------------------------------------------------
+# Factory — chooses backend based on arguments and environment.
+# ---------------------------------------------------------------------------
+
+
+def ChannelStore(path: str | Path | None = None) -> _BaseChannelStore:  # noqa: N802
+    """Return the configured channel store.
+
+    - When ``path`` is provided, always returns a :class:`FileChannelStore`
+      targeting that path. Used by tests and explicit file-backed callers.
+    - Otherwise, prefer :class:`PostgresChannelStore` when the sync DB
+      engine is initialised; fall back to :class:`FileChannelStore` if
+      the engine is not initialised (the tests / offline tooling paths).
+    """
+    if path is not None:
+        return FileChannelStore(path=path)
+
+    try:
+        return PostgresChannelStore()
+    except Exception as exc:
+        logger.warning(
+            "PostgresChannelStore unavailable (%s); falling back to FileChannelStore", exc
+        )
+        return FileChannelStore()
+

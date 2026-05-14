@@ -22,6 +22,31 @@
 # Access: http://localhost:${PORT:-2026}
 
 services:
+  # ── PostgreSQL (ParadeDB: Postgres 16 + pgvector + pg_search/BM25) ─────
+  # Persistent state for LangGraph checkpointer/store and application
+  # tables (users, user_memory, tool_cache, channel_threads).
+  paradedb:
+    image: paradedb/paradedb:0.23.4-pg18
+    container_name: scientific-tumbleweed-paradedb
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-scientifictumbleweed}
+      - POSTGRES_USER=${POSTGRES_USER:-scientifictumbleweed}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scientifictumbleweed}
+    volumes:
+      - paradedb_data:/var/lib/postgresql
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scientifictumbleweed} -d ${POSTGRES_DB:-scientifictumbleweed}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - deer-flow
+    restart: unless-stopped
+
   # ── Reverse Proxy ──────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
@@ -114,6 +139,9 @@ services:
       - ../.env
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      paradedb:
+        condition: service_healthy
     networks:
       - deer-flow
     restart: unless-stopped
@@ -165,6 +193,9 @@ services:
       - ../.env
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      paradedb:
+        condition: service_healthy
     networks:
       - deer-flow
     restart: unless-stopped
@@ -203,3 +234,6 @@ services:
 networks:
   deer-flow:
     driver: bridge
+
+volumes:
+  paradedb_data:

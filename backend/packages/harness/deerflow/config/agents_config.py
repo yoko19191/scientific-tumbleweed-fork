@@ -1,13 +1,27 @@
-"""Configuration and loaders for custom agents."""
+"""Configuration and loaders for custom agents.
+
+After Round 2.1 the agent directory layout lives in OpenDAL under the
+``custom-agents/{user_id|__global__}/{name}/`` prefix instead of on the
+local filesystem. The on-disk shape is preserved (each agent owns a
+``config.yaml`` and an optional ``SOUL.md``) so the public Pydantic API
+is unchanged; only the read/write transport changed.
+"""
 
 import logging
 import re
 from typing import Any
 
+import opendal.exceptions as opendal_exc
 import yaml
 from pydantic import BaseModel
 
-from deerflow.config.paths import get_paths
+from deerflow.storage import (
+    GLOBAL_SCOPE,
+    get_operator,
+    user_agent_config_key,
+    user_agent_soul_key,
+    user_agents_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +30,7 @@ AGENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
 
 
 def validate_agent_name(name: str | None) -> str | None:
-    """Validate a custom agent name before using it in filesystem paths."""
+    """Validate a custom agent name before using it in storage keys."""
     if name is None:
         return None
     if not isinstance(name, str):
@@ -36,45 +50,47 @@ class AgentConfig(BaseModel):
     skills: list[str] | None = None
 
 
+def _is_not_found(exc: BaseException) -> bool:
+    """OpenDAL 0.47 raises ``opendal.exceptions.NotFound``; older releases
+    occasionally bubble up a plain ``FileNotFoundError`` from the
+    filesystem backend."""
+    return isinstance(exc, (opendal_exc.NotFound, FileNotFoundError))
+
+
 def load_agent_config(name: str | None, user_id: str | None = None) -> AgentConfig | None:
-    """Load the custom or default agent's config from its directory.
+    """Load the custom agent's config from object storage.
 
-    Args:
-        name: The agent name.
-        user_id: If provided, loads from user-scoped directory.
+    Returns ``None`` for ``name=None``. Otherwise reads
+    ``custom-agents/{user_id|__global__}/{name}/config.yaml``.
 
-    Returns:
-        AgentConfig instance.
-
-    Raises:
-        FileNotFoundError: If the agent directory or config.yaml does not exist.
-        ValueError: If config.yaml cannot be parsed.
+    Raises ``FileNotFoundError`` (preserving the legacy contract) when
+    the agent or its config does not exist; the gateway routers map
+    that to a 404.
     """
-
     if name is None:
         return None
 
     name = validate_agent_name(name)
-    agent_dir = get_paths().resolve_agent_dir(name, user_id)
-    config_file = agent_dir / "config.yaml"
 
-    if not agent_dir.exists():
-        raise FileNotFoundError(f"Agent directory not found: {agent_dir}")
-
-    if not config_file.exists():
-        raise FileNotFoundError(f"Agent config not found: {config_file}")
+    operator = get_operator()
+    config_key = user_agent_config_key(user_id, name)
+    try:
+        raw = bytes(operator.read(config_key))
+    except Exception as exc:
+        if _is_not_found(exc):
+            raise FileNotFoundError(f"Agent config not found: {config_key}") from exc
+        raise
 
     try:
-        with open(config_file, encoding="utf-8") as f:
-            data: dict[str, Any] = yaml.safe_load(f) or {}
+        data: dict[str, Any] = yaml.safe_load(raw.decode("utf-8")) or {}
     except yaml.YAMLError as e:
-        raise ValueError(f"Failed to parse agent config {config_file}: {e}") from e
+        raise ValueError(f"Failed to parse agent config {config_key}: {e}") from e
 
-    # Ensure name is set from directory name if not in file
+    # Ensure name is set from the storage key if not in the file.
     if "name" not in data:
         data["name"] = name
 
-    # Strip unknown fields before passing to Pydantic (e.g. legacy prompt_file)
+    # Strip unknown fields before passing to Pydantic (e.g. legacy prompt_file).
     known_fields = set(AgentConfig.model_fields.keys())
     data = {k: v for k, v in data.items() if k in known_fields}
 
@@ -82,52 +98,69 @@ def load_agent_config(name: str | None, user_id: str | None = None) -> AgentConf
 
 
 def load_agent_soul(agent_name: str | None, user_id: str | None = None) -> str | None:
-    """Read the SOUL.md file for a custom agent, if it exists.
-
-    Args:
-        agent_name: The name of the agent or None for the default agent.
-        user_id: If provided, loads from user-scoped directory.
-
-    Returns:
-        The SOUL.md content as a string, or None if the file does not exist.
-    """
-    agent_dir = get_paths().resolve_agent_dir(agent_name, user_id) if agent_name else get_paths().base_dir
-    soul_path = agent_dir / SOUL_FILENAME
-    if not soul_path.exists():
+    """Read the SOUL.md file for a custom agent, if it exists."""
+    if agent_name is None:
         return None
-    content = soul_path.read_text(encoding="utf-8").strip()
+
+    operator = get_operator()
+    soul_key = user_agent_soul_key(user_id, agent_name)
+    try:
+        raw = bytes(operator.read(soul_key))
+    except Exception as exc:
+        if _is_not_found(exc):
+            return None
+        raise
+
+    content = raw.decode("utf-8").strip()
     return content or None
 
 
 def list_custom_agents(user_id: str | None = None) -> list[AgentConfig]:
-    """Scan the agents directory and return all valid custom agents.
+    """Scan the per-user (or global) agents prefix and return all valid agents.
 
-    Args:
-        user_id: If provided, scans user-scoped agents directory.
-
-    Returns:
-        List of AgentConfig for each valid agent directory found.
+    Walks the ``custom-agents/{scope}/`` prefix on the OpenDAL operator,
+    extracts the agent name from each ``.../config.yaml`` key, and loads
+    the parsed config for every entry.
     """
-    agents_dir = get_paths().resolve_agents_dir(user_id)
+    operator = get_operator()
+    prefix = user_agents_prefix(user_id) + "/"
 
-    if not agents_dir.exists():
-        return []
+    seen: set[str] = set()
+    try:
+        entries = list(operator.list(prefix))
+    except Exception as exc:
+        if _is_not_found(exc):
+            return []
+        raise
+
+    for entry in entries:
+        path = entry.path  # full key under the operator root
+        if not path.startswith(prefix):
+            continue
+        rest = path[len(prefix):]
+        # We want to flatten the listing to "first-level child name". The
+        # filesystem backend yields entries like
+        # ``custom-agents/abc/foo/`` for directories and
+        # ``custom-agents/abc/foo/config.yaml`` for files; both pin foo
+        # as the agent name once we split on '/'.
+        if not rest:
+            continue
+        head = rest.split("/", 1)[0]
+        if not head or head in seen:
+            continue
+        seen.add(head)
 
     agents: list[AgentConfig] = []
-
-    for entry in sorted(agents_dir.iterdir()):
-        if not entry.is_dir():
-            continue
-
-        config_file = entry / "config.yaml"
-        if not config_file.exists():
-            logger.debug(f"Skipping {entry.name}: no config.yaml")
-            continue
-
+    for agent_name in sorted(seen):
         try:
-            agent_cfg = load_agent_config(entry.name, user_id=user_id)
-            agents.append(agent_cfg)
+            cfg = load_agent_config(agent_name, user_id=user_id)
+        except FileNotFoundError:
+            logger.debug("Skipping %s: no config.yaml", agent_name)
+            continue
         except Exception as e:
-            logger.warning(f"Skipping agent '{entry.name}': {e}")
+            logger.warning("Skipping agent '%s': %s", agent_name, e)
+            continue
+        if cfg is not None:
+            agents.append(cfg)
 
     return agents

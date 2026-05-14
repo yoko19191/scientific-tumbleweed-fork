@@ -1,0 +1,254 @@
+"""SQLAlchemy engine + session factory (async **and** sync).
+
+This is the **preferred** way for new code to talk to Postgres. The
+legacy asyncpg pool in :mod:`deerflow.db.pool` is kept only for callers
+that need a raw ``asyncpg.Pool`` object (for example the one-off
+``ensure_schema`` advisory-lock transaction).
+
+Two engines share the same resolved DSN:
+
+- **async** engine, exposed via :func:`init_engine` / :func:`get_engine` /
+  :func:`get_session_factory` / :func:`session_scope`. Used inside
+  FastAPI request handlers and async repositories.
+- **sync** engine, exposed via :func:`init_sync_engine` /
+  :func:`get_sync_engine` / :func:`get_sync_session_factory` /
+  :func:`sync_session_scope`. Used by repositories whose public
+  interface is synchronous (memory storage, tool cache, channel store —
+  all of them get called from both async FastAPI routes via thread pool
+  *and* sync LangGraph prompt-generation paths).
+
+Typical usage in a FastAPI lifespan::
+
+    from deerflow.db import init_engine, init_sync_engine, close_engine
+    await init_engine()
+    init_sync_engine()
+    await ensure_schema()
+    ...
+    await close_engine()
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from deerflow.db.dsn import resolve_dsn, to_sqlalchemy_async_dsn
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Async engine + session factory
+# ---------------------------------------------------------------------------
+
+_engine: AsyncEngine | None = None
+_session_factory: sessionmaker[AsyncSession] | None = None
+_engine_dsn: str | None = None
+
+
+async def init_engine(
+    dsn: str | None = None,
+    *,
+    pool_size: int = 10,
+    max_overflow: int = 20,
+    pool_pre_ping: bool = True,
+    echo: bool = False,
+) -> AsyncEngine:
+    """Create (or return) the module-level async engine + session factory.
+
+    Safe to call multiple times; later calls must use the same DSN or the
+    function raises.
+    """
+    global _engine, _session_factory, _engine_dsn
+
+    resolved = to_sqlalchemy_async_dsn(resolve_dsn(dsn))
+
+    if _engine is not None:
+        if _engine_dsn != resolved:
+            raise RuntimeError(
+                f"DB engine already initialised with a different DSN "
+                f"(existing={_engine_dsn!r}, requested={resolved!r})"
+            )
+        return _engine
+
+    logger.info(
+        "Initialising SQLAlchemy async engine (pool_size=%d, max_overflow=%d)",
+        pool_size,
+        max_overflow,
+    )
+    _engine = create_async_engine(
+        resolved,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_pre_ping=pool_pre_ping,
+        echo=echo,
+    )
+    # We use SQLModel's AsyncSession subclass so `session.exec(select(Model))`
+    # returns typed model instances instead of a generic SQLAlchemy Row tuple.
+    _session_factory = sessionmaker(
+        bind=_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    _engine_dsn = resolved
+    logger.info("SQLAlchemy async engine ready")
+    return _engine
+
+
+def get_engine() -> AsyncEngine:
+    if _engine is None:
+        raise RuntimeError(
+            "DB engine is not initialised. Call deerflow.db.init_engine() "
+            "during application startup (e.g. FastAPI lifespan)."
+        )
+    return _engine
+
+
+def get_session_factory() -> sessionmaker[AsyncSession]:
+    if _session_factory is None:
+        raise RuntimeError(
+            "Session factory is not initialised. Call deerflow.db.init_engine() "
+            "first."
+        )
+    return _session_factory
+
+
+@asynccontextmanager
+async def session_scope() -> AsyncIterator[AsyncSession]:
+    """Short-lived async session for one-off queries outside a request."""
+    factory = get_session_factory()
+    async with factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+async def close_engine() -> None:
+    """Dispose the async engine. Idempotent."""
+    global _engine, _session_factory, _engine_dsn
+    if _engine is None:
+        return
+    logger.info("Disposing SQLAlchemy async engine")
+    await _engine.dispose()
+    _engine = None
+    _session_factory = None
+    _engine_dsn = None
+
+
+# ---------------------------------------------------------------------------
+# Sync engine + session factory (for repositories with a sync public API)
+# ---------------------------------------------------------------------------
+
+_sync_engine: Engine | None = None
+_sync_session_factory: sessionmaker[Session] | None = None
+_sync_engine_dsn: str | None = None
+
+
+def _to_sqlalchemy_sync_dsn(dsn: str) -> str:
+    """Normalise DSN for the sync psycopg3 driver."""
+    if dsn.startswith("postgresql+psycopg://"):
+        return dsn
+    if dsn.startswith("postgresql+asyncpg://"):
+        return "postgresql+psycopg://" + dsn[len("postgresql+asyncpg://"):]
+    if dsn.startswith("postgresql://"):
+        return "postgresql+psycopg://" + dsn[len("postgresql://"):]
+    if dsn.startswith("postgres://"):
+        return "postgresql+psycopg://" + dsn[len("postgres://"):]
+    return dsn
+
+
+def init_sync_engine(
+    dsn: str | None = None,
+    *,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+    pool_pre_ping: bool = True,
+    echo: bool = False,
+) -> Engine:
+    """Create (or return) the module-level sync engine + session factory."""
+    global _sync_engine, _sync_session_factory, _sync_engine_dsn
+
+    resolved = _to_sqlalchemy_sync_dsn(resolve_dsn(dsn))
+
+    if _sync_engine is not None:
+        if _sync_engine_dsn != resolved:
+            raise RuntimeError(
+                f"Sync DB engine already initialised with a different DSN "
+                f"(existing={_sync_engine_dsn!r}, requested={resolved!r})"
+            )
+        return _sync_engine
+
+    logger.info(
+        "Initialising SQLAlchemy sync engine (pool_size=%d, max_overflow=%d)",
+        pool_size,
+        max_overflow,
+    )
+    _sync_engine = create_engine(
+        resolved,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_pre_ping=pool_pre_ping,
+        echo=echo,
+    )
+    _sync_session_factory = sessionmaker(
+        bind=_sync_engine,
+        class_=Session,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    _sync_engine_dsn = resolved
+    logger.info("SQLAlchemy sync engine ready")
+    return _sync_engine
+
+
+def get_sync_engine() -> Engine:
+    if _sync_engine is None:
+        raise RuntimeError(
+            "Sync DB engine is not initialised. Call "
+            "deerflow.db.init_sync_engine() during application startup."
+        )
+    return _sync_engine
+
+
+def get_sync_session_factory() -> sessionmaker[Session]:
+    if _sync_session_factory is None:
+        raise RuntimeError(
+            "Sync session factory is not initialised. Call "
+            "deerflow.db.init_sync_engine() first."
+        )
+    return _sync_session_factory
+
+
+@contextmanager
+def sync_session_scope() -> Iterator[Session]:
+    """Short-lived sync session for repositories with a synchronous API."""
+    factory = get_sync_session_factory()
+    with factory() as session:
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+
+def close_sync_engine() -> None:
+    """Dispose the sync engine. Idempotent."""
+    global _sync_engine, _sync_session_factory, _sync_engine_dsn
+    if _sync_engine is None:
+        return
+    logger.info("Disposing SQLAlchemy sync engine")
+    _sync_engine.dispose()
+    _sync_engine = None
+    _sync_session_factory = None
+    _sync_engine_dsn = None

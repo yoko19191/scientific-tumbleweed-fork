@@ -40,6 +40,31 @@ logger = logging.getLogger(__name__)
 _SHUTDOWN_HOOK_TIMEOUT_SECONDS = 5.0
 
 
+# Interval between tool_cache vacuum sweeps. Postgres takes care of
+# concurrency; running on every pod is safe (a single DELETE is cheap).
+_TOOL_CACHE_VACUUM_INTERVAL_SECONDS = 60 * 60  # 1 hour
+
+
+async def _run_tool_cache_vacuum_loop() -> None:
+    """Background task that periodically deletes expired ``tool_cache`` rows."""
+    from deerflow.community.semantic_scholar.postgres_cache import PostgresTTLCache
+
+    # Small initial delay so we don't collide with schema setup on first boot.
+    await asyncio.sleep(30)
+    while True:
+        try:
+            await asyncio.to_thread(PostgresTTLCache.vacuum_expired)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("tool_cache vacuum sweep failed; will retry next interval")
+
+        try:
+            await asyncio.sleep(_TOOL_CACHE_VACUUM_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            return
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
@@ -59,10 +84,52 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize auth subsystem
     from app.gateway.auth.config import get_auth_config
     from app.gateway.auth.local_provider import LocalAuthProvider
-    from app.gateway.auth.repositories.sqlite import SQLiteUserRepository
 
     auth_config = get_auth_config()
-    user_repo = SQLiteUserRepository()
+
+    # Initialise the shared Postgres engine + application schema.
+    # The engine defaults to POSTGRES_DSN, falling back to the checkpointer DSN.
+    # We always stand it up (even when auth is on SQLite) so later migrations
+    # (memory/cache/channels) can share it without re-wiring.
+    from deerflow.db import (
+        close_engine,
+        close_pool,
+        close_sync_engine,
+        ensure_schema,
+        init_engine,
+        init_pool,
+        init_sync_engine,
+    )
+
+    db_engine = None
+    db_pool = None
+    try:
+        db_engine = await init_engine()
+        # Sync engine shares the same DSN; used by repositories whose public
+        # interface is synchronous (memory storage, tool cache, channel store).
+        init_sync_engine()
+        await ensure_schema(db_engine)
+        # Legacy asyncpg pool is still used by a handful of call sites that
+        # need a raw ``asyncpg.Pool`` object. Standing it up alongside the
+        # engine keeps those paths working during the migration.
+        db_pool = await init_pool()
+        app.state.db_engine = db_engine
+        app.state.db_pool = db_pool
+        logger.info("Postgres engine + pool + application schema ready")
+    except Exception:
+        logger.exception(
+            "Postgres initialisation failed; the gateway cannot serve auth, "
+            "memory, tool cache, or channel-store requests without a working engine"
+        )
+
+    # Production path runs on the SQLModel + SQLAlchemy engine.
+    # SQLiteUserRepository is still imported by the test suite but is no
+    # longer reachable from the runtime configuration.
+    from app.gateway.auth.repositories.postgres import PostgresUserRepository
+
+    user_repo = PostgresUserRepository()
+    logger.info("Auth subsystem initialised (JWT + Postgres)")
+
     auth_provider = LocalAuthProvider(user_repo)
     app.state.auth_config = auth_config
     app.state.auth_provider = auth_provider
@@ -72,7 +139,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from app.gateway.deps import set_local_provider
     set_local_provider(auth_provider)
 
-    logger.info("Auth subsystem initialised (JWT + SQLite)")
+    # Periodic vacuum for tool_cache — runs every hour while the app is up.
+    # Only started when the Postgres pool is available; on the sqlite
+    # fallback the per-cache DELETE-on-read path already evicts expired rows.
+    tool_cache_vacuum_task: asyncio.Task | None = None
+    if db_pool is not None:
+        tool_cache_vacuum_task = asyncio.create_task(
+            _run_tool_cache_vacuum_loop(), name="tool_cache_vacuum"
+        )
+
+    app.state.tool_cache_vacuum_task = tool_cache_vacuum_task
 
     # Initialize LangGraph runtime components (StreamBridge, RunManager, checkpointer, store)
     async with langgraph_runtime(app):
@@ -104,6 +180,53 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             )
         except Exception:
             logger.exception("Failed to stop channel service")
+
+    # Cancel the tool_cache vacuum loop on shutdown.
+    vacuum_task = getattr(app.state, "tool_cache_vacuum_task", None)
+    if vacuum_task is not None and not vacuum_task.done():
+        vacuum_task.cancel()
+        try:
+            await asyncio.wait_for(vacuum_task, timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+        except (TimeoutError, asyncio.CancelledError):
+            pass
+        except Exception:
+            logger.exception("Failed to stop tool_cache vacuum task")
+
+    # Close the Postgres engines + asyncpg pool on shutdown.
+    try:
+        await asyncio.wait_for(close_pool(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logger.warning(
+            "asyncpg pool shutdown exceeded %.1fs; proceeding with worker exit.",
+            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Failed to close asyncpg pool")
+
+    # Sync engine dispose is synchronous but cheap; wrap so a stuck close
+    # cannot block worker exit past the shared deadline.
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(close_sync_engine),
+            timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except TimeoutError:
+        logger.warning(
+            "SQLAlchemy sync engine shutdown exceeded %.1fs; proceeding with worker exit.",
+            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Failed to close SQLAlchemy sync engine")
+
+    try:
+        await asyncio.wait_for(close_engine(), timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS)
+    except TimeoutError:
+        logger.warning(
+            "SQLAlchemy async engine shutdown exceeded %.1fs; proceeding with worker exit.",
+            _SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Failed to close SQLAlchemy async engine")
 
     logger.info("Shutting down API Gateway")
 

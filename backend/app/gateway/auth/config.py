@@ -20,10 +20,6 @@ class AuthConfig(BaseModel):
         description="Secret key for JWT signing. MUST be set via AUTH_JWT_SECRET.",
     )
     token_expiry_days: int = Field(default=7, ge=1, le=30)
-    users_db_path: str | None = Field(
-        default=None,
-        description="Path to users SQLite DB. Defaults to .deer-flow/users.db",
-    )
     oauth_github_client_id: str | None = Field(default=None)
     oauth_github_client_secret: str | None = Field(default=None)
 

@@ -24,8 +24,14 @@ class MemoryConfig(BaseModel):
         ),
     )
     storage_class: str = Field(
-        default="deerflow.agents.memory.storage.FileMemoryStorage",
-        description="The class path for memory storage provider",
+        default="deerflow.agents.memory.postgres_storage.PostgresMemoryStorage",
+        description=(
+            "The class path for the memory storage provider. "
+            "Default 'PostgresMemoryStorage' writes to the user_memory table "
+            "(requires the shared Postgres pool — see deerflow.db). "
+            "Set to 'deerflow.agents.memory.storage.FileMemoryStorage' to "
+            "fall back to the legacy .deer-flow/memory.json files."
+        ),
     )
     debounce_seconds: int = Field(
         default=30,

@@ -9,7 +9,7 @@ from urllib.parse import quote_plus
 
 import httpx
 
-from deerflow.community.semantic_scholar.cache import SQLiteTTLCache, build_cache_key
+from deerflow.community.semantic_scholar.cache import TTLCache, build_cache_key
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class OpenAlexAPIError(Exception):
 class OpenAlexClient:
     BASE_URL = "https://api.openalex.org"
 
-    def __init__(self, settings: OpenAlexSettings, cache: SQLiteTTLCache) -> None:
+    def __init__(self, settings: OpenAlexSettings, cache: TTLCache) -> None:
         self._settings = settings
         self._cache = cache
 

@@ -115,6 +115,22 @@ class ExtensionsConfig(BaseModel):
             return None
 
     @classmethod
+    def from_dict(cls, config_data: dict[str, Any] | None) -> "ExtensionsConfig":
+        """Build an :class:`ExtensionsConfig` from an in-memory dict.
+
+        Mirrors :meth:`from_file` but skips the path-resolution logic so
+        callers that already hold the JSON in memory (e.g. the OpenDAL
+        per-user override loader) can avoid a roundtrip through disk.
+
+        ``None`` and empty dicts both yield an empty config so callers
+        can pass through "no override available" without branching.
+        """
+        if not config_data:
+            return cls(mcp_servers={}, skills={})
+        cls.resolve_env_variables(config_data)
+        return cls.model_validate(config_data)
+
+    @classmethod
     def from_file(cls, config_path: str | None = None) -> "ExtensionsConfig":
         """Load extensions config from JSON file.
 

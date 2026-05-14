@@ -4,6 +4,7 @@ import logging
 import shutil
 from pathlib import Path
 
+import opendal.exceptions as opendal_exc
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -311,29 +312,38 @@ async def update_skill(skill_name: str, body: SkillUpdateRequest, user_id: str =
         if skill is None:
             raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
 
-        from deerflow.config.paths import get_paths
-        config_path = get_paths().user_extensions_config_file(user_id)
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        from deerflow.storage import get_async_operator, user_extensions_override_key
 
-        # Load existing config from the target path, or create empty
-        if config_path.exists():
-            try:
-                with open(config_path, encoding="utf-8") as f:
-                    existing_data = json.load(f)
-            except (json.JSONDecodeError, OSError):
+        operator = get_async_operator()
+        config_key = user_extensions_override_key(user_id)
+
+        # Load existing per-user override (preserving mcpServers etc.)
+        try:
+            raw = bytes(await operator.read(config_key))
+        except Exception as exc:
+            if isinstance(exc, (opendal_exc.NotFound, FileNotFoundError)):
+                existing_data: dict = {}
+            else:
+                logger.warning("Failed to read per-user extensions override", exc_info=True)
                 existing_data = {}
         else:
-            existing_data = {}
+            try:
+                existing_data = json.loads(raw.decode("utf-8"))
+                if not isinstance(existing_data, dict):
+                    existing_data = {}
+            except (json.JSONDecodeError, ValueError):
+                existing_data = {}
 
         # Update skills section
         skills_data = existing_data.get("skills", {})
+        if not isinstance(skills_data, dict):
+            skills_data = {}
         skills_data[skill_name] = {"enabled": body.enabled}
         existing_data["skills"] = skills_data
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(existing_data, f, indent=2)
+        await operator.write(config_key, json.dumps(existing_data, indent=2, ensure_ascii=False).encode("utf-8"))
 
-        logger.info(f"Skills configuration updated and saved to: {config_path}")
+        logger.info("Skills configuration updated for user %s at %s", user_id, config_key)
         await refresh_skills_system_prompt_cache_async()
 
         skills = load_skills(enabled_only=False, user_id=user_id)

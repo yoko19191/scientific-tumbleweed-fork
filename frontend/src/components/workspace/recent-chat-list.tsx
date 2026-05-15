@@ -209,7 +209,9 @@ export function RecentChatList() {
                           <span
                             className={cn(
                               "text-muted-foreground/70 shrink-0 font-sans text-[10px] font-medium leading-none tracking-tight",
-                              "transition-opacity group-hover/menu-item:opacity-0",
+                              "transition-opacity",
+                              "group-hover/menu-item:invisible group-hover/menu-item:opacity-0",
+                              "group-has-[[data-state=open]]/menu-item:invisible group-has-[[data-state=open]]/menu-item:opacity-0",
                             )}
                           >
                             {timestamp}
@@ -220,7 +222,7 @@ export function RecentChatList() {
                             <DropdownMenuTrigger asChild>
                               <SidebarMenuAction
                                 showOnHover
-                                className="bg-background/50 hover:bg-background"
+                                className="bg-background hover:bg-background data-[state=open]:bg-background"
                               >
                                 <MoreHorizontal />
                                 <span className="sr-only">{t.common.more}</span>
@@ -230,6 +232,7 @@ export function RecentChatList() {
                               className="w-48 rounded-lg"
                               side={"right"}
                               align={"start"}
+                              onCloseAutoFocus={(e) => e.preventDefault()}
                             >
                               <DropdownMenuItem
                                 onSelect={() =>

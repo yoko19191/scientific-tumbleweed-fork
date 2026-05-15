@@ -1,5 +1,5 @@
 import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { Fragment, useEffect } from "react";
+import { useEffect } from "react";
 
 import {
   Conversation,
@@ -7,11 +7,6 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { useI18n } from "@/core/i18n/hooks";
-import {
-  accumulateUsage,
-  splitTurns,
-  type TokenUsage,
-} from "@/core/messages/usage";
 import {
   extractContentFromMessage,
   extractPresentFilesFromMessage,
@@ -21,6 +16,7 @@ import {
   hasPresentFiles,
   hasReasoning,
   hasSubagent,
+  hasToolCalls,
 } from "@/core/messages/utils";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import type { Subtask } from "@/core/tasks";
@@ -34,7 +30,7 @@ import { StreamingIndicator } from "../streaming-indicator";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
-import { MessageTokenUsage } from "./message-token-usage";
+import { MessageTokenUsageList } from "./message-token-usage";
 import { MessageListSkeleton } from "./skeleton";
 import { SubtaskCard } from "./subtask-card";
 
@@ -56,7 +52,7 @@ export function MessageList({
 }) {
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
-  const { setTasks: setSubtasks } = useSubtaskContext();
+  const { tasks: subtasks, setTasks: setSubtasks } = useSubtaskContext();
   const messages = thread.messages;
 
   // Sync subtask state from messages in an effect, not during render.
@@ -106,41 +102,6 @@ export function MessageList({
   if (thread.isThreadLoading && messages.length === 0) {
     return <MessageListSkeleton />;
   }
-
-  // Aggregate token usage per turn (one human → next human exclusive).
-  // The aggregated total is keyed by the message-id of the last visible ai
-  // message in that turn; the renderer below appends a single inline token
-  // card after the group whose last ai message matches that id.
-  const turnUsageByLastAiId = new Map<string, TokenUsage>();
-  if (tokenUsageEnabled) {
-    const turns = splitTurns(messages);
-    for (const turn of turns) {
-      if (turn.lastAiIndex < 0) continue;
-      const usage = accumulateUsage(turn.messages);
-      if (!usage) continue;
-      const anchor = messages[turn.lastAiIndex];
-      const anchorId = anchor?.id;
-      if (anchorId) turnUsageByLastAiId.set(anchorId, usage);
-    }
-  }
-
-  /**
-   * If `group` ends with the last ai message of a turn (and we have usage
-   * for that turn), return its token usage so the caller can render a card
-   * right after the group's content.
-   */
-  const groupTrailingUsage = (group: {
-    messages: { id?: string; type: string }[];
-  }): TokenUsage | null => {
-    if (turnUsageByLastAiId.size === 0) return null;
-    let lastAiId: string | undefined;
-    for (const m of group.messages) {
-      if (m.type === "ai" && m.id) lastAiId = m.id;
-    }
-    if (!lastAiId) return null;
-    return turnUsageByLastAiId.get(lastAiId) ?? null;
-  };
-
   return (
     <Conversation
       className={cn("flex size-full flex-col justify-center", className)}
@@ -148,27 +109,18 @@ export function MessageList({
       <ConversationScrollButton bottomOffset={paddingBottom + 16} />
       <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-12">
         {groupMessages(messages, (group) => {
-          const trailingUsage = groupTrailingUsage(group);
-          const trailingCard = trailingUsage ? (
-            <MessageTokenUsage enabled usage={trailingUsage} />
-          ) : null;
-
           if (group.type === "human" || group.type === "assistant") {
-            const items = group.messages.map((msg) => (
-              <MessageListItem
-                key={`${group.id}/${msg.id}`}
-                message={msg}
-                isLoading={thread.isLoading}
-                threadId={threadId}
-              />
-            ));
-            if (!trailingCard) return items;
-            return (
-              <Fragment key={`group-frag-${group.id}`}>
-                {items}
-                {trailingCard}
-              </Fragment>
-            );
+            return group.messages.map((msg) => {
+              return (
+                <MessageListItem
+                  key={`${group.id}/${msg.id}`}
+                  message={msg}
+                  isLoading={thread.isLoading}
+                  threadId={threadId}
+                  tokenUsageEnabled={tokenUsageEnabled}
+                />
+              );
+            });
           } else if (group.type === "assistant:clarification") {
             const message = group.messages[0];
             if (message && hasContent(message)) {
@@ -179,7 +131,11 @@ export function MessageList({
                     isLoading={thread.isLoading}
                     rehypePlugins={rehypePlugins}
                   />
-                  {trailingCard}
+                  <MessageTokenUsageList
+                    enabled={tokenUsageEnabled}
+                    isLoading={thread.isLoading}
+                    messages={group.messages}
+                  />
                 </div>
               );
             }
@@ -203,7 +159,11 @@ export function MessageList({
                   />
                 )}
                 <ArtifactFileList files={files} threadId={threadId} />
-                {trailingCard}
+                <MessageTokenUsageList
+                  enabled={tokenUsageEnabled}
+                  isLoading={thread.isLoading}
+                  messages={group.messages}
+                />
               </div>
             );
           } else if (group.type === "assistant:subagent") {
@@ -257,17 +217,30 @@ export function MessageList({
                 className="relative z-1 flex flex-col gap-2"
               >
                 {results}
-                {trailingCard}
+                <MessageTokenUsageList
+                  enabled={tokenUsageEnabled}
+                  isLoading={thread.isLoading}
+                  messages={group.messages}
+                />
               </div>
             );
           }
+          const tokenUsageMessages = group.messages.filter(
+            (message) =>
+              message.type === "ai" &&
+              (hasToolCalls(message) ? true : !hasContent(message)),
+          );
           return (
             <div key={"group-" + group.id} className="w-full">
               <MessageGroup
                 messages={group.messages}
                 isLoading={thread.isLoading}
               />
-              {trailingCard}
+              <MessageTokenUsageList
+                enabled={tokenUsageEnabled}
+                isLoading={thread.isLoading}
+                messages={tokenUsageMessages}
+              />
             </div>
           );
         })}

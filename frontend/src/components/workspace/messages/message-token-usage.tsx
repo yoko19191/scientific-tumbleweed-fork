@@ -1,28 +1,37 @@
-import type { Message } from "@langchain/langgraph-sdk";
 import { CoinsIcon } from "lucide-react";
 
 import { useI18n } from "@/core/i18n/hooks";
-import { formatTokenCount, getUsageMetadata } from "@/core/messages/usage";
+import { formatTokenCount, type TokenUsage } from "@/core/messages/usage";
+import { useTweenNumber } from "@/core/utils/use-tween-number";
 import { cn } from "@/lib/utils";
 
+/**
+ * Inline token usage artifact.
+ *
+ * Renders nothing when disabled or when no usage data is available — the
+ * caller passes an aggregated `usage` (e.g. from `accumulateUsage(turn)`) or
+ * `null`. Numeric fields tween between updates so live streaming counts feel
+ * animated rather than snapping.
+ */
 export function MessageTokenUsage({
   className,
   enabled = false,
-  isLoading = false,
-  message,
+  usage,
 }: {
   className?: string;
   enabled?: boolean;
-  isLoading?: boolean;
-  message: Message;
+  usage: TokenUsage | null;
 }) {
   const { t } = useI18n();
 
-  if (!enabled || isLoading || message.type !== "ai") {
+  // Hooks must run unconditionally; render is short-circuited below.
+  const inputDisplay = useTweenNumber(usage?.inputTokens ?? 0);
+  const outputDisplay = useTweenNumber(usage?.outputTokens ?? 0);
+  const totalDisplay = useTweenNumber(usage?.totalTokens ?? 0);
+
+  if (!enabled || !usage) {
     return null;
   }
-
-  const usage = getUsageMetadata(message);
 
   return (
     <div
@@ -35,57 +44,24 @@ export function MessageTokenUsage({
         <CoinsIcon className="size-3" />
         {t.tokenUsage.label}
       </span>
-      {usage ? (
-        <>
-          <span>
-            {t.tokenUsage.input}: {formatTokenCount(usage.inputTokens)}
-          </span>
-          <span>
-            {t.tokenUsage.output}: {formatTokenCount(usage.outputTokens)}
-          </span>
-          <span className="font-medium">
-            {t.tokenUsage.total}: {formatTokenCount(usage.totalTokens)}
-          </span>
-        </>
-      ) : (
-        <span>{t.tokenUsage.unavailableShort}</span>
-      )}
+      <span>
+        {t.tokenUsage.input}:{" "}
+        <span className="tabular-nums">
+          {formatTokenCount(Math.round(inputDisplay))}
+        </span>
+      </span>
+      <span>
+        {t.tokenUsage.output}:{" "}
+        <span className="tabular-nums">
+          {formatTokenCount(Math.round(outputDisplay))}
+        </span>
+      </span>
+      <span className="font-medium">
+        {t.tokenUsage.total}:{" "}
+        <span className="tabular-nums">
+          {formatTokenCount(Math.round(totalDisplay))}
+        </span>
+      </span>
     </div>
-  );
-}
-
-export function MessageTokenUsageList({
-  className,
-  enabled = false,
-  isLoading = false,
-  messages,
-}: {
-  className?: string;
-  enabled?: boolean;
-  isLoading?: boolean;
-  messages: Message[];
-}) {
-  if (!enabled || isLoading) {
-    return null;
-  }
-
-  const aiMessages = messages.filter((message) => message.type === "ai");
-
-  if (aiMessages.length === 0) {
-    return null;
-  }
-
-  return (
-    <>
-      {aiMessages.map((message, index) => (
-        <MessageTokenUsage
-          className={className}
-          enabled={enabled}
-          isLoading={isLoading}
-          key={message.id ?? index}
-          message={message}
-        />
-      ))}
-    </>
   );
 }

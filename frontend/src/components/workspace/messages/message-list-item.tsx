@@ -33,20 +33,17 @@ import { cn } from "@/lib/utils";
 import { CopyButton } from "../copy-button";
 
 import { MarkdownContent } from "./markdown-content";
-import { MessageTokenUsage } from "./message-token-usage";
 
 export function MessageListItem({
   className,
   message,
   isLoading,
   threadId,
-  tokenUsageEnabled = false,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
   threadId: string;
-  tokenUsageEnabled?: boolean;
 }) {
   const isHuman = message.type === "human";
   return (
@@ -59,7 +56,6 @@ export function MessageListItem({
         message={message}
         isLoading={isLoading}
         threadId={threadId}
-        tokenUsageEnabled={tokenUsageEnabled}
       />
       {!isLoading && (
         <MessageToolbar
@@ -118,13 +114,11 @@ function MessageContent_({
   message,
   isLoading = false,
   threadId,
-  tokenUsageEnabled = false,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
   threadId: string;
-  tokenUsageEnabled?: boolean;
 }) {
   const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const isHuman = message.type === "human";
@@ -195,11 +189,6 @@ function MessageContent_({
           <ReasoningTrigger />
           <ReasoningContent>{reasoningContent}</ReasoningContent>
         </Reasoning>
-        <MessageTokenUsage
-          enabled={tokenUsageEnabled}
-          isLoading={isLoading}
-          message={message}
-        />
       </AIElementMessageContent>
     );
   }
@@ -236,11 +225,6 @@ function MessageContent_({
         rehypePlugins={[...rehypePlugins, [rehypeKatex, { output: "html" }]]}
         className="my-3"
         components={components}
-      />
-      <MessageTokenUsage
-        enabled={tokenUsageEnabled}
-        isLoading={isLoading}
-        message={message}
       />
     </AIElementMessageContent>
   );

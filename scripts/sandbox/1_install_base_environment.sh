@@ -44,6 +44,7 @@ build_packages=(
   gcc
   g++
   gfortran
+  clang
   pkg-config
   cmake
   make

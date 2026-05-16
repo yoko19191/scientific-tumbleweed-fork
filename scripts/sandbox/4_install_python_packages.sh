@@ -15,6 +15,8 @@ export PIP_INDEX_URL="$PYPI_MIRROR"
 export UV_DEFAULT_INDEX="$PYPI_MIRROR"
 export UV_INDEX_URL="$PYPI_MIRROR"
 export PIP_ROOT_USER_ACTION="${PIP_ROOT_USER_ACTION:-ignore}"
+export CC="${CC:-gcc}"
+export CXX="${CXX:-g++}"
 
 python_packages=(
   requests
@@ -26,13 +28,42 @@ python_packages=(
   pandas
   numpy
   scipy
+  catboost
+  category-encoders
+  eli5
+  feature-engine
+  hdbscan
+  imbalanced-learn
+  lightgbm
+  lime
+  mlxtend
+  optuna
+  pingouin
+  scikit-optimize
+  shap
+  umap-learn
+  xgboost
+  yellowbrick
+  pmdarima
+  prophet
+  sktime
+  tsfresh
   altair
   bokeh
+  dash
+  holoviews
+  hvplot
+  ipywidgets
   statsmodels
   scikit-learn
   matplotlib
+  networkx
+  panel
+  plotnine
   seaborn
   plotly
+  pyvis
+  streamlit
   Pillow
   PyMuPDF
   python-pptx
@@ -56,10 +87,14 @@ python_packages=(
   wordcloud
   missingno
   biopython
+  cyvcf2
+  GEOparse
+  gffutils
   pysam
   pyfaidx
   pybedtools
   gseapy
+  HTSeq
   mygene
   bioservices
   goatools
@@ -69,7 +104,16 @@ python_packages=(
   scikit-bio
   lifelines
   bioframe
+  pyranges
   pyBigWig
+  pysradb
+  rdkit
+  scikit-allel
+  sgkit
+)
+
+optional_python_packages=(
+  hail
 )
 
 log_section "Install Python package tooling"
@@ -89,9 +133,17 @@ log_info "Using PyPI mirror: $PYPI_MIRROR"
 if command -v uv >/dev/null 2>&1; then
   log_info "Using uv for system package installation."
   uv pip install --system --upgrade "${python_packages[@]}"
+  log_info "Installing optional Python packages when compatible."
+  for package in "${optional_python_packages[@]}"; do
+    uv pip install --system --upgrade "$package" || log_warn "Optional Python package failed and was skipped: $package"
+  done
 else
   log_warn "uv not found; using pip."
   "$PYTHON_BIN" -m pip install --upgrade "${python_packages[@]}"
+  log_info "Installing optional Python packages when compatible."
+  for package in "${optional_python_packages[@]}"; do
+    "$PYTHON_BIN" -m pip install --upgrade "$package" || log_warn "Optional Python package failed and was skipped: $package"
+  done
 fi
 
 log_done "Python package installation complete."

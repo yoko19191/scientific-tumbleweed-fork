@@ -26,6 +26,25 @@ document_cli_packages=(
   pandoc
   ghostscript
   fontconfig
+  libreoffice
+  libreoffice-writer
+  libreoffice-calc
+  libreoffice-impress
+  libreoffice-java-common
+  default-jre
+  wkhtmltopdf
+  poppler-utils
+  qpdf
+  mupdf-tools
+  imagemagick
+  graphicsmagick
+  inkscape
+  librsvg2-bin
+  graphviz
+  plantuml
+  tesseract-ocr
+  ocrmypdf
+  ffmpeg
 )
 
 latex_packages=(
@@ -36,11 +55,19 @@ latex_packages=(
   texlive-fonts-recommended
   texlive-science
   texlive-xetex
+  texlive-luatex
   texlive-lang-chinese
   latexmk
+  biber
   fonts-noto-cjk
   fonts-noto-color-emoji
   fonts-liberation
+)
+
+npm_global_packages=(
+  pnpm
+  yarn
+  @mermaid-js/mermaid-cli
 )
 
 bioinfo_qc_packages=(
@@ -49,6 +76,8 @@ bioinfo_qc_packages=(
   trimmomatic
   multiqc
   cutadapt
+  seqtk
+  fastq-screen
 )
 
 bioinfo_alignment_packages=(
@@ -68,6 +97,9 @@ bioinfo_bam_packages=(
   deeptools
   sambamba
   subread
+  htslib
+  mosdepth
+  qualimap
 )
 
 bioinfo_variant_packages=(
@@ -76,11 +108,13 @@ bioinfo_variant_packages=(
   freebayes
   snpeff
   vcftools
+  snpsift
 )
 
 bioinfo_scrna_packages=(
   starsolo
   alevin-fry
+  bustools
 )
 
 bioinfo_multiomics_packages=(
@@ -111,6 +145,43 @@ bioinfo_common_packages=(
   csvtk
   parallel
   snakemake
+)
+
+bioinfo_workflow_optional_packages=(
+  nextflow
+  nf-core
+  cromwell
+  womtool
+  dvc
+  mlflow
+  quarto
+)
+
+bioinfo_metagenomics_packages=(
+  kraken2
+  bracken
+  metaphlan
+  humann
+  kaiju
+  mash
+  fastani
+)
+
+bioinfo_gwas_packages=(
+  plink2
+  eigensoft
+  admixture
+  king
+)
+
+bioinfo_annotation_packages=(
+  prokka
+  bakta
+  eggnog-mapper
+)
+
+bioinfo_optional_packages=(
+  ensembl-vep
 )
 
 node_major_version() {
@@ -154,7 +225,7 @@ install_node_package_managers() {
     npm config set --location=global registry "$NPM_MIRROR" || true
   fi
 
-  npm install -g pnpm yarn
+  npm install -g "${npm_global_packages[@]}"
 }
 
 resolve_mamba() {
@@ -188,6 +259,18 @@ mamba_install_group() {
   "$mamba_bin" install -y -p "$BIOINFO_ENV_PREFIX" -c bioconda -c conda-forge "$@"
 }
 
+mamba_install_optional_group() {
+  local mamba_bin="$1"
+  local label="$2"
+  local package
+  shift 2
+
+  log_section "Install optional bioinfo CLI: $label"
+  for package in "$@"; do
+    "$mamba_bin" install -y -p "$BIOINFO_ENV_PREFIX" -c bioconda -c conda-forge "$package" || log_warn "Optional mamba package failed and was skipped: $package"
+  done
+}
+
 install_bioinfo_cli_environment() {
   local mamba_bin
 
@@ -206,6 +289,11 @@ install_bioinfo_cli_environment() {
   mamba_install_group "$mamba_bin" "Genome assembly" "${bioinfo_assembly_packages[@]}"
   mamba_install_group "$mamba_bin" "Phylogeny" "${bioinfo_phylogeny_packages[@]}"
   mamba_install_group "$mamba_bin" "Common utilities" "${bioinfo_common_packages[@]}"
+  mamba_install_optional_group "$mamba_bin" "Workflow engines" "${bioinfo_workflow_optional_packages[@]}"
+  mamba_install_optional_group "$mamba_bin" "Metagenomics" "${bioinfo_metagenomics_packages[@]}"
+  mamba_install_optional_group "$mamba_bin" "GWAS and population genetics" "${bioinfo_gwas_packages[@]}"
+  mamba_install_optional_group "$mamba_bin" "Genome annotation" "${bioinfo_annotation_packages[@]}"
+  mamba_install_optional_group "$mamba_bin" "Variant annotation" "${bioinfo_optional_packages[@]}"
 }
 
 log_section "Install CLI and LaTeX environment"

@@ -33,6 +33,8 @@ log_info "Using Bioconductor mirror: $BIOC_MIRROR"
   BIOC_MIRROR="$BIOC_MIRROR" \
   R_NCPUS="$R_NCPUS" \
   R_INSTALL_FAST="$R_INSTALL_FAST" \
+  R_INSTALL_STRICT="${R_INSTALL_STRICT:-0}" \
+  R_SITE_LIBRARY="${R_SITE_LIBRARY:-}" \
   INSTALL_R_ARROW="$INSTALL_R_ARROW" \
   INSTALL_SEURAT="$INSTALL_SEURAT" \
   CLEAN_R_LOCKS="$CLEAN_R_LOCKS" \
@@ -46,6 +48,7 @@ fast_install <- identical(Sys.getenv("R_INSTALL_FAST", "1"), "1")
 install_arrow <- identical(Sys.getenv("INSTALL_R_ARROW", "0"), "1")
 install_seurat <- identical(Sys.getenv("INSTALL_SEURAT", "1"), "1")
 clean_r_locks <- identical(Sys.getenv("CLEAN_R_LOCKS", "1"), "1")
+strict_required <- identical(Sys.getenv("R_INSTALL_STRICT", "0"), "1")
 install_opts <- if (fast_install) {
   c("--no-html", "--no-multiarch", "--no-test-load")
 } else {
@@ -77,6 +80,26 @@ log_done <- function(text) {
   message(green, "[DONE]", reset, " ", text)
 }
 
+select_site_library <- function() {
+  requested <- Sys.getenv("R_SITE_LIBRARY", "")
+  candidates <- unique(c(
+    requested,
+    .Library,
+    .Library.site,
+    file.path(R.home(), "site-library"),
+    .libPaths()
+  ))
+  candidates <- candidates[nzchar(candidates)]
+  candidates <- candidates[!grepl("^/root(/|$)", candidates)]
+  candidates[[1]]
+}
+
+r_site_library <- select_site_library()
+dir.create(r_site_library, recursive = TRUE, showWarnings = FALSE)
+.libPaths(unique(c(r_site_library, .libPaths())))
+log_info(paste("Installing R packages into:", r_site_library))
+log_info(paste("R library paths:", paste(.libPaths(), collapse = " | ")))
+
 if (clean_r_locks) {
   lock_dirs <- unlist(lapply(.libPaths(), function(path) {
     if (dir.exists(path)) {
@@ -103,9 +126,20 @@ install_with_progress <- function(pkgs, installer, label) {
     pkg <- pkgs[[idx]]
     log_section(sprintf("%s package %d/%d: %s", label, idx, total, pkg))
     started_at <- Sys.time()
-    installer(pkg)
-    elapsed <- round(as.numeric(difftime(Sys.time(), started_at, units = "mins")), 1)
-    log_done(sprintf("%s installed in %s min", pkg, elapsed))
+    tryCatch(
+      {
+        installer(pkg)
+        elapsed <- round(as.numeric(difftime(Sys.time(), started_at, units = "mins")), 1)
+        log_done(sprintf("%s installed in %s min", pkg, elapsed))
+      },
+      error = function(e) {
+        message <- sprintf("%s failed and was skipped: %s", pkg, conditionMessage(e))
+        if (strict_required) {
+          stop(message, call. = FALSE)
+        }
+        log_warn(message)
+      }
+    )
   }
 }
 
@@ -116,7 +150,7 @@ install_missing_cran <- function(pkgs) {
     install_with_progress(
       missing,
       function(pkg) {
-        install.packages(pkg, repos = cran, Ncpus = ncpus, INSTALL_opts = install_opts)
+        install.packages(pkg, lib = r_site_library, repos = cran, Ncpus = ncpus, INSTALL_opts = install_opts)
       },
       "CRAN"
     )
@@ -125,11 +159,36 @@ install_missing_cran <- function(pkgs) {
   }
 }
 
+install_optional_cran <- function(pkgs) {
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (!length(missing)) {
+    log_info("All requested optional CRAN packages are already installed.")
+    return(invisible(NULL))
+  }
+
+  for (pkg in missing) {
+    log_section(paste("Optional CRAN package:", pkg))
+    tryCatch(
+      {
+        install.packages(pkg, lib = r_site_library, repos = cran, Ncpus = ncpus, INSTALL_opts = install_opts)
+        log_done(paste("Optional package installed:", pkg))
+      },
+      error = function(e) {
+        log_warn(paste("Optional package failed and was skipped:", pkg, conditionMessage(e)))
+      }
+    )
+  }
+}
+
 cran_packages <- c(
   "BiocManager",
   "tidyverse",
   "data.table",
+  "dplyr",
   "dtplyr",
+  "readr",
+  "tibble",
+  "tidyr",
   "readxl",
   "writexl",
   "openxlsx",
@@ -156,6 +215,37 @@ cran_packages <- c(
   "survminer",
   "lme4",
   "glmnet",
+  "xgboost",
+  "lightgbm",
+  "tidymodels",
+  "caret",
+  "e1071",
+  "kernlab",
+  "rpart",
+  "nnet",
+  "recipes",
+  "parsnip",
+  "workflows",
+  "tune",
+  "rsample",
+  "yardstick",
+  "vip",
+  "DALEX",
+  "shapviz",
+  "pROC",
+  "forecast",
+  "rstatix",
+  "performance",
+  "factoextra",
+  "ggraph",
+  "tidygraph",
+  "ggridges",
+  "ggExtra",
+  "ggvenn",
+  "ggtext",
+  "ggstatsplot",
+  "esquisse",
+  "leaflet",
   "knitr",
   "rmarkdown",
   "kableExtra",
@@ -163,6 +253,10 @@ cran_packages <- c(
   "Matrix",
   "devtools",
   "remotes"
+)
+optional_cran_packages <- c(
+  "catboost",
+  "prophet"
 )
 if (install_arrow) {
   cran_packages <- c(cran_packages, "arrow")
@@ -177,6 +271,7 @@ if (fast_install) {
   log_info("Fast install mode is disabled. Set R_INSTALL_FAST=1 to speed up source package installation.")
 }
 install_missing_cran(cran_packages)
+install_optional_cran(optional_cran_packages)
 
 options(BioC_mirror = bioc)
 target_bioc_version <- Sys.getenv("BIOC_VERSION", "")
@@ -249,7 +344,10 @@ bioc_packages <- c(
   "karyoploteR",
   "EnhancedVolcano",
   "GSVA",
-  "GEOquery"
+  "GEOquery",
+  "ggtree",
+  "phyloseq",
+  "SNPRelate"
 )
 log_section("Install Bioconductor packages")
 log_info(paste("Using Bioconductor version:", BiocManager::version()))
@@ -261,6 +359,7 @@ install_with_progress(
   function(pkg) {
     BiocManager::install(
       pkg,
+      lib = r_site_library,
       ask = FALSE,
       update = FALSE,
       Ncpus = ncpus,

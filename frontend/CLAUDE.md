@@ -37,18 +37,29 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 - **`app/`** — Next.js App Router. Routes: `/` (landing), `/workspace/chats/[thread_id]` (chat).
 - **`components/`** — React components split into:
   - `ui/` — Shadcn UI primitives (auto-generated, ESLint-ignored)
-  - `ai-elements/` — Vercel AI SDK elements (auto-generated, ESLint-ignored)
-  - `workspace/` — Chat page components (messages, artifacts, settings)
+  - `ai-elements/` — AI interaction components:
+    - `prompt-input/` — Modular prompt input system (context, textarea, speech, parts, types)
+  - `workspace/` — Chat page components:
+    - `input-box/` — Main chat input (mode-utils, suggestion-list, plus-menu-button)
+    - `messages/` — Message rendering and grouping
+    - `settings/memory-settings/` — Memory management UI (utils, page)
   - `landing/` — Landing page sections
 - **`core/`** — Business logic, the heart of the app:
-  - `threads/` — Thread creation, streaming, state management (hooks + types)
+  - `threads/` — Thread creation, streaming, state management:
+    - `stream-utils.ts` — Pure utility functions (run ID normalization, session storage)
+    - `use-thread-stream.ts` — Main streaming hook
+    - `use-threads.ts` — CRUD hooks (list, delete, rename)
+    - `hooks.ts` — Barrel re-export
   - `api/` — LangGraph client singleton
   - `artifacts/` — Artifact loading and caching
   - `i18n/` — Internationalization (en-US, zh-CN)
   - `settings/` — User preferences in localStorage
   - `memory/` — Persistent user memory system
   - `skills/` — Skills installation and management
-  - `messages/` — Message processing and transformation
+  - `messages/` — Message processing:
+    - `grouping.ts` — Message grouping logic (human, assistant, processing groups)
+    - `extraction.ts` — Content extraction, reasoning, tool calls, file parsing
+    - `utils.ts` — Barrel re-export
   - `mcp/` — Model Context Protocol integration
   - `models/` — TypeScript types and data models
 - **`hooks/`** — Shared React hooks
@@ -58,7 +69,7 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 
 ### Data Flow
 
-1. User input → thread hooks (`core/threads/hooks.ts`) → LangGraph SDK streaming
+1. User input → thread hooks (`core/threads/use-thread-stream.ts`) → LangGraph SDK streaming
 2. Stream events update thread state (messages, artifacts, todos)
 3. TanStack Query manages server state; localStorage stores user settings
 4. Components subscribe to thread state and render updates

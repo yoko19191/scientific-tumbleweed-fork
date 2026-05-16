@@ -8,11 +8,6 @@ import {
   EyeIcon,
   MessageCircleIcon,
   NetworkIcon,
-  PaperclipIcon,
-  PlusIcon,
-  SlidersHorizontalIcon,
-  SparklesIcon,
-  XIcon,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -38,31 +33,15 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
-  usePromptInputAttachments,
   usePromptInputController,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
-import { Button } from "@/components/ui/button";
-import { ConfettiButton } from "@/components/ui/confetti-button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenuGroup,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/core/i18n/hooks";
 import { useModels } from "@/core/models/hooks";
-import type { Model } from "@/core/models/types";
 import type { AgentThreadContext } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
@@ -74,91 +53,19 @@ import {
   ModelSelectorList,
   ModelSelectorName,
   ModelSelectorTrigger,
-} from "../ai-elements/model-selector";
-import { Suggestion, Suggestions } from "../ai-elements/suggestion";
+} from "../../ai-elements/model-selector";
+import { useThread } from "../messages/context";
+import { ModeHoverGuide } from "../mode-hover-guide";
+
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
-
-import { useThread } from "./messages/context";
-import { ModeHoverGuide } from "./mode-hover-guide";
-
-type InputMode = "chat" | "agent" | "swarm";
-type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "max";
-
-const REASONING_EFFORT_VALUES = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "max",
-] as const satisfies readonly ReasoningEffort[];
-
-const DEFAULT_REASONING_EFFORT_LEVELS: ReasoningEffort[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-];
-
-function getResolvedMode(
-  mode: InputMode | undefined,
-  supportsThinking: boolean,
-): InputMode {
-  const validModes = new Set<InputMode>(["chat", "agent", "swarm"]);
-  const effectiveMode =
-    mode && validModes.has(mode) ? mode : undefined;
-
-  if (!supportsThinking && effectiveMode !== "chat") {
-    return "chat";
-  }
-  if (effectiveMode) {
-    return effectiveMode;
-  }
-  return supportsThinking ? "agent" : "chat";
-}
-
-function isReasoningEffort(value: string | undefined | null): value is ReasoningEffort {
-  return REASONING_EFFORT_VALUES.includes(value as ReasoningEffort);
-}
-
-function getModeDefaultReasoningEffort(mode: InputMode | undefined): ReasoningEffort {
-  return mode === "swarm" ? "high" : mode === "agent" ? "high" : "medium";
-}
-
-function getReasoningEffortLevels(model: Model | undefined): ReasoningEffort[] {
-  const configuredLevels = model?.reasoning_effort_levels
-    ?.filter(isReasoningEffort);
-  if (configuredLevels && configuredLevels.length > 0) {
-    return configuredLevels;
-  }
-  return DEFAULT_REASONING_EFFORT_LEVELS;
-}
-
-function resolveReasoningEffort(
-  current: ReasoningEffort | undefined,
-  model: Model | undefined,
-  mode: InputMode | undefined,
-  preferModeDefault = false,
-): ReasoningEffort | undefined {
-  if (!model?.supports_reasoning_effort) {
-    return undefined;
-  }
-  const levels = getReasoningEffortLevels(model);
-  const modelDefault = isReasoningEffort(model.default_reasoning_effort)
-    ? model.default_reasoning_effort
-    : undefined;
-  const modeDefault = getModeDefaultReasoningEffort(mode);
-  const candidates = preferModeDefault
-    ? [modeDefault, modelDefault, current, levels[0]]
-    : [current, modelDefault, modeDefault, levels[0]];
-  return candidates.find((effort): effort is ReasoningEffort =>
-    Boolean(effort && levels.includes(effort)),
-  );
-}
+  type InputMode,
+  type ReasoningEffort,
+  getReasoningEffortLevels,
+  getResolvedMode,
+  resolveReasoningEffort,
+} from "./mode-utils";
+import { PlusMenuButton } from "./plus-menu-button";
+import { SuggestionList } from "./suggestion-list";
 
 export function InputBox({
   className,
@@ -168,7 +75,7 @@ export function InputBox({
   context,
   extraHeader,
   isNewThread,
-  threadId,
+  threadId: _threadId,
   initialValue,
   onContextChange,
   onSubmit,
@@ -716,170 +623,5 @@ export function InputBox({
       )}
 
     </div>
-  );
-}
-
-function SuggestionList() {
-  const { t } = useI18n();
-  const { textInput } = usePromptInputController();
-  const handleSuggestionClick = useCallback(
-    (prompt: string | undefined) => {
-      if (!prompt) return;
-      textInput.setInput(prompt);
-      setTimeout(() => {
-        const textarea = document.querySelector<HTMLTextAreaElement>(
-          "textarea[name='message']",
-        );
-        if (textarea) {
-          const selStart = prompt.indexOf("[");
-          const selEnd = prompt.indexOf("]");
-          if (selStart !== -1 && selEnd !== -1) {
-            textarea.setSelectionRange(selStart, selEnd + 1);
-            textarea.focus();
-          }
-        }
-      }, 500);
-    },
-    [textInput],
-  );
-  return (
-    <Suggestions className="min-h-16 w-fit items-start">
-      <ConfettiButton
-        className="text-muted-foreground cursor-pointer rounded-full px-4 text-xs font-normal"
-        variant="outline"
-        size="sm"
-        onClick={() => handleSuggestionClick(t.inputBox.surpriseMePrompt)}
-      >
-        <SparklesIcon className="size-4" /> {t.inputBox.surpriseMe}
-      </ConfettiButton>
-      {t.inputBox.suggestions.map((suggestion) => (
-        <Suggestion
-          key={suggestion.suggestion}
-          icon={suggestion.icon}
-          suggestion={suggestion.suggestion}
-          onClick={() => handleSuggestionClick(suggestion.prompt)}
-        />
-      ))}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Suggestion icon={PlusIcon} suggestion={t.common.create} />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuGroup>
-            {t.inputBox.suggestionsCreate.map((suggestion, index) =>
-              "type" in suggestion && suggestion.type === "separator" ? (
-                <DropdownMenuSeparator key={index} />
-              ) : (
-                !("type" in suggestion) && (
-                  <DropdownMenuItem
-                    key={suggestion.suggestion}
-                    onClick={() => handleSuggestionClick(suggestion.prompt)}
-                  >
-                    {suggestion.icon && <suggestion.icon className="size-4" />}
-                    {suggestion.suggestion}
-                  </DropdownMenuItem>
-                )
-              ),
-            )}
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </Suggestions>
-  );
-}
-
-function PlusMenuButton({
-  className,
-  toneStyle,
-  onToneStyleSelect,
-}: {
-  className?: string;
-  toneStyle?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
-  onToneStyleSelect?: (
-    tone: "normal" | "formal" | "concise" | "explanatory" | "encouraging",
-  ) => void;
-}) {
-  const { t } = useI18n();
-  const attachments = usePromptInputAttachments();
-  const currentTone = toneStyle ?? "normal";
-
-  const toneOptions = useMemo(
-    () =>
-      [
-        {
-          value: "normal" as const,
-          label: t.inputBox.toneStyleNormal,
-          description: t.inputBox.toneStyleNormalDescription,
-        },
-        {
-          value: "formal" as const,
-          label: t.inputBox.toneStyleFormal,
-          description: t.inputBox.toneStyleFormalDescription,
-        },
-        {
-          value: "concise" as const,
-          label: t.inputBox.toneStyleConcise,
-          description: t.inputBox.toneStyleConciseDescription,
-        },
-        {
-          value: "explanatory" as const,
-          label: t.inputBox.toneStyleExplanatory,
-          description: t.inputBox.toneStyleExplanatoryDescription,
-        },
-        {
-          value: "encouraging" as const,
-          label: t.inputBox.toneStyleEncouraging,
-          description: t.inputBox.toneStyleEncouragingDescription,
-        },
-      ] as const,
-    [t],
-  );
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <PromptInputButton className={cn("px-2!", className)}>
-          <PlusIcon className="size-3" />
-        </PromptInputButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuItem onClick={() => attachments.openFileDialog()}>
-          <PaperclipIcon className="mr-2 size-4" />
-          {t.inputBox.addAttachments}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <SlidersHorizontalIcon className="mr-2 size-4" />
-            {t.inputBox.toneStyle}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="w-56">
-            {toneOptions.map((option) => (
-              <DropdownMenuItem
-                key={option.value}
-                className={cn(
-                  currentTone === option.value
-                    ? "text-accent-foreground"
-                    : "text-muted-foreground/65",
-                )}
-                onClick={() => onToneStyleSelect?.(option.value)}
-              >
-                <div className="flex flex-col gap-0.5">
-                  <div className="font-medium">{option.label}</div>
-                  <div className="text-xs opacity-70">
-                    {option.description}
-                  </div>
-                </div>
-                {currentTone === option.value ? (
-                  <CheckIcon className="ml-auto size-4 shrink-0" />
-                ) : (
-                  <div className="ml-auto size-4 shrink-0" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

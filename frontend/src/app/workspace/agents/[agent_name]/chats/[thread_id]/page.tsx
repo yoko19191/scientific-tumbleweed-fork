@@ -2,7 +2,7 @@
 
 import { BotIcon, PlusSquare } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
@@ -95,29 +95,29 @@ export default function AgentChatPage() {
   }, [thread]);
 
   const threadStatus = thread.error
-    ? "error" as const
+    ? ("error" as const)
     : thread.isLoading
-      ? "streaming" as const
-      : "ready" as const;
+      ? ("streaming" as const)
+      : ("ready" as const);
 
-  const {
-    followups,
-    followupsLoading,
-    showFollowups,
-    setFollowupsHidden,
-  } = useFollowupSuggestions({
-    threadId,
-    status: threadStatus,
-    disabled: env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
-    isNewThread,
-    isMock: false,
-    modelName: settings.context.model_name,
-    messages: thread.messages,
-  });
+  const { followups, followupsLoading, showFollowups, setFollowupsHidden } =
+    useFollowupSuggestions({
+      threadId,
+      status: threadStatus,
+      disabled: env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
+      isNewThread,
+      isMock: false,
+      modelName: settings.context.model_name,
+      messages: thread.messages,
+    });
 
   const handleFollowupSelect = useCallback(
     (suggestion: string) => {
-      void sendMessage(threadId, { text: suggestion, files: [] }, { agent_name });
+      void sendMessage(
+        threadId,
+        { text: suggestion, files: [] },
+        { agent_name },
+      );
       setFollowupsHidden(true);
     },
     [sendMessage, threadId, agent_name, setFollowupsHidden],
@@ -127,6 +127,7 @@ export default function AgentChatPage() {
     ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
       MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
     : undefined;
+  const todos = thread.values.todos ?? [];
 
   return (
     <ThreadContext.Provider value={{ thread }}>
@@ -196,13 +197,9 @@ export default function AgentChatPage() {
               >
                 <div className="absolute -top-4 right-0 left-0 z-0">
                   <div className="absolute right-0 bottom-0 left-0 flex flex-col-reverse">
-                    <TodoList
-                      className="bg-background/5"
-                      todos={thread.values.todos ?? []}
-                      hidden={
-                        !thread.values.todos || thread.values.todos.length === 0
-                      }
-                    />
+                    {todos.length > 0 && (
+                      <TodoList className="bg-background/5" todos={todos} />
+                    )}
                     <FollowupSuggestions
                       followups={followups}
                       followupsLoading={followupsLoading}

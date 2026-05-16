@@ -1,20 +1,17 @@
 "use client";
 
-import type { ChatStatus } from "ai";
 import type { Message } from "@langchain/langgraph-sdk";
+import type { ChatStatus } from "ai";
 import { XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { fetchWithAuth } from "@/core/auth/fetcher";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
@@ -95,16 +92,19 @@ export function useFollowupSuggestions({
     setFollowupsLoading(true);
     setFollowups([]);
 
-    fetchWithAuth(`${getBackendBaseURL()}/api/threads/${threadId}/suggestions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: recent,
-        n: 3,
-        model_name: modelName ?? undefined,
-      }),
-      signal: controller.signal,
-    })
+    fetchWithAuth(
+      `${getBackendBaseURL()}/api/threads/${threadId}/suggestions`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: recent,
+          n: 3,
+          model_name: modelName ?? undefined,
+        }),
+        signal: controller.signal,
+      },
+    )
       .then(async (res) => {
         if (!res.ok) return { suggestions: [] as string[] };
         return (await res.json()) as { suggestions?: string[] };
@@ -144,10 +144,6 @@ export function FollowupSuggestions({
   onSelect: (suggestion: string) => void;
 }) {
   const { t } = useI18n();
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(
-    null,
-  );
 
   const handleClick = useCallback(
     (suggestion: string) => {
@@ -160,7 +156,7 @@ export function FollowupSuggestions({
 
   return (
     <>
-      <div className="flex items-center justify-center">
+      <div className="mb-3 flex items-center justify-center">
         <div className="flex items-center gap-2">
           {followupsLoading ? (
             <div className="text-muted-foreground bg-background/80 rounded-full border px-4 py-2 text-xs backdrop-blur-sm">
@@ -169,11 +165,18 @@ export function FollowupSuggestions({
           ) : (
             <Suggestions className="w-fit items-start">
               {followups.map((s) => (
-                <Suggestion
-                  key={s}
-                  suggestion={s}
-                  onClick={() => handleClick(s)}
-                />
+                <Tooltip key={s}>
+                  <TooltipTrigger asChild>
+                    <Suggestion
+                      className="max-w-[min(22rem,calc(100vw-6rem))] overflow-hidden text-left whitespace-nowrap"
+                      suggestion={<span className="min-w-0 truncate">{s}</span>}
+                      onClick={() => handleClick(s)}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[min(28rem,calc(100vw-2rem))] text-left break-words whitespace-normal">
+                    {s}
+                  </TooltipContent>
+                </Tooltip>
               ))}
               <Button
                 aria-label={t.common.close}

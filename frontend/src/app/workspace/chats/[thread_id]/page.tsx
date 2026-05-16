@@ -115,25 +115,21 @@ export default function ChatPage() {
   }, [thread]);
 
   const threadStatus = thread.error
-    ? "error" as const
+    ? ("error" as const)
     : thread.isLoading
-      ? "streaming" as const
-      : "ready" as const;
+      ? ("streaming" as const)
+      : ("ready" as const);
 
-  const {
-    followups,
-    followupsLoading,
-    showFollowups,
-    setFollowupsHidden,
-  } = useFollowupSuggestions({
-    threadId,
-    status: threadStatus,
-    disabled: env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || isUploading,
-    isNewThread,
-    isMock,
-    modelName: settings.context.model_name,
-    messages: thread.messages,
-  });
+  const { followups, followupsLoading, showFollowups, setFollowupsHidden } =
+    useFollowupSuggestions({
+      threadId,
+      status: threadStatus,
+      disabled: env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || isUploading,
+      isNewThread,
+      isMock,
+      modelName: settings.context.model_name,
+      messages: thread.messages,
+    });
 
   const handleFollowupSelect = useCallback(
     (suggestion: string) => {
@@ -147,17 +143,19 @@ export default function ChatPage() {
     ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
       MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
     : undefined;
+  const todos = thread.values.todos ?? [];
 
   // Show inaccessible state when thread is not owned by the current user
   if (threadInaccessible) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
         <p className="text-muted-foreground text-sm">
-          {t.workspace.threadInaccessible ?? "This conversation is not accessible."}
+          {t.workspace.threadInaccessible ??
+            "This conversation is not accessible."}
         </p>
         <button
           type="button"
-          className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-4 py-2 text-sm"
           onClick={() => router.push("/workspace/chats/new")}
         >
           {t.workspace.startNewChat ?? "Start a new chat"}
@@ -217,13 +215,9 @@ export default function ChatPage() {
               >
                 <div className="absolute -top-4 right-0 left-0 z-0">
                   <div className="absolute right-0 bottom-0 left-0 flex flex-col-reverse">
-                    <TodoList
-                      className="bg-background/5"
-                      todos={thread.values.todos ?? []}
-                      hidden={
-                        !thread.values.todos || thread.values.todos.length === 0
-                      }
-                    />
+                    {todos.length > 0 && (
+                      <TodoList className="bg-background/5" todos={todos} />
+                    )}
                     <FollowupSuggestions
                       followups={followups}
                       followupsLoading={followupsLoading}
@@ -263,7 +257,10 @@ export default function ChatPage() {
                   />
                 )}
                 {!isNewThread && (
-                  <p className="relative z-10 text-muted-foreground/50 text-center text-[10px] leading-none" style={{ marginTop: "-10px" }}>
+                  <p
+                    className="text-muted-foreground/50 relative z-10 text-center text-[10px] leading-none"
+                    style={{ marginTop: "-10px" }}
+                  >
                     {t.inputBox.aiDisclaimer}
                   </p>
                 )}

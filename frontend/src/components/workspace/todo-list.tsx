@@ -15,13 +15,11 @@ export function TodoList({
   className,
   todos,
   collapsed: controlledCollapsed,
-  hidden = false,
   onToggle,
 }: {
   className?: string;
   todos: Todo[];
   collapsed?: boolean;
-  hidden?: boolean;
   onToggle?: () => void;
 }) {
   const [internalCollapsed, setInternalCollapsed] = useState(true);
@@ -40,7 +38,6 @@ export function TodoList({
     <div
       className={cn(
         "flex h-fit w-full origin-bottom translate-y-4 flex-col overflow-hidden rounded-t-xl border border-b-0 bg-white backdrop-blur-sm transition-all duration-200 ease-out",
-        hidden ? "pointer-events-none translate-y-8 opacity-0" : "",
         className,
       )}
     >

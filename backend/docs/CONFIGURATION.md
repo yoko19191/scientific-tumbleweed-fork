@@ -345,7 +345,7 @@ models:
 
 ## Configuration Location
 
-The configuration file should be placed in the **project root directory** (`deer-flow/config.yaml`), not in the backend directory.
+The configuration file should be placed in the **project root directory** (`scientific-tumbleweed-monorepo/config.yaml`), not in the backend directory.
 
 ## Configuration Priority
 
@@ -354,7 +354,7 @@ Scientific Tumbleweed searches for configuration in this order:
 1. Path specified in code via `config_path` argument
 2. Path from `DEER_FLOW_CONFIG_PATH` environment variable
 3. `config.yaml` in current working directory (typically `backend/` when running)
-4. `config.yaml` in parent directory (project root: `deer-flow/`)
+4. `config.yaml` in parent directory (project root: `scientific-tumbleweed-monorepo/`)
 
 ## Best Practices
 
@@ -368,7 +368,7 @@ Scientific Tumbleweed searches for configuration in this order:
 ## Troubleshooting
 
 ### "Config file not found"
-- Ensure `config.yaml` exists in the **project root** directory (`deer-flow/config.yaml`)
+- Ensure `config.yaml` exists in the **project root** directory (`scientific-tumbleweed-monorepo/config.yaml`)
 - The backend searches parent directory by default, so root location is preferred
 - Alternatively, set `DEER_FLOW_CONFIG_PATH` environment variable to custom location
 
@@ -377,7 +377,7 @@ Scientific Tumbleweed searches for configuration in this order:
 - Check that `$` prefix is used for env var references
 
 ### "Skills not loading"
-- Check that `deer-flow/skills/` directory exists
+- Check that `scientific-tumbleweed-monorepo/skills/` directory exists
 - Verify skills have valid `SKILL.md` files
 - Check `skills.path` configuration if using custom path
 

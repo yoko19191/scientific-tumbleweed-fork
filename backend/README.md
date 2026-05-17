@@ -148,7 +148,7 @@ For Feishu card updates, Scientific Tumbleweed stores the running card's `messag
 ### Installation
 
 ```bash
-cd deer-flow
+cd scientific-tumbleweed-monorepo
 
 # Copy configuration files
 cp config.example.yaml config.yaml

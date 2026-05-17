@@ -6,7 +6,6 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](./Makefile)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-<a href="https://trendshift.io/repositories/14699" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14699" alt="bytedance%2Fdeer-flow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 > 2026 年 2 月 28 日，科学风滚草 2 发布后登上 GitHub Trending 第 1 名。非常感谢社区的支持，这是大家一起做到的。
 
 科学风滚草是一个开源的 **super agent harness**。它把 **sub-agents**、**memory** 和 **sandbox** 组织在一起，再配合可扩展的 **skills**，让 agent 可以完成几乎任何事情。
@@ -64,14 +63,13 @@ https://github.com/user-attachments/assets/a8bcadc4-e040-4cf2-8fda-dd768b999c18
   - [许可证](#许可证)
   - [致谢](#致谢)
     - [核心贡献者](#核心贡献者)
-  - [Star History](#star-history)
 
 ## 一句话交给 Coding Agent 安装
 
 如果你在用 Claude Code、Codex、Cursor、Windsurf 或其他 coding agent，可以直接把下面这句话发给它：
 
 ```text
-如果还没 clone 科学风滚草，就先 clone，然后按照 https://raw.githubusercontent.com/bytedance/deer-flow/main/Install.md 把它的本地开发环境初始化好
+如果还没 clone 科学风滚草，就先 clone，然后按照 https://raw.githubusercontent.com/yoko19191/scientific-tumbleweed-monorepo/main/Install.md 把它的本地开发环境初始化好
 ```
 
 这条提示词是给 coding agent 用的。它会在需要时先 clone 仓库，优先选择 Docker，完成初始化，并在结束时告诉你下一条启动命令，以及还缺哪些配置需要你补充。
@@ -83,13 +81,13 @@ https://github.com/user-attachments/assets/a8bcadc4-e040-4cf2-8fda-dd768b999c18
 1. **克隆科学风滚草仓库**
 
    ```bash
-   git clone https://github.com/bytedance/deer-flow.git
-   cd deer-flow
+   git clone git@github.com:yoko19191/scientific-tumbleweed-monorepo.git
+   cd scientific-tumbleweed-monorepo
    ```
 
 2. **生成本地配置文件**
 
-   在项目根目录（`deer-flow/`）执行：
+   在项目根目录（`scientific-tumbleweed-monorepo/`）执行：
 
    ```bash
    make config
@@ -434,7 +432,7 @@ Gateway 生成后续建议时，现在会先把普通字符串输出和 block/li
 **安装这个 skill：**
 
 ```bash
-npx skills add https://github.com/bytedance/deer-flow --skill claude-to-deerflow
+npx skills add https://github.com/yoko19191/scientific-tumbleweed-monorepo --skill claude-to-deerflow
 ```
 
 然后确认科学风滚草已经启动（默认地址是 `http://localhost:2026`），在 Claude Code 里使用 `/claude-to-deerflow` 命令即可。
@@ -579,7 +577,3 @@ client.upload_files("thread-1", ["./report.pdf"])  # {"success": True, "files": 
 
 - **[Daniel Walnut](https://github.com/hetaoBackend/)**
 - **[Henry Li](https://github.com/magiccube/)**
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=bytedance/deer-flow&type=Date)](https://star-history.com/#bytedance/deer-flow&Date)

@@ -6,7 +6,7 @@
 |---|---|
 | 日期 | 2026-04-11 |
 | 合并来源 | `upstream/main` (bytedance/deer-flow) |
-| 合并目标 | `main` (scientific-tumbleweed-fork) |
+| 合并目标 | `main` (scientific-tumbleweed-monorepo) |
 | 上游 tip | `092bf13f` fix(makefile): route Windows shell-script targets through Git Bash |
 | 合并提交 | `dc2b543d` |
 | 涉及上游 commit 数 | 103 个 |

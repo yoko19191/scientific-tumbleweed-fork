@@ -27,8 +27,8 @@ Thank you for your interest in contributing to Scientific Tumbleweed! This docum
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/deer-flow.git
-   cd deer-flow
+   git clone https://github.com/YOUR_USERNAME/scientific-tumbleweed-monorepo.git
+   cd scientific-tumbleweed-monorepo
    ```
 
 ## Development Setup

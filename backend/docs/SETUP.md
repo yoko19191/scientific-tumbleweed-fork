@@ -10,7 +10,7 @@ Scientific Tumbleweed uses a YAML configuration file that should be placed in th
 
 1. **Navigate to project root**:
    ```bash
-   cd /path/to/deer-flow
+   cd /path/to/scientific-tumbleweed-monorepo
    ```
 
 2. **Copy example configuration**:
@@ -35,7 +35,7 @@ Scientific Tumbleweed uses a YAML configuration file that should be placed in th
 
 ## Important Notes
 
-- **Location**: `config.yaml` should be in `deer-flow/` (project root), not `deer-flow/backend/`
+- **Location**: `config.yaml` should be in `scientific-tumbleweed-monorepo/` (project root), not `scientific-tumbleweed-monorepo/backend/`
 - **Git**: `config.yaml` is automatically ignored by git (contains secrets)
 - **Priority**: If both `backend/config.yaml` and `../config.yaml` exist, backend version takes precedence
 
@@ -45,9 +45,9 @@ The backend searches for `config.yaml` in this order:
 
 1. `DEER_FLOW_CONFIG_PATH` environment variable (if set)
 2. `backend/config.yaml` (current directory when running from backend/)
-3. `deer-flow/config.yaml` (parent directory - **recommended location**)
+3. `scientific-tumbleweed-monorepo/config.yaml` (parent directory - **recommended location**)
 
-**Recommended**: Place `config.yaml` in project root (`deer-flow/config.yaml`).
+**Recommended**: Place `config.yaml` in project root (`scientific-tumbleweed-monorepo/config.yaml`).
 
 ## Sandbox Setup (Optional but Recommended)
 
@@ -71,7 +71,7 @@ If you skip this step, the image will be automatically pulled on first agent exe
 
 ```bash
 # Check where the backend is looking
-cd deer-flow/backend
+cd scientific-tumbleweed-monorepo/backend
 python -c "from deerflow.config.app_config import AppConfig; print(AppConfig.resolve_config_path())"
 ```
 

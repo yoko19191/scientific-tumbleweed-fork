@@ -2,7 +2,7 @@
 
 ## 来源与目标
 
-本次合并源自 `upstream/main`（bytedance/deer-flow，commit `092bf13f`）分支与 `main`（scientific-tumbleweed-fork）分支，整合了以下功能模块代码：
+本次合并源自 `upstream/main`（bytedance/deer-flow，commit `092bf13f`）分支与 `main`（scientific-tumbleweed-monorepo）分支，整合了以下功能模块代码：
 
 - **Skill 自进化模块**：`skills/manager.py`、`skills/security_scanner.py`，支持技能的动态创建、编辑与版本回滚
 - **Sandbox 搜索工具模块**：`sandbox/search.py`、`sandbox/file_operation_lock.py`，新增 grep/glob 工具及文件操作并发锁

@@ -6,7 +6,7 @@
 |---|---|
 | 日期 | 2026-04-06 |
 | 合并来源 | `git@github.com:fang503/antflow.git` (antflow/main) |
-| 合并目标 | `custom/main` (scientific-tumbleweed-fork) |
+| 合并目标 | `custom/main` (scientific-tumbleweed-monorepo) |
 | 合并方式 | 手动选择性应用（两分支无公共祖先，无法 git merge） |
 | 涉及 commit 数 | 5 个 |
 

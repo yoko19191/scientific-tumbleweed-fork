@@ -6,7 +6,7 @@
 |---|---|
 | 日期 | 2026-05-01 |
 | 合并来源 | `upstream/main` (bytedance/deer-flow) |
-| 合并目标 | `main` (scientific-tumbleweed-fork) |
+| 合并目标 | `main` (scientific-tumbleweed-monorepo) |
 | 上次合并点 | `092bf13f` fix(makefile): route Windows shell-script targets through Git Bash |
 | 上游 tip | `189b8240` fix(sandbox): pass no_change_timeout to exec_command to prevent 120s premature termination (#2685) |
 | 待处理上游 commit 数 | 146 个 (不含 merge) |

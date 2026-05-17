@@ -6,7 +6,6 @@ English | [中文](./README_zh.md) | [日本語](./README_ja.md) | [Français](.
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](./Makefile)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-<a href="https://trendshift.io/repositories/14699" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14699" alt="bytedance%2Fdeer-flow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 > On February 28th, 2026, Scientific Tumbleweed claimed the 🏆 #1 spot on GitHub Trending following the launch of version 2. Thanks a million to our incredible community — you made this happen! 💪🔥
 
 Scientific Tumbleweed is an open-source **super agent harness** that orchestrates **sub-agents**, **memory**, and **sandboxes** to do almost anything — powered by **extensible skills**.
@@ -81,14 +80,13 @@ Scientific Tumbleweed has newly integrated the intelligent search and crawling t
   - [License](#license)
   - [Acknowledgments](#acknowledgments)
     - [Key Contributors](#key-contributors)
-  - [Star History](#star-history)
 
 ## One-Line Agent Setup
 
 If you use Claude Code, Codex, Cursor, Windsurf, or another coding agent, you can hand it the setup instructions in one sentence:
 
 ```text
-Help me clone Scientific Tumbleweed if needed, then bootstrap it for local development by following https://raw.githubusercontent.com/bytedance/deer-flow/main/Install.md
+Help me clone Scientific Tumbleweed if needed, then bootstrap it for local development by following https://raw.githubusercontent.com/yoko19191/scientific-tumbleweed-monorepo/main/Install.md
 ```
 
 That prompt is intended for coding agents. It tells the agent to clone the repo if needed, choose Docker when available, and stop with the exact next command plus any missing config the user still needs to provide.
@@ -100,13 +98,13 @@ That prompt is intended for coding agents. It tells the agent to clone the repo 
 1. **Clone the Scientific Tumbleweed repository**
 
    ```bash
-   git clone https://github.com/bytedance/deer-flow.git
-   cd deer-flow
+   git clone git@github.com:yoko19191/scientific-tumbleweed-monorepo.git
+   cd scientific-tumbleweed-monorepo
    ```
 
 2. **Run the setup wizard**
 
-   From the project root directory (`deer-flow/`), run:
+   From the project root directory (`scientific-tumbleweed-monorepo/`), run:
 
    ```bash
    make setup
@@ -623,7 +621,7 @@ The `claude-to-deerflow` skill lets you interact with a running Scientific Tumbl
 **Install the skill**:
 
 ```bash
-npx skills add https://github.com/bytedance/deer-flow --skill claude-to-deerflow
+npx skills add https://github.com/yoko19191/scientific-tumbleweed-monorepo --skill claude-to-deerflow
 ```
 
 Then make sure Scientific Tumbleweed is running (default at `http://localhost:2026`) and use the `/claude-to-deerflow` command in Claude Code.
@@ -777,7 +775,3 @@ A heartfelt thank you goes out to the core authors of `Scientific Tumbleweed`, w
 - **[Henry Li](https://github.com/magiccube/)**
 
 Your unwavering commitment and expertise have been the driving force behind Scientific Tumbleweed's success. We are honored to have you at the helm of this journey.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=bytedance/deer-flow&type=Date)](https://star-history.com/#bytedance/deer-flow&Date)

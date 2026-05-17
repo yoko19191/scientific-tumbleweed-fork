@@ -51,12 +51,14 @@ export function MessageList({
   thread,
   paddingBottom = MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
   tokenUsageEnabled = false,
+  onClarificationSubmit,
 }: {
   className?: string;
   threadId: string;
   thread: BaseStream<AgentThreadState>;
   paddingBottom?: number;
   tokenUsageEnabled?: boolean;
+  onClarificationSubmit?: (response: ClarificationResponse) => void;
 }) {
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
@@ -159,13 +161,7 @@ export function MessageList({
                 schema={uiSchema}
                 fallbackContent={extractContentFromMessage(message)}
                 onSubmit={(response: ClarificationResponse) => {
-                  // Dispatch via custom event — the parent workspace
-                  // listens and calls sendMessage
-                  window.dispatchEvent(
-                    new CustomEvent("clarification-submit", {
-                      detail: { threadId, response },
-                    }),
-                  );
+                  onClarificationSubmit?.(response);
                 }}
                 disabled={isAnswered}
               />

@@ -21,6 +21,7 @@ import {
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
   MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM,
 } from "@/components/workspace/messages";
+import type { ClarificationResponse } from "@/components/workspace/messages/clarification-ui";
 import { ThreadContext } from "@/components/workspace/messages/context";
 import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
@@ -123,6 +124,23 @@ export default function AgentChatPage() {
     [sendMessage, threadId, agent_name, setFollowupsHidden],
   );
 
+  const handleClarificationSubmit = useCallback(
+    (response: ClarificationResponse) => {
+      let text: string;
+      if (response.type === "chat_escape") {
+        text = response.message;
+      } else {
+        text = JSON.stringify({
+          _genui_response: true,
+          action: response.action,
+          data: response.data,
+        });
+      }
+      void sendMessage(threadId, { text, files: [] }, { agent_name });
+    },
+    [sendMessage, threadId, agent_name],
+  );
+
   const messageListPaddingBottom = showFollowups
     ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
       MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
@@ -182,6 +200,7 @@ export default function AgentChatPage() {
                 thread={thread}
                 paddingBottom={messageListPaddingBottom}
                 tokenUsageEnabled={tokenUsageEnabled}
+                onClarificationSubmit={handleClarificationSubmit}
               />
             </div>
 

@@ -651,6 +651,51 @@ def _build_clarification_section() -> str:
 对于明确、可直接执行的请求，跳过漏斗，直接行动。
 调用 `ask_clarification` 仅当：信息缺失会实质改变结果、选择有重大 trade-off、或操作不可逆。
 不要把可以通过检查文件、配置、工具输出或对话上下文回答的问题抛给用户。
+
+<generative_ui>
+当调用 ask_clarification 且交互适合结构化 UI 时，在 ui_schema 参数中提供 OpenUI Lang。
+
+格式规则：
+- 每行一条语句：`identifier = ComponentType(args...)`
+- 必须以 `root = Card([...])` 开头
+- 末尾必须包含 chat_escape（自由文本逃逸区域）
+
+可用组件：
+- 布局：Card, CardHeader, Stack, Separator, Progress
+- 内容：TextContent, Alert, CodeBlock
+- 表单：Form, FormControl, Input, TextArea, Select, SelectItem, Slider
+- 选择：RadioGroup, RadioItem, CheckBoxGroup, CheckBoxItem, SwitchGroup, SwitchItem
+- 动作：Button, Buttons, Action, @ToAssistant
+
+动作语法：Action([@ToAssistant("消息文本")]) — 点击后将消息发送回对话
+
+5 种交互模式：
+1. approach_choice → RadioGroup 选择方案
+2. missing_info → Form 收集缺失字段
+3. risk_confirmation → Alert + 确认/取消 Buttons
+4. suggestion → CheckBoxGroup 逐条勾选
+5. wizard (多步) → Progress + 单步 Form
+
+示例（方案选择）：
+```
+root = Card([header, options, actions, sep, chatEscape])
+header = TextContent("发现 2 种方案：", "medium")
+options = RadioGroup("approach", [a, b])
+a = RadioItem("cache", "方案 A：添加缓存层 — 延迟降低 80%")
+b = RadioItem("index", "方案 B：优化索引 — 无需新依赖")
+actions = Buttons([Button("确认", Action([@ToAssistant("确认选择")]), "primary")])
+sep = Separator()
+chatEscape = Form("chat_escape", chatBtn, [chatField])
+chatField = FormControl("或者，直接告诉我：", TextArea("chat_message", "输入其他想法...", 2))
+chatBtn = Buttons([Button("发送", Action([@ToAssistant("发送")]), "secondary")])
+```
+
+规则：
+- 对于简单 yes/no 确认，不需要 ui_schema，纯文本即可
+- question 和 options 参数始终填写（作为纯文本 fallback）
+- ui_schema 中的标识符不能重复，使用有意义的短名称
+- 每个 Form 的 name 必须唯一（主表单用业务名，逃逸用 "chat_escape"）
+</generative_ui>
 </clarification_system>"""
 
 

@@ -136,6 +136,14 @@ class ClarificationMiddleware(AgentMiddleware[ClarificationMiddlewareState]):
         # Get the tool call ID
         tool_call_id = request.tool_call.get("id", "")
 
+        # Extract optional ui_schema for GenerativeUI rendering
+        ui_schema = args.get("ui_schema")
+
+        # Build additional_kwargs with ui_schema if present
+        additional_kwargs = {}
+        if ui_schema:
+            additional_kwargs["ui_schema"] = ui_schema
+
         # Create a ToolMessage with the formatted question
         # This will be added to the message history
         tool_message = ToolMessage(
@@ -143,6 +151,7 @@ class ClarificationMiddleware(AgentMiddleware[ClarificationMiddlewareState]):
             content=formatted_message,
             tool_call_id=tool_call_id,
             name="ask_clarification",
+            additional_kwargs=additional_kwargs,
         )
 
         # Return a Command that:

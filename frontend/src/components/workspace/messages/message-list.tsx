@@ -1,5 +1,5 @@
 import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { Fragment, useEffect } from "react";
+import { Fragment, useCallback, useEffect, useMemo } from "react";
 
 import {
   Conversation,
@@ -31,6 +31,10 @@ import { cn } from "@/lib/utils";
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
 import { StreamingIndicator } from "../streaming-indicator";
 
+import {
+  ClarificationUI,
+  type ClarificationResponse,
+} from "./clarification-ui";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
@@ -140,15 +144,44 @@ export function MessageList({
     } else if (group.type === "assistant:clarification") {
       const message = group.messages[0];
       if (message && hasContent(message)) {
-        node = (
-          <div key={group.id} className="w-full">
-            <MarkdownContent
-              content={extractContentFromMessage(message)}
-              isLoading={thread.isLoading}
-              rehypePlugins={rehypePlugins}
-            />
-          </div>
-        );
+        const uiSchema = (message as any).additional_kwargs?.ui_schema as
+          | string
+          | undefined;
+        const msgIndex = messages.findIndex((m) => m.id === message.id);
+        const isAnswered = messages
+          .slice(msgIndex + 1)
+          .some((m) => m.type === "human");
+
+        if (uiSchema) {
+          node = (
+            <div key={group.id} className="w-full">
+              <ClarificationUI
+                schema={uiSchema}
+                fallbackContent={extractContentFromMessage(message)}
+                onSubmit={(response: ClarificationResponse) => {
+                  // Dispatch via custom event — the parent workspace
+                  // listens and calls sendMessage
+                  window.dispatchEvent(
+                    new CustomEvent("clarification-submit", {
+                      detail: { threadId, response },
+                    }),
+                  );
+                }}
+                disabled={isAnswered}
+              />
+            </div>
+          );
+        } else {
+          node = (
+            <div key={group.id} className="w-full">
+              <MarkdownContent
+                content={extractContentFromMessage(message)}
+                isLoading={thread.isLoading}
+                rehypePlugins={rehypePlugins}
+              />
+            </div>
+          );
+        }
       }
     } else if (group.type === "assistant:present-files") {
       const files: string[] = [];

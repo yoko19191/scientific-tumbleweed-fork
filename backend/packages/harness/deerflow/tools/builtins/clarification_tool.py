@@ -15,6 +15,7 @@ def ask_clarification_tool(
     ],
     context: str | None = None,
     options: list[str] | None = None,
+    ui_schema: str | None = None,
 ) -> str:
     """Ask the user for clarification when you need more information to proceed.
 
@@ -48,6 +49,11 @@ def ask_clarification_tool(
         clarification_type: The type of clarification needed (missing_info, ambiguous_requirement, approach_choice, risk_confirmation, suggestion).
         context: Optional context explaining why clarification is needed. Helps the user understand the situation.
         options: Optional list of choices (for approach_choice or suggestion types). Present clear options for the user to choose from.
+        ui_schema: Optional OpenUI Lang schema for rich interactive UI rendering.
+            When provided, the frontend renders interactive components (radio buttons,
+            forms, checkboxes, etc.) instead of plain text. The schema must start with
+            `root = Card([...])` and always include a chat_escape Form at the end.
+            If omitted or invalid, the question/options render as plain markdown text.
     """
     # This is a placeholder implementation
     # The actual logic is handled by ClarificationMiddleware which intercepts this tool call

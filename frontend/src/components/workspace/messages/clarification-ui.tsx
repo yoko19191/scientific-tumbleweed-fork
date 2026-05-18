@@ -163,8 +163,8 @@ function NodeRenderer({
   switch (node.type) {
     case "Card":
       return (
-        <Card className="w-full">
-          <CardContent className="space-y-4 pt-4">
+        <Card className="w-full max-w-lg">
+          <CardContent className="space-y-5 px-5 pt-5 pb-5">
             {node.children.map((childId) => {
               const child = resolveNode(program, childId);
               if (!child) return null;
@@ -199,7 +199,7 @@ function NodeRenderer({
       return (
         <p
           className={cn(
-            "text-sm",
+            "text-sm leading-relaxed",
             node.variant === "large-heavy" && "text-base font-semibold",
             node.variant === "medium" && "text-sm font-medium",
           )}
@@ -300,8 +300,8 @@ function NodeRenderer({
     case "FormControl": {
       const inputNode = resolveNode(program, node.input);
       return (
-        <div className="space-y-1.5">
-          <Label className="text-sm font-medium">{node.label}</Label>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium leading-relaxed">{node.label}</Label>
           {inputNode && (
             <NodeRenderer
               node={inputNode}
@@ -371,15 +371,15 @@ function NodeRenderer({
           value={(formState[node.name] as string) ?? ""}
           onValueChange={(val) => updateField(node.name, val)}
           disabled={disabled}
-          className="space-y-2"
+          className="space-y-3"
         >
           {node.items.map((itemId) => {
             const item = resolveNode(program, itemId);
             if (!item || item.type !== "RadioItem") return null;
             return (
-              <div key={itemId} className="flex items-start gap-2">
-                <RadioGroupItem value={item.value} id={itemId} className="mt-0.5" />
-                <Label htmlFor={itemId} className="font-normal leading-snug cursor-pointer">
+              <div key={itemId} className="flex items-start gap-3 rounded-md border p-3 has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary/5">
+                <RadioGroupItem value={item.value} id={itemId} className="mt-0.5 shrink-0" />
+                <Label htmlFor={itemId} className="font-normal leading-relaxed cursor-pointer text-sm">
                   {item.label}
                 </Label>
               </div>
@@ -391,13 +391,13 @@ function NodeRenderer({
     case "CheckBoxGroup": {
       const checked = (formState[node.name] as string[]) ?? [];
       return (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {node.items.map((itemId) => {
             const item = resolveNode(program, itemId);
             if (!item || item.type !== "CheckBoxItem") return null;
             const isChecked = checked.includes(item.value);
             return (
-              <div key={itemId} className="flex items-start gap-2">
+              <div key={itemId} className="flex items-start gap-3 rounded-md border p-3 has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary/5">
                 <Checkbox
                   id={itemId}
                   checked={isChecked}
@@ -412,9 +412,9 @@ function NodeRenderer({
                     }
                   }}
                   disabled={disabled}
-                  className="mt-0.5"
+                  className="mt-0.5 shrink-0"
                 />
-                <Label htmlFor={itemId} className="font-normal leading-snug cursor-pointer">
+                <Label htmlFor={itemId} className="font-normal leading-relaxed cursor-pointer text-sm">
                   {item.label}
                 </Label>
               </div>

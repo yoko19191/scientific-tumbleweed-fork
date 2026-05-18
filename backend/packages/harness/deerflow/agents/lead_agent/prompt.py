@@ -674,7 +674,7 @@ def _build_clarification_section() -> str:
 2. missing_info → Form 收集缺失字段
 3. risk_confirmation → Alert + 确认/取消 Buttons
 4. suggestion → CheckBoxGroup 逐条勾选
-5. wizard (多步) → Progress + 单步 Form
+5. wizard (多步) → Wizard + WizardStep（前端本地切换步骤，只在最后一步提交）
 
 示例（方案选择）：
 ```
@@ -689,6 +689,35 @@ chatEscape = Form("chat_escape", chatBtn, [chatField])
 chatField = FormControl("或者，直接告诉我：", TextArea("chat_message", "输入其他想法...", 2))
 chatBtn = Buttons([Button("发送", Action([@ToAssistant("发送")]), "secondary")])
 ```
+
+示例（多步向导 Wizard）：
+```
+root = Wizard([step1, step2, step3], sep, chatEscape)
+step1 = WizardStep("基础配置", [nameField, runtimeField])
+step2 = WizardStep("数据库配置", [dbField, portField])
+step3 = WizardStep("确认", [summaryText])
+nameField = FormControl("服务名称", nameInput)
+nameInput = Input("name", "my-service", "text", {required: true})
+runtimeField = FormControl("运行时", runtimeRadio)
+runtimeRadio = RadioGroup("runtime", [rt1, rt2])
+rt1 = RadioItem("python", "Python (FastAPI)")
+rt2 = RadioItem("go", "Go (Gin)")
+dbField = FormControl("数据库", dbSelect)
+dbSelect = Select("database", [db1, db2], "选择数据库")
+db1 = SelectItem("postgres", "PostgreSQL")
+db2 = SelectItem("mysql", "MySQL")
+portField = FormControl("端口", portInput)
+portInput = Input("port", "5432", "number")
+summaryText = TextContent("请确认以上配置无误")
+sep = Separator()
+chatEscape = Form("chat_escape", chatBtn, [chatField])
+chatField = FormControl("或者：", chatInput)
+chatInput = TextArea("chat_message", "输入其他想法...", 2)
+chatBtn = Buttons([Button("发送", Action([@ToAssistant("发送")]), "secondary")])
+```
+Wizard 语法：`root = Wizard([step1, step2, ...], extraNode1, extraNode2)`
+WizardStep 语法：`stepN = WizardStep("步骤标题", [field1, field2, ...])`
+前端会自动生成进度条和上一步/下一步/完成按钮，无需手动添加。
 
 规则：
 - 对于简单 yes/no 确认，不需要 ui_schema，纯文本即可

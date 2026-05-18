@@ -472,6 +472,26 @@ function parseLine(line: string): OpenUINode | null {
         direction: argToString(args[1]),
       };
 
+    case "Wizard": {
+      // Wizard([step1, step2, step3], sep, chatEscape)
+      const steps = argToStringArray(args[0]);
+      const extras: string[] = [];
+      for (let i = 1; i < args.length; i++) {
+        const ref = argToString(args[i]);
+        if (ref) extras.push(ref);
+      }
+      return { type: "Wizard", id, steps, extras };
+    }
+
+    case "WizardStep":
+      // WizardStep("标题", [field1, field2])
+      return {
+        type: "WizardStep",
+        id,
+        title: argToString(args[0]) ?? "",
+        fields: argToStringArray(args[1]),
+      };
+
     default:
       return { type: "Unknown", id, raw: trimmed };
   }

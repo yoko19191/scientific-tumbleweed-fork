@@ -181,6 +181,20 @@ export interface ButtonsNode {
   direction?: string;
 }
 
+export interface WizardNode {
+  type: "Wizard";
+  id: string;
+  steps: string[];
+  extras: string[];
+}
+
+export interface WizardStepNode {
+  type: "WizardStep";
+  id: string;
+  title: string;
+  fields: string[];
+}
+
 export interface UnknownNode {
   type: "Unknown";
   id: string;
@@ -211,6 +225,8 @@ export type OpenUINode =
   | SwitchItemNode
   | ButtonNode
   | ButtonsNode
+  | WizardNode
+  | WizardStepNode
   | UnknownNode;
 
 /**

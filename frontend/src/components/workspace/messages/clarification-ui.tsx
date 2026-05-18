@@ -163,7 +163,7 @@ function NodeRenderer({
   switch (node.type) {
     case "Card":
       return (
-        <Card className="w-full max-w-lg">
+        <Card className="w-full max-w-2xl">
           <CardContent className="space-y-5 px-5 pt-5 pb-5">
             {node.children.map((childId) => {
               const child = resolveNode(program, childId);
@@ -530,6 +530,23 @@ function NodeRenderer({
         </div>
       );
 
+    case "Wizard": {
+      return (
+        <WizardRenderer
+          node={node}
+          program={program}
+          formState={formState}
+          updateField={updateField}
+          onAction={onAction}
+          disabled={disabled}
+        />
+      );
+    }
+
+    case "WizardStep":
+      // Rendered by WizardRenderer, not standalone
+      return null;
+
     case "Unknown":
     case "SelectItem":
     case "RadioItem":
@@ -541,4 +558,118 @@ function NodeRenderer({
     default:
       return null;
   }
+}
+
+// --- Wizard Renderer ---
+
+function WizardRenderer({
+  node,
+  program,
+  formState,
+  updateField,
+  onAction,
+  disabled,
+}: {
+  node: OpenUINode & { type: "Wizard" };
+  program: OpenUIProgram;
+  formState: Record<string, unknown>;
+  updateField: (name: string, value: unknown) => void;
+  onAction: (message: string, formName?: string) => void;
+  disabled: boolean;
+}) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const totalSteps = node.steps.length;
+  const progress = totalSteps > 0 ? Math.round(((currentStep + 1) / totalSteps) * 100) : 0;
+
+  const currentStepNode = resolveNode(program, node.steps[currentStep] ?? "");
+  const stepTitle = currentStepNode?.type === "WizardStep" ? currentStepNode.title : "";
+  const stepFields = currentStepNode?.type === "WizardStep" ? currentStepNode.fields : [];
+
+  const isFirstStep = currentStep === 0;
+  const isLastStep = currentStep === totalSteps - 1;
+
+  return (
+    <Card className="w-full max-w-2xl">
+      <CardContent className="space-y-5 px-5 pt-5 pb-5">
+        {/* Header */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">{stepTitle}</span>
+            <span className="text-xs text-muted-foreground">
+              Step {currentStep + 1} of {totalSteps}
+            </span>
+          </div>
+          <Progress value={progress} className="h-2" />
+        </div>
+
+        {/* Current step fields */}
+        <div className="space-y-4">
+          {stepFields.map((fieldId) => {
+            const field = resolveNode(program, fieldId);
+            if (!field) return null;
+            return (
+              <NodeRenderer
+                key={fieldId}
+                node={field}
+                program={program}
+                formState={formState}
+                updateField={updateField}
+                onAction={onAction}
+                disabled={disabled}
+              />
+            );
+          })}
+        </div>
+
+        {/* Navigation buttons */}
+        <div className="flex justify-between pt-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={isFirstStep || disabled}
+            onClick={() => setCurrentStep((s) => s - 1)}
+          >
+            ← 上一步
+          </Button>
+          {isLastStep ? (
+            <Button
+              variant="default"
+              size="sm"
+              disabled={disabled}
+              onClick={() => onAction("完成")}
+            >
+              完成
+            </Button>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              disabled={disabled}
+              onClick={() => setCurrentStep((s) => s + 1)}
+            >
+              下一步 →
+            </Button>
+          )}
+        </div>
+
+        {/* Extras (separator + chat escape) */}
+        {node.extras.map((extraId) => {
+          const extra = resolveNode(program, extraId);
+          if (!extra) return null;
+          return (
+            <NodeRenderer
+              key={extraId}
+              node={extra}
+              program={program}
+              formState={formState}
+              updateField={updateField}
+              onAction={onAction}
+              disabled={disabled}
+              currentFormName="chat_escape"
+            />
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
 }

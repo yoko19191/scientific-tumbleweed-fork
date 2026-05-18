@@ -26,5 +26,7 @@ export type {
   SwitchItemNode,
   ButtonNode,
   ButtonsNode,
+  WizardNode,
+  WizardStepNode,
   UnknownNode,
 } from "./types";

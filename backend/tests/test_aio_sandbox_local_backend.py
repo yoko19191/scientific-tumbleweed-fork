@@ -234,3 +234,74 @@ def test_start_container_keeps_apple_container_port_format(monkeypatch):
     captured_cmd = _capture_start_container_command(monkeypatch, backend, runtime="container")
 
     assert captured_cmd[captured_cmd.index("-p") + 1] == "18080:8080"
+
+
+def test_start_container_applies_docker_resource_limits(monkeypatch):
+    backend = LocalContainerBackend(
+        image="sandbox:latest",
+        base_port=8080,
+        container_prefix="sandbox",
+        config_mounts=[],
+        environment={},
+        resources={
+            "limits": {
+                "cpu": "1000m",
+                "memory": "4Gi",
+                "ephemeral-storage": "10Gi",
+            }
+        },
+    )
+
+    captured_cmd = _capture_start_container_command(monkeypatch, backend, runtime="docker")
+
+    assert captured_cmd[captured_cmd.index("--cpus") + 1] == "1"
+    assert captured_cmd[captured_cmd.index("--memory") + 1] == "4294967296"
+    assert captured_cmd[captured_cmd.index("--storage-opt") + 1] == "size=10737418240"
+
+
+def test_start_container_ignores_resource_requests_for_docker(monkeypatch):
+    backend = LocalContainerBackend(
+        image="sandbox:latest",
+        base_port=8080,
+        container_prefix="sandbox",
+        config_mounts=[],
+        environment={},
+        resources={
+            "requests": {
+                "cpu": "100m",
+                "memory": "256Mi",
+                "ephemeral-storage": "500Mi",
+            }
+        },
+    )
+
+    captured_cmd = _capture_start_container_command(monkeypatch, backend, runtime="docker")
+
+    assert "--cpus" not in captured_cmd
+    assert "--memory" not in captured_cmd
+    assert "--storage-opt" not in captured_cmd
+
+
+def test_detect_runtime_skips_apple_container_when_resources_configured(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[0] == "docker":
+            return SimpleNamespace(stdout="Docker version 27\n", stderr="", returncode=0)
+        raise AssertionError("Apple Container should not be probed when resources are configured")
+
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    backend = LocalContainerBackend(
+        image="sandbox:latest",
+        base_port=8080,
+        container_prefix="sandbox",
+        config_mounts=[],
+        environment={},
+        resources={"limits": {"cpu": "1"}},
+    )
+
+    assert backend.runtime == "docker"
+    assert calls == [["docker", "--version"]]

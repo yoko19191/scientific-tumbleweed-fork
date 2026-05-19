@@ -147,6 +147,7 @@ class AioSandboxProvider(SandboxProvider):
             return RemoteSandboxBackend(
                 provisioner_url=provisioner_url,
                 image=self._config["image"],
+                resources=self._config["resources"],
             )
 
         logger.info("Using local container sandbox backend")
@@ -156,6 +157,7 @@ class AioSandboxProvider(SandboxProvider):
             container_prefix=self._config["container_prefix"],
             config_mounts=self._config["mounts"],
             environment=self._config["environment"],
+            resources=self._config["resources"],
         )
 
     # ── Configuration ────────────────────────────────────────────────────
@@ -176,9 +178,20 @@ class AioSandboxProvider(SandboxProvider):
             "replicas": replicas if replicas is not None else DEFAULT_REPLICAS,
             "mounts": sandbox_config.mounts or [],
             "environment": self._resolve_env_vars(sandbox_config.environment or {}),
+            "resources": self._dump_resources(getattr(sandbox_config, "resources", None)),
             # provisioner URL for dynamic pod management (e.g. http://provisioner:8002)
             "provisioner_url": getattr(sandbox_config, "provisioner_url", None) or "",
         }
+
+    @staticmethod
+    def _dump_resources(resources) -> dict | None:
+        """Return resources as a JSON-serializable dict with Kubernetes aliases."""
+        if resources is None:
+            return None
+        if hasattr(resources, "model_dump"):
+            dumped = resources.model_dump(by_alias=True, exclude_none=True)
+            return dumped or None
+        return resources or None
 
     @staticmethod
     def _resolve_env_vars(env_config: dict[str, str]) -> dict[str, str]:

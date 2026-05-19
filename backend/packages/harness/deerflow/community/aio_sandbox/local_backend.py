@@ -11,7 +11,10 @@ import logging
 import os
 import shlex
 import subprocess
+from collections.abc import Mapping
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from deerflow.utils.network import get_free_port, release_port
 
@@ -169,6 +172,93 @@ def _resolve_docker_bind_host(sandbox_host: str | None = None, bind_host: str | 
     return "0.0.0.0"
 
 
+def _resource_section(resources: Mapping[str, Any] | None, section: str) -> Mapping[str, Any]:
+    value = (resources or {}).get(section)
+    return value if isinstance(value, Mapping) else {}
+
+
+def _resource_value(resources: Mapping[str, Any] | None, section: str, key: str) -> str | None:
+    values = _resource_section(resources, section)
+    value = values.get(key)
+    if value is None and key == "ephemeral-storage":
+        value = values.get("ephemeral_storage")
+    if value is None:
+        return None
+    return str(value)
+
+
+def _resources_configured(resources: Mapping[str, Any] | None) -> bool:
+    return bool(_resource_section(resources, "requests") or _resource_section(resources, "limits"))
+
+
+def _normalize_cpu_for_docker(value: str) -> str:
+    value = value.strip()
+    if value.endswith("m"):
+        try:
+            cpus = Decimal(value[:-1]) / Decimal(1000)
+        except InvalidOperation as exc:
+            raise ValueError(f"Invalid CPU quantity: {value}") from exc
+        return format(cpus.normalize(), "f")
+    return value
+
+
+_BINARY_QUANTITY_MULTIPLIERS = {
+    "Ki": 1024,
+    "Mi": 1024**2,
+    "Gi": 1024**3,
+    "Ti": 1024**4,
+    "Pi": 1024**5,
+    "Ei": 1024**6,
+}
+_DECIMAL_QUANTITY_MULTIPLIERS = {
+    "K": 1000,
+    "M": 1000**2,
+    "G": 1000**3,
+    "T": 1000**4,
+    "P": 1000**5,
+    "E": 1000**6,
+}
+
+
+def _quantity_to_bytes(value: str) -> str:
+    raw = value.strip()
+    suffix = ""
+    number = raw
+    for candidate in sorted(
+        [*_BINARY_QUANTITY_MULTIPLIERS.keys(), *_DECIMAL_QUANTITY_MULTIPLIERS.keys()],
+        key=len,
+        reverse=True,
+    ):
+        if raw.endswith(candidate):
+            suffix = candidate
+            number = raw[: -len(candidate)]
+            break
+
+    multiplier = _BINARY_QUANTITY_MULTIPLIERS.get(suffix) or _DECIMAL_QUANTITY_MULTIPLIERS.get(suffix) or 1
+    try:
+        byte_count = Decimal(number) * Decimal(multiplier)
+    except InvalidOperation as exc:
+        raise ValueError(f"Invalid byte quantity: {value}") from exc
+    return str(int(byte_count))
+
+
+def _docker_resource_args(resources: Mapping[str, Any] | None) -> list[str]:
+    args: list[str] = []
+    cpu = _resource_value(resources, "limits", "cpu")
+    if cpu:
+        args.extend(["--cpus", _normalize_cpu_for_docker(cpu)])
+
+    memory = _resource_value(resources, "limits", "memory")
+    if memory:
+        args.extend(["--memory", _quantity_to_bytes(memory)])
+
+    ephemeral_storage = _resource_value(resources, "limits", "ephemeral-storage")
+    if ephemeral_storage:
+        args.extend(["--storage-opt", f"size={_quantity_to_bytes(ephemeral_storage)}"])
+
+    return args
+
+
 class LocalContainerBackend(SandboxBackend):
     """Backend that manages sandbox containers locally using Docker or Apple Container.
 
@@ -190,6 +280,7 @@ class LocalContainerBackend(SandboxBackend):
         container_prefix: str,
         config_mounts: list,
         environment: dict[str, str],
+        resources: dict | None = None,
     ):
         """Initialize the local container backend.
 
@@ -199,12 +290,14 @@ class LocalContainerBackend(SandboxBackend):
             container_prefix: Prefix for container names (e.g., "scientific-tumbleweed-sandbox").
             config_mounts: Volume mount configurations from config (list of VolumeMountConfig).
             environment: Environment variables to inject into containers.
+            resources: Optional resource requests/limits from config.yaml.
         """
         self._image = image
         self._base_port = base_port
         self._container_prefix = container_prefix
         self._config_mounts = config_mounts
         self._environment = environment
+        self._resources = resources
         self._runtime = self._detect_runtime()
 
     @property
@@ -224,6 +317,23 @@ class LocalContainerBackend(SandboxBackend):
         import platform
 
         if platform.system() == "Darwin":
+            if _resources_configured(self._resources):
+                logger.info("Apple Container does not support sandbox resource limits; using Docker")
+                try:
+                    subprocess.run(
+                        ["docker", "--version"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                        timeout=5,
+                    )
+                    return "docker"
+                except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    raise RuntimeError(
+                        "Sandbox resource configuration requires Docker on macOS; "
+                        "Apple Container does not support per-sandbox resources."
+                    ) from exc
+
             try:
                 result = subprocess.run(
                     ["container", "--version"],
@@ -522,6 +632,11 @@ class LocalContainerBackend(SandboxBackend):
                 container_name,
             ]
         )
+
+        if self._runtime == "docker":
+            cmd.extend(_docker_resource_args(self._resources))
+        elif _resources_configured(self._resources):
+            raise RuntimeError("Sandbox resource configuration is only supported by Docker for local containers")
 
         # Environment variables
         for key, value in self._environment.items():

@@ -519,17 +519,31 @@ sandbox:
   image: scientific-tumbleweed-aio-sandbox:arm64-20260427
 
   # Base port for sandbox containers.
-  port: 8080
+  port: 28080
 
   # Maximum number of concurrent sandbox containers. When the limit is reached,
   # the least-recently-used sandbox is evicted to make room.
-  replicas: 3
+  replicas: 20
 
   # Prefix for local sandbox container names.
   container_prefix: scientific-tumbleweed-sandbox
 
   # Idle timeout in seconds before a sandbox is released. Set to 0 to disable.
   idle_timeout: 600
+
+  # Optional per-sandbox resource configuration.
+  # Docker uses limits only. Provisioner/Kubernetes uses requests and limits.
+  # Apple Container does not support this; when resources are configured on
+  # macOS local AIO mode, the runtime falls back to Docker.
+  resources:
+    # requests:
+    #   cpu: "100m"
+    #   memory: "256Mi"
+    #   ephemeral-storage: "500Mi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+      ephemeral-storage: "10Gi"
 
   # Tool output truncation limits (characters). Set to 0 to disable truncation.
   bash_output_max_chars: 20000

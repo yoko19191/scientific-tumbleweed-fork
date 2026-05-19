@@ -40,16 +40,18 @@ class RemoteSandboxBackend(SandboxBackend):
           provisioner_url: http://provisioner:8002
     """
 
-    def __init__(self, provisioner_url: str, image: str | None = None):
+    def __init__(self, provisioner_url: str, image: str | None = None, resources: dict | None = None):
         """Initialize with the provisioner service URL.
 
         Args:
             provisioner_url: URL of the provisioner service
                              (e.g., ``http://provisioner:8002``).
             image: Optional sandbox image requested by config.yaml.
+            resources: Optional sandbox resource requests/limits.
         """
         self._provisioner_url = provisioner_url.rstrip("/")
         self._image = image
+        self._resources = resources
 
     @property
     def provisioner_url(self) -> str:
@@ -91,13 +93,17 @@ class RemoteSandboxBackend(SandboxBackend):
     def _provisioner_create(self, thread_id: str, sandbox_id: str, extra_mounts: list[tuple[str, str, bool]] | None = None) -> SandboxInfo:
         """POST /api/sandboxes → create Pod + Service."""
         try:
+            payload = {
+                "sandbox_id": sandbox_id,
+                "thread_id": thread_id,
+                "image": self._image,
+            }
+            if self._resources:
+                payload["resources"] = self._resources
+
             resp = requests.post(
                 f"{self._provisioner_url}/api/sandboxes",
-                json={
-                    "sandbox_id": sandbox_id,
-                    "thread_id": thread_id,
-                    "image": self._image,
-                },
+                json=payload,
                 timeout=30,
             )
             resp.raise_for_status()

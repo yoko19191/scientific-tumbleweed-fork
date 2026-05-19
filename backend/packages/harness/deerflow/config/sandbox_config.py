@@ -9,6 +9,33 @@ class VolumeMountConfig(BaseModel):
     read_only: bool = Field(default=False, description="Whether the mount is read-only")
 
 
+class SandboxResourceQuantityConfig(BaseModel):
+    """CPU, memory, and storage quantities for sandbox resources."""
+
+    cpu: str | None = Field(default=None, description="CPU quantity, e.g. '100m', '1', or '1.5'")
+    memory: str | None = Field(default=None, description="Memory quantity, e.g. '256Mi' or '4Gi'")
+    ephemeral_storage: str | None = Field(
+        default=None,
+        alias="ephemeral-storage",
+        description="Ephemeral storage quantity, e.g. '500Mi' or '10Gi'",
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SandboxResourcesConfig(BaseModel):
+    """Resource requests and limits for each sandbox container."""
+
+    requests: SandboxResourceQuantityConfig | None = Field(
+        default=None,
+        description="Kubernetes-style resource requests. Ignored by local Docker sandbox containers.",
+    )
+    limits: SandboxResourceQuantityConfig | None = Field(
+        default=None,
+        description="Resource limits applied to Docker and Kubernetes sandbox containers.",
+    )
+
+
 class SandboxConfig(BaseModel):
     """Config section for a sandbox.
 
@@ -25,6 +52,7 @@ class SandboxConfig(BaseModel):
         idle_timeout: Idle timeout in seconds before sandbox is released (default: 600 = 10 minutes). Set to 0 to disable.
         mounts: List of volume mounts to share directories with the container
         environment: Environment variables to inject into the container (values starting with $ are resolved from host env)
+        resources: Kubernetes-style resource requests/limits for each sandbox container
     """
 
     use: str = Field(
@@ -62,6 +90,10 @@ class SandboxConfig(BaseModel):
     environment: dict[str, str] = Field(
         default_factory=dict,
         description="Environment variables to inject into the sandbox container. Values starting with $ will be resolved from host environment variables.",
+    )
+    resources: SandboxResourcesConfig | None = Field(
+        default=None,
+        description="Per-sandbox resource requests and limits for CPU, memory, and ephemeral storage.",
     )
 
     bash_output_max_chars: int = Field(

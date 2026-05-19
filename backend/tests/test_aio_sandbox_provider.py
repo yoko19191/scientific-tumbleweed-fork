@@ -164,6 +164,38 @@ def test_load_config_uses_scientific_tumbleweed_sandbox_prefix_by_default(monkey
     assert config["container_prefix"] == "scientific-tumbleweed-sandbox"
 
 
+def test_load_config_preserves_sandbox_resources(monkeypatch):
+    """Resource requests/limits should flow from config.yaml into AIO config."""
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+
+    resources = {
+        "requests": {"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "500Mi"},
+        "limits": {"cpu": "2", "memory": "4Gi", "ephemeral-storage": "10Gi"},
+    }
+    monkeypatch.setattr(
+        aio_mod,
+        "get_app_config",
+        lambda: SimpleNamespace(
+            sandbox=SimpleNamespace(
+                image=None,
+                port=None,
+                container_prefix=None,
+                idle_timeout=None,
+                replicas=None,
+                mounts=[],
+                environment={},
+                resources=resources,
+                provisioner_url=None,
+            )
+        ),
+    )
+
+    config = aio_mod.AioSandboxProvider._load_config(provider)
+
+    assert config["resources"] == resources
+
+
 def test_remote_backend_posts_configured_image(monkeypatch):
     """Remote provisioner requests should carry the image from config.yaml."""
     remote_mod = importlib.import_module("deerflow.community.aio_sandbox.remote_backend")
@@ -190,3 +222,36 @@ def test_remote_backend_posts_configured_image(monkeypatch):
     backend.create("thread-1", "sandbox-1")
 
     assert post_calls[0]["json"]["image"] == "custom-sandbox:arm64"
+
+
+def test_remote_backend_posts_configured_resources(monkeypatch):
+    """Remote provisioner requests should carry resource config from config.yaml."""
+    remote_mod = importlib.import_module("deerflow.community.aio_sandbox.remote_backend")
+    resources = {
+        "requests": {"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "500Mi"},
+        "limits": {"cpu": "2", "memory": "4Gi", "ephemeral-storage": "10Gi"},
+    }
+    backend = remote_mod.RemoteSandboxBackend(
+        provisioner_url="http://provisioner:8002",
+        image="custom-sandbox:arm64",
+        resources=resources,
+    )
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"sandbox_url": "http://sandbox.example"}
+
+    post_calls = []
+
+    def fake_post(url, json, timeout):
+        post_calls.append({"url": url, "json": json, "timeout": timeout})
+        return FakeResponse()
+
+    monkeypatch.setattr(remote_mod.requests, "post", fake_post)
+
+    backend.create("thread-1", "sandbox-1")
+
+    assert post_calls[0]["json"]["resources"] == resources

@@ -41,7 +41,7 @@ from fastapi import FastAPI, HTTPException
 from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Suppress only the InsecureRequestWarning from urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -220,10 +220,24 @@ app = FastAPI(title="Scientific Tumbleweed Sandbox Provisioner", lifespan=lifesp
 # ── Request / Response models ───────────────────────────────────────────
 
 
+class ResourceQuantityConfig(BaseModel):
+    cpu: str | None = None
+    memory: str | None = None
+    ephemeral_storage: str | None = Field(default=None, alias="ephemeral-storage")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SandboxResourcesConfig(BaseModel):
+    requests: ResourceQuantityConfig | None = None
+    limits: ResourceQuantityConfig | None = None
+
+
 class CreateSandboxRequest(BaseModel):
     sandbox_id: str
     thread_id: str = Field(pattern=SAFE_THREAD_ID_PATTERN)
     image: str | None = None
+    resources: SandboxResourcesConfig | None = None
 
 
 class SandboxResponse(BaseModel):
@@ -233,6 +247,18 @@ class SandboxResponse(BaseModel):
 
 
 # ── K8s resource helpers ─────────────────────────────────────────────────
+
+
+DEFAULT_RESOURCE_REQUESTS = {
+    "cpu": "100m",
+    "memory": "256Mi",
+    "ephemeral-storage": "500Mi",
+}
+DEFAULT_RESOURCE_LIMITS = {
+    "cpu": "1000m",
+    "memory": "1Gi",
+    "ephemeral-storage": "500Mi",
+}
 
 
 def _pod_name(sandbox_id: str) -> str:
@@ -306,7 +332,45 @@ def _build_volume_mounts(thread_id: str) -> list[k8s_client.V1VolumeMount]:
     ]
 
 
-def _build_pod(sandbox_id: str, thread_id: str, image: str | None = None) -> k8s_client.V1Pod:
+def _dump_resource_quantity(value: dict | None) -> dict:
+    if not value:
+        return {}
+    dumped = {}
+    for key in ("cpu", "memory"):
+        if value.get(key) is not None:
+            dumped[key] = value[key]
+    ephemeral_storage = value.get("ephemeral-storage")
+    if ephemeral_storage is None:
+        ephemeral_storage = value.get("ephemeral_storage")
+    if ephemeral_storage is not None:
+        dumped["ephemeral-storage"] = ephemeral_storage
+    return dumped
+
+
+def _dump_resources(resources: SandboxResourcesConfig | dict | None) -> dict:
+    if resources is None:
+        return {}
+    if hasattr(resources, "model_dump"):
+        return resources.model_dump(by_alias=True, exclude_none=True)
+    return {
+        "requests": _dump_resource_quantity(resources.get("requests")),
+        "limits": _dump_resource_quantity(resources.get("limits")),
+    }
+
+
+def _build_resource_requirements(resources: SandboxResourcesConfig | dict | None = None) -> k8s_client.V1ResourceRequirements:
+    requested = _dump_resources(resources)
+    requests = {**DEFAULT_RESOURCE_REQUESTS, **requested.get("requests", {})}
+    limits = {**DEFAULT_RESOURCE_LIMITS, **requested.get("limits", {})}
+    return k8s_client.V1ResourceRequirements(requests=requests, limits=limits)
+
+
+def _build_pod(
+    sandbox_id: str,
+    thread_id: str,
+    image: str | None = None,
+    resources: SandboxResourcesConfig | dict | None = None,
+) -> k8s_client.V1Pod:
     """Construct a Pod manifest for a single sandbox."""
     thread_id = _validate_thread_id(thread_id)
     sandbox_image = image or SANDBOX_IMAGE
@@ -354,18 +418,7 @@ def _build_pod(sandbox_id: str, thread_id: str, image: str | None = None) -> k8s
                         timeout_seconds=3,
                         failure_threshold=3,
                     ),
-                    resources=k8s_client.V1ResourceRequirements(
-                        requests={
-                            "cpu": "100m",
-                            "memory": "256Mi",
-                            "ephemeral-storage": "500Mi",
-                        },
-                        limits={
-                            "cpu": "1000m",
-                            "memory": "1Gi",
-                            "ephemeral-storage": "500Mi",
-                        },
-                    ),
+                    resources=_build_resource_requirements(resources),
                     volume_mounts=_build_volume_mounts(thread_id),
                     security_context=k8s_client.V1SecurityContext(
                         privileged=False,
@@ -468,7 +521,7 @@ async def create_sandbox(req: CreateSandboxRequest):
     try:
         core_v1.create_namespaced_pod(
             K8S_NAMESPACE,
-            _build_pod(sandbox_id, thread_id, sandbox_image),
+            _build_pod(sandbox_id, thread_id, sandbox_image, req.resources),
         )
         logger.info(f"Created Pod {_pod_name(sandbox_id)}")
     except ApiException as exc:

@@ -165,3 +165,42 @@ class TestBuildPodVolumes:
             image="custom-sandbox:arm64",
         )
         assert pod.spec.containers[0].image == "custom-sandbox:arm64"
+
+    def test_pod_defaults_to_existing_resource_requests_and_limits(self, provisioner_module):
+        """Omitting resources should preserve the existing provisioner defaults."""
+        pod = provisioner_module._build_pod("sandbox-1", "thread-1")
+        resources = pod.spec.containers[0].resources
+
+        assert resources.requests == {
+            "cpu": "100m",
+            "memory": "256Mi",
+            "ephemeral-storage": "500Mi",
+        }
+        assert resources.limits == {
+            "cpu": "1000m",
+            "memory": "1Gi",
+            "ephemeral-storage": "500Mi",
+        }
+
+    def test_pod_uses_requested_resource_overrides(self, provisioner_module):
+        """Requested resources should override matching defaults."""
+        pod = provisioner_module._build_pod(
+            "sandbox-1",
+            "thread-1",
+            resources={
+                "requests": {"cpu": "500m"},
+                "limits": {"memory": "4Gi", "ephemeral-storage": "10Gi"},
+            },
+        )
+        resources = pod.spec.containers[0].resources
+
+        assert resources.requests == {
+            "cpu": "500m",
+            "memory": "256Mi",
+            "ephemeral-storage": "500Mi",
+        }
+        assert resources.limits == {
+            "cpu": "1000m",
+            "memory": "4Gi",
+            "ephemeral-storage": "10Gi",
+        }

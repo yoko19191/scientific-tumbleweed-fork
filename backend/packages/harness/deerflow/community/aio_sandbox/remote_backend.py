@@ -21,6 +21,8 @@ import logging
 
 import requests
 
+from deerflow.sandbox.exceptions import SandboxCapacityExceededError
+
 from .backend import SandboxBackend
 from .sandbox_info import SandboxInfo
 
@@ -40,7 +42,13 @@ class RemoteSandboxBackend(SandboxBackend):
           provisioner_url: http://provisioner:8002
     """
 
-    def __init__(self, provisioner_url: str, image: str | None = None, resources: dict | None = None):
+    def __init__(
+        self,
+        provisioner_url: str,
+        image: str | None = None,
+        resources: dict | None = None,
+        replicas: int | None = None,
+    ):
         """Initialize with the provisioner service URL.
 
         Args:
@@ -48,10 +56,12 @@ class RemoteSandboxBackend(SandboxBackend):
                              (e.g., ``http://provisioner:8002``).
             image: Optional sandbox image requested by config.yaml.
             resources: Optional sandbox resource requests/limits.
+            replicas: Optional maximum sandbox capacity to enforce in provisioner.
         """
         self._provisioner_url = provisioner_url.rstrip("/")
         self._image = image
         self._resources = resources
+        self._replicas = replicas
 
     @property
     def provisioner_url(self) -> str:
@@ -100,6 +110,8 @@ class RemoteSandboxBackend(SandboxBackend):
             }
             if self._resources:
                 payload["resources"] = self._resources
+            if self._replicas is not None:
+                payload["replicas"] = self._replicas
 
             resp = requests.post(
                 f"{self._provisioner_url}/api/sandboxes",
@@ -113,6 +125,17 @@ class RemoteSandboxBackend(SandboxBackend):
                 sandbox_id=sandbox_id,
                 sandbox_url=data["sandbox_url"],
             )
+        except requests.HTTPError as exc:
+            response = exc.response
+            if response is not None and response.status_code == 429:
+                detail = _response_detail(response)
+                if isinstance(detail, dict) and detail.get("code") == SandboxCapacityExceededError.code:
+                    raise SandboxCapacityExceededError(
+                        detail.get("message"),
+                        capacity=detail.get("capacity") if isinstance(detail.get("capacity"), dict) else None,
+                    ) from exc
+            logger.error(f"Provisioner create failed for {sandbox_id}: {exc}")
+            raise RuntimeError(f"Provisioner create failed: {exc}") from exc
         except requests.RequestException as exc:
             logger.error(f"Provisioner create failed for {sandbox_id}: {exc}")
             raise RuntimeError(f"Provisioner create failed: {exc}") from exc
@@ -163,3 +186,71 @@ class RemoteSandboxBackend(SandboxBackend):
         except requests.RequestException as exc:
             logger.debug(f"Provisioner discover failed for {sandbox_id}: {exc}")
             return None
+
+    def get_capacity(self, limit: int) -> dict:
+        """Return sandbox capacity reported by the provisioner."""
+        try:
+            resp = requests.get(
+                f"{self._provisioner_url}/api/sandboxes/capacity",
+                params={"limit": limit},
+                timeout=10,
+            )
+            if resp.status_code == 404:
+                return self._get_capacity_from_list(limit)
+            resp.raise_for_status()
+            data = resp.json()
+            return _normalize_capacity(data, limit)
+        except requests.RequestException:
+            return self._get_capacity_from_list(limit)
+
+    def _get_capacity_from_list(self, limit: int) -> dict:
+        resp = requests.get(
+            f"{self._provisioner_url}/api/sandboxes",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        total = int(data.get("count") or len(data.get("sandboxes", [])))
+        return _capacity_response("provisioner", limit, total)
+
+
+def _response_detail(response: requests.Response) -> object:
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if isinstance(payload, dict):
+        return payload.get("detail")
+    return None
+
+
+def _capacity_response(backend: str, limit: int, total: int) -> dict:
+    available = max(limit - total, 0)
+    return {
+        "enabled": True,
+        "backend": backend,
+        "limit": limit,
+        "active": total,
+        "warm": 0,
+        "total": total,
+        "available": available,
+        "saturated": available <= 0,
+    }
+
+
+def _normalize_capacity(data: dict, limit: int) -> dict:
+    total = int(data.get("total") or 0)
+    active = int(data.get("active") or total)
+    warm = int(data.get("warm") or 0)
+    effective_limit = int(data.get("limit") or limit)
+    available = max(effective_limit - total, 0)
+    return {
+        "enabled": bool(data.get("enabled", True)),
+        "backend": str(data.get("backend") or "provisioner"),
+        "limit": effective_limit,
+        "active": active,
+        "warm": warm,
+        "total": total,
+        "available": available,
+        "saturated": bool(data.get("saturated", available <= 0)),
+    }

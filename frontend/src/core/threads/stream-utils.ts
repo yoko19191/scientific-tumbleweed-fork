@@ -108,6 +108,9 @@ export function getRunMetadataStorage(userId?: string | null): {
 }
 
 export function getStreamErrorMessage(error: unknown): string {
+  if (isSandboxCapacityError(error)) {
+    return SANDBOX_CAPACITY_ERROR_MESSAGE;
+  }
   if (typeof error === "string" && error.trim()) {
     return error;
   }
@@ -128,4 +131,31 @@ export function getStreamErrorMessage(error: unknown): string {
     }
   }
   return "Request failed.";
+}
+
+export const SANDBOX_CAPACITY_ERROR_CODE = "SANDBOX_CAPACITY_EXCEEDED";
+export const SANDBOX_CAPACITY_ERROR_MESSAGE =
+  "服务器沙盒容量已满，暂时无法创建新的沙盒，请稍后再试。";
+
+export function isSandboxCapacityError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const code = Reflect.get(error, "code");
+  if (code === SANDBOX_CAPACITY_ERROR_CODE) {
+    return true;
+  }
+
+  const detail = Reflect.get(error, "detail");
+  if (isSandboxCapacityError(detail)) {
+    return true;
+  }
+
+  const nestedError = Reflect.get(error, "error");
+  if (nestedError !== error && isSandboxCapacityError(nestedError)) {
+    return true;
+  }
+
+  return false;
 }

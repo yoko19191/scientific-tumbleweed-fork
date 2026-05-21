@@ -23,6 +23,7 @@ from typing import Any, Literal
 
 from deerflow.runtime.serialization import serialize
 from deerflow.runtime.stream_bridge import StreamBridge
+from deerflow.sandbox.exceptions import SandboxCapacityExceededError
 
 from .manager import RunManager, RunRecord
 from .schemas import RunStatus
@@ -221,13 +222,17 @@ async def run_agent(
         error_msg = f"{exc}"
         logger.exception("Run %s failed: %s", run_id, error_msg)
         await run_manager.set_status(run_id, RunStatus.error, error=error_msg)
+        error_payload = {
+            "message": error_msg,
+            "name": type(exc).__name__,
+        }
+        if isinstance(exc, SandboxCapacityExceededError):
+            error_payload["code"] = exc.code
+            error_payload["capacity"] = exc.capacity
         await bridge.publish(
             run_id,
             "error",
-            {
-                "message": error_msg,
-                "name": type(exc).__name__,
-            },
+            error_payload,
         )
 
     finally:

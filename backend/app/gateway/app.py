@@ -17,6 +17,7 @@ from app.gateway.routers import (
     memory,
     models,
     runs,
+    sandbox,
     skills,
     suggestions,
     thread_runs,
@@ -321,8 +322,8 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
     )
 
     # CORS — allow localhost origins for local dev (nginx handles this in production)
-    import os
     from fastapi.middleware.cors import CORSMiddleware
+
     dev_origins = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -377,6 +378,9 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
 
     # Channels API is mounted at /api/channels
     app.include_router(channels.router)
+
+    # Sandbox API is mounted at /api/sandbox
+    app.include_router(sandbox.router)
 
     # Assistants compatibility API (LangGraph Platform stub)
     app.include_router(assistants_compat.router)

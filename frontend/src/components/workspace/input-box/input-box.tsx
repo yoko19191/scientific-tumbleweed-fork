@@ -14,7 +14,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ComponentProps,
 } from "react";
@@ -33,15 +32,24 @@ import {
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
-  usePromptInputController,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenuGroup,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/core/i18n/hooks";
 import { useModels } from "@/core/models/hooks";
+import { useSandboxCapacity } from "@/core/sandbox";
 import type { AgentThreadContext } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +62,6 @@ import {
   ModelSelectorName,
   ModelSelectorTrigger,
 } from "../../ai-elements/model-selector";
-import { useThread } from "../messages/context";
 import { ModeHoverGuide } from "../mode-hover-guide";
 
 import {
@@ -113,10 +120,17 @@ export function InputBox({
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
+  const [sandboxCapacityWarningOpen, setSandboxCapacityWarningOpen] =
+    useState(false);
   const { models } = useModels();
-  const { thread, isMock } = useThread();
-  const { textInput } = usePromptInputController();
-  const promptRootRef = useRef<HTMLDivElement | null>(null);
+  const { capacity: sandboxCapacity } = useSandboxCapacity({
+    enabled: isNewThread === true,
+  });
+  const sandboxCapacitySaturated =
+    sandboxCapacity?.enabled === true && sandboxCapacity.saturated;
+  const sandboxCapacityUnavailableForMode =
+    sandboxCapacitySaturated &&
+    (context.mode === "agent" || context.mode === "swarm");
 
   useEffect(() => {
     if (models.length === 0) {
@@ -199,6 +213,24 @@ export function InputBox({
   const handleModeSelect = useCallback(
     (mode: InputMode) => {
       const nextMode = getResolvedMode(mode, supportThinking);
+      if (
+        sandboxCapacitySaturated &&
+        (nextMode === "agent" || nextMode === "swarm")
+      ) {
+        const nextEffort = resolveReasoningEffort(
+          context.reasoning_effort,
+          selectedModel,
+          "chat",
+          true,
+        );
+        onContextChange?.({
+          ...context,
+          mode: "chat",
+          reasoning_effort: nextEffort,
+        });
+        setSandboxCapacityWarningOpen(true);
+        return;
+      }
       const nextEffort = resolveReasoningEffort(
         context.reasoning_effort,
         selectedModel,
@@ -211,7 +243,13 @@ export function InputBox({
         reasoning_effort: nextEffort,
       });
     },
-    [onContextChange, context, supportThinking, selectedModel],
+    [
+      onContextChange,
+      context,
+      supportThinking,
+      selectedModel,
+      sandboxCapacitySaturated,
+    ],
   );
 
   const handleReasoningEffortSelect = useCallback(
@@ -248,6 +286,23 @@ export function InputBox({
         return;
       }
       if (!message.text) {
+        return;
+      }
+      if (
+        sandboxCapacitySaturated &&
+        (context.mode === "agent" || context.mode === "swarm")
+      ) {
+        const nextEffort = resolveReasoningEffort(
+          context.reasoning_effort,
+          selectedModel,
+          "chat",
+        );
+        onContextChange?.({
+          ...context,
+          mode: "chat",
+          reasoning_effort: nextEffort,
+        });
+        setSandboxCapacityWarningOpen(true);
         return;
       }
 
@@ -296,21 +351,19 @@ export function InputBox({
       onSubmit,
       onStop,
       resolvedModelName,
+      sandboxCapacitySaturated,
       selectedModel,
       status,
     ],
   );
 
-  const requestFormSubmit = useCallback(() => {
-    const form = promptRootRef.current?.querySelector("form");
-    form?.requestSubmit();
-  }, []);
-
   return (
-    <div ref={promptRootRef} className="relative flex flex-col gap-3">
+    <div className="relative flex flex-col gap-3">
       <PromptInput
         className={cn(
           "bg-background/85 rounded-2xl backdrop-blur-sm transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-2xl",
+          sandboxCapacityUnavailableForMode &&
+            "border-muted bg-muted/55 shadow-none grayscale-[0.15] *:data-[slot='input-group']:bg-muted/55",
           className,
         )}
         disabled={disabled}
@@ -331,7 +384,11 @@ export function InputBox({
         </PromptInputAttachments>
         <PromptInputBody className="absolute top-0 right-0 left-0 z-3">
           <PromptInputTextarea
-            className={cn("size-full")}
+            className={cn(
+              "size-full",
+              sandboxCapacityUnavailableForMode &&
+                "text-muted-foreground placeholder:text-muted-foreground/55",
+            )}
             disabled={disabled}
             placeholder={t.inputBox.placeholder}
             autoFocus={autoFocus}
@@ -622,6 +679,29 @@ export function InputBox({
         </div>
       )}
 
+      <Dialog
+        open={sandboxCapacityWarningOpen}
+        onOpenChange={setSandboxCapacityWarningOpen}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>沙盒容量告急</DialogTitle>
+            <DialogDescription>
+              当前服务器沙盒容量已满，Agent 和 Swarm
+              模式暂时无法创建新的沙盒。请切换到 Chat
+              模式后继续对话，稍后再尝试需要沙盒的任务。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setSandboxCapacityWarningOpen(false)}
+            >
+              我知道了
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { fetchWithAuth } from "../auth/fetcher";
 import { getBackendBaseURL } from "../config";
 import { useI18n } from "../i18n/hooks";
 import type { FileInMessage } from "../messages/utils";
+import { sandboxCapacityQueryKey } from "../sandbox";
 import type { LocalSettings } from "../settings";
 import { useUpdateSubtask } from "../tasks/context";
 import type { UploadedFileInfo } from "../uploads";
@@ -220,10 +221,12 @@ export function useThreadStream({
     onError(error) {
       setOptimisticMessages([]);
       toast.error(getStreamErrorMessage(error));
+      void queryClient.invalidateQueries({ queryKey: sandboxCapacityQueryKey });
     },
     onFinish(state) {
       listeners.current.onFinish?.(state.values);
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      void queryClient.invalidateQueries({ queryKey: sandboxCapacityQueryKey });
     },
   });
 

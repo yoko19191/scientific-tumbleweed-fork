@@ -1,12 +1,14 @@
 """Tests for AioSandboxProvider mount helpers."""
 
 import importlib
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from deerflow.config.paths import Paths, join_host_path
+from deerflow.sandbox.exceptions import SandboxCapacityExceededError
 
 # ── ensure_thread_dirs ───────────────────────────────────────────────────────
 
@@ -194,6 +196,75 @@ def test_load_config_preserves_sandbox_resources(monkeypatch):
     config = aio_mod.AioSandboxProvider._load_config(provider)
 
     assert config["resources"] == resources
+
+
+def test_get_capacity_counts_active_and_warm_sandboxes(tmp_path):
+    """Capacity should count both active and warm sandboxes."""
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    provider._config = {"replicas": 3}
+    provider._backend = MagicMock()
+    provider._lock = threading.Lock()
+    provider._sandboxes = {"active-1": object(), "active-2": object()}
+    provider._warm_pool = {"warm-1": (MagicMock(), 123.0)}
+
+    capacity = aio_mod.AioSandboxProvider.get_capacity(provider)
+
+    assert capacity == {
+        "enabled": True,
+        "backend": "local",
+        "limit": 3,
+        "active": 2,
+        "warm": 1,
+        "total": 3,
+        "available": 0,
+        "saturated": True,
+    }
+
+
+def test_create_sandbox_raises_capacity_error_when_active_slots_are_full(monkeypatch):
+    """Replicas should be a hard cap when no warm sandbox can be evicted."""
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    provider._config = {"replicas": 1}
+    provider._backend = MagicMock()
+    provider._lock = threading.Lock()
+    provider._sandboxes = {"active-1": object()}
+    provider._warm_pool = {}
+    provider._get_extra_mounts = lambda _thread_id, _user_id: []
+
+    with pytest.raises(SandboxCapacityExceededError) as exc_info:
+        aio_mod.AioSandboxProvider._create_sandbox(provider, "thread-1", None, "sandbox-2")
+
+    assert exc_info.value.code == "SANDBOX_CAPACITY_EXCEEDED"
+    assert exc_info.value.capacity["limit"] == 1
+    provider._backend.create.assert_not_called()
+
+
+def test_create_sandbox_evicts_warm_pool_before_enforcing_capacity(monkeypatch):
+    """Warm sandboxes should be reclaimed before rejecting new sandbox creation."""
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    provider._config = {"replicas": 1}
+    provider._backend = MagicMock()
+    provider._lock = threading.Lock()
+    provider._sandboxes = {}
+    provider._sandbox_infos = {}
+    provider._last_activity = {}
+    provider._thread_sandboxes = {}
+    provider._warm_pool = {"warm-1": (MagicMock(sandbox_id="warm-1"), 123.0)}
+    provider._get_extra_mounts = lambda _thread_id, _user_id: []
+
+    info = MagicMock(sandbox_id="sandbox-2", sandbox_url="http://sandbox.example")
+    provider._backend.create.return_value = info
+    monkeypatch.setattr(aio_mod, "wait_for_sandbox_ready", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(aio_mod, "AioSandbox", lambda id, base_url: SimpleNamespace(id=id, base_url=base_url))
+
+    sandbox_id = aio_mod.AioSandboxProvider._create_sandbox(provider, "thread-1", None, "sandbox-2")
+
+    assert sandbox_id == "sandbox-2"
+    provider._backend.destroy.assert_called_once()
+    provider._backend.create.assert_called_once()
 
 
 def test_remote_backend_posts_configured_image(monkeypatch):

@@ -31,6 +31,17 @@ class SandboxRuntimeError(SandboxError):
     pass
 
 
+class SandboxCapacityExceededError(SandboxRuntimeError):
+    """Raised when the sandbox pool has no available capacity."""
+
+    code = "SANDBOX_CAPACITY_EXCEEDED"
+    user_message = "服务器沙盒容量已满，暂时无法创建新的沙盒，请稍后再试。"
+
+    def __init__(self, message: str | None = None, capacity: dict | None = None):
+        super().__init__(message or self.user_message)
+        self.capacity = capacity or {}
+
+
 class SandboxCommandError(SandboxError):
     """Raised when a command execution fails in the sandbox."""
 

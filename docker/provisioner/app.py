@@ -238,12 +238,33 @@ class CreateSandboxRequest(BaseModel):
     thread_id: str = Field(pattern=SAFE_THREAD_ID_PATTERN)
     image: str | None = None
     resources: SandboxResourcesConfig | None = None
+    replicas: int | None = Field(default=None, ge=1)
 
 
 class SandboxResponse(BaseModel):
     sandbox_id: str
     sandbox_url: str  # Direct access URL, e.g. http://host.docker.internal:{NodePort}
     status: str
+
+
+class SandboxCapacityResponse(BaseModel):
+    enabled: bool
+    backend: str
+    limit: int
+    active: int
+    warm: int
+    total: int
+    available: int
+    saturated: bool
+
+
+SandboxResourcesConfig.model_rebuild(_types_namespace={"ResourceQuantityConfig": ResourceQuantityConfig})
+CreateSandboxRequest.model_rebuild(
+    _types_namespace={
+        "ResourceQuantityConfig": ResourceQuantityConfig,
+        "SandboxResourcesConfig": SandboxResourcesConfig,
+    }
+)
 
 
 # ── K8s resource helpers ─────────────────────────────────────────────────
@@ -272,6 +293,56 @@ def _svc_name(sandbox_id: str) -> str:
 def _sandbox_url(node_port: int) -> str:
     """Build the sandbox URL using the configured NODE_HOST."""
     return f"http://{NODE_HOST}:{node_port}"
+
+
+def _list_sandbox_services():
+    services = core_v1.list_namespaced_service(
+        K8S_NAMESPACE,
+        label_selector="app=scientific-tumbleweed-sandbox",
+    )
+
+    if LEGACY_K8S_NAMESPACE != K8S_NAMESPACE:
+        try:
+            legacy_services = core_v1.list_namespaced_service(
+                LEGACY_K8S_NAMESPACE,
+                label_selector="app=scientific-tumbleweed-sandbox",
+            )
+            services.items.extend(legacy_services.items)
+        except ApiException:
+            pass
+
+    return services
+
+
+def _count_sandboxes() -> int:
+    return sum(
+        1
+        for svc in _list_sandbox_services().items
+        if (svc.metadata.labels or {}).get("sandbox-id")
+    )
+
+
+def _build_capacity(limit: int) -> dict:
+    total = _count_sandboxes()
+    available = max(limit - total, 0)
+    return {
+        "enabled": True,
+        "backend": "provisioner",
+        "limit": limit,
+        "active": total,
+        "warm": 0,
+        "total": total,
+        "available": available,
+        "saturated": available <= 0,
+    }
+
+
+def _capacity_error_detail(capacity: dict) -> dict:
+    return {
+        "code": "SANDBOX_CAPACITY_EXCEEDED",
+        "message": "服务器沙盒容量已满，暂时无法创建新的沙盒，请稍后再试。",
+        "capacity": capacity,
+    }
 
 
 def _build_volumes(thread_id: str) -> list[k8s_client.V1Volume]:
@@ -517,6 +588,16 @@ async def create_sandbox(req: CreateSandboxRequest):
             status=_get_pod_phase(sandbox_id),
         )
 
+    if req.replicas is not None:
+        try:
+            capacity = _build_capacity(req.replicas)
+        except ApiException as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to read sandbox capacity: {exc.reason}"
+            )
+        if capacity["saturated"]:
+            raise HTTPException(status_code=429, detail=_capacity_error_detail(capacity))
+
     # ── Create Pod ───────────────────────────────────────────────────
     try:
         core_v1.create_namespaced_pod(
@@ -563,6 +644,19 @@ async def create_sandbox(req: CreateSandboxRequest):
         sandbox_url=_sandbox_url(node_port),
         status=_get_pod_phase(sandbox_id),
     )
+
+
+@app.get("/api/sandboxes/capacity", response_model=SandboxCapacityResponse)
+async def get_sandbox_capacity(limit: int):
+    """Return provisioner-managed sandbox capacity."""
+    if limit < 1:
+        raise HTTPException(status_code=422, detail="limit must be greater than or equal to 1")
+    try:
+        return SandboxCapacityResponse(**_build_capacity(limit))
+    except ApiException as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read sandbox capacity: {exc.reason}"
+        )
 
 
 @app.delete("/api/sandboxes/{sandbox_id}")
@@ -612,24 +706,11 @@ async def get_sandbox(sandbox_id: str):
 async def list_sandboxes():
     """List every sandbox currently managed in the namespace."""
     try:
-        services = core_v1.list_namespaced_service(
-            K8S_NAMESPACE,
-            label_selector="app=scientific-tumbleweed-sandbox",
-        )
+        services = _list_sandbox_services()
     except ApiException as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to list services: {exc.reason}"
         )
-
-    if LEGACY_K8S_NAMESPACE != K8S_NAMESPACE:
-        try:
-            legacy_services = core_v1.list_namespaced_service(
-                LEGACY_K8S_NAMESPACE,
-                label_selector="app=scientific-tumbleweed-sandbox",
-            )
-            services.items.extend(legacy_services.items)
-        except ApiException:
-            pass
 
     sandboxes: list[SandboxResponse] = []
     for svc in services.items:

@@ -24,6 +24,7 @@ import {
 } from "@/components/workspace/messages";
 import type { ClarificationResponse } from "@/components/workspace/messages/clarification-ui";
 import { ThreadContext } from "@/components/workspace/messages/context";
+import { SandboxCapacityIndicator } from "@/components/workspace/sandbox-capacity-indicator";
 import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicator";
@@ -163,6 +164,9 @@ export default function ChatPage() {
       MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
     : undefined;
   const todos = thread.values.todos ?? [];
+  const showSandboxCapacity =
+    isNewThread &&
+    (settings.context.mode === "agent" || settings.context.mode === "swarm");
 
   // Show inaccessible state when thread is not owned by the current user
   if (threadInaccessible) {
@@ -212,6 +216,7 @@ export default function ChatPage() {
               <ArtifactTrigger />
             </div>
           </header>
+          {showSandboxCapacity && <SandboxCapacityIndicator />}
           <main className="flex min-h-0 max-w-full grow flex-col">
             <div className="flex size-full justify-center">
               <MessageList

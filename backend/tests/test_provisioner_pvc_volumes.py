@@ -1,5 +1,9 @@
 """Regression tests for provisioner PVC volume support."""
 
+import asyncio
+
+import pytest
+from fastapi import HTTPException
 
 # ── _build_volumes ─────────────────────────────────────────────────────
 
@@ -204,3 +208,76 @@ class TestBuildPodVolumes:
             "memory": "4Gi",
             "ephemeral-storage": "10Gi",
         }
+
+
+# ── capacity ────────────────────────────────────────────────────────────
+
+
+class TestProvisionerCapacity:
+    """Provisioner should expose and enforce sandbox capacity."""
+
+    def test_build_capacity_counts_current_sandboxes(self, provisioner_module):
+        provisioner_module.K8S_NAMESPACE = "scientific-tumbleweed"
+        provisioner_module.LEGACY_K8S_NAMESPACE = "scientific-tumbleweed"
+
+        svc = type(
+            "Svc",
+            (),
+            {
+                "metadata": type("Meta", (), {"labels": {"sandbox-id": "sandbox-1"}})(),
+            },
+        )()
+
+        class FakeCoreV1:
+            def list_namespaced_service(self, namespace, label_selector):
+                assert namespace == "scientific-tumbleweed"
+                assert label_selector == "app=scientific-tumbleweed-sandbox"
+                return type("Services", (), {"items": [svc]})()
+
+        provisioner_module.core_v1 = FakeCoreV1()
+
+        capacity = provisioner_module._build_capacity(limit=2)
+
+        assert capacity == {
+            "enabled": True,
+            "backend": "provisioner",
+            "limit": 2,
+            "active": 1,
+            "warm": 0,
+            "total": 1,
+            "available": 1,
+            "saturated": False,
+        }
+
+    def test_create_sandbox_returns_429_when_capacity_is_full(self, provisioner_module, monkeypatch):
+        monkeypatch.setattr(
+            provisioner_module,
+            "_get_node_port",
+            lambda _sandbox_id: None,
+        )
+        monkeypatch.setattr(
+            provisioner_module,
+            "_build_capacity",
+            lambda limit: {
+                "enabled": True,
+                "backend": "provisioner",
+                "limit": limit,
+                "active": limit,
+                "warm": 0,
+                "total": limit,
+                "available": 0,
+                "saturated": True,
+            },
+        )
+
+        req = provisioner_module.CreateSandboxRequest(
+            sandbox_id="sandbox-2",
+            thread_id="thread-2",
+            replicas=1,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(provisioner_module.create_sandbox(req))
+
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.detail["code"] == "SANDBOX_CAPACITY_EXCEEDED"

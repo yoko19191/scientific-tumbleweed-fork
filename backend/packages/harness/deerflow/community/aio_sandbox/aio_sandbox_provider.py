@@ -28,6 +28,7 @@ except ImportError:  # pragma: no cover - Windows fallback
 
 from deerflow.config import get_app_config
 from deerflow.config.paths import VIRTUAL_PATH_PREFIX, get_paths
+from deerflow.sandbox.exceptions import SandboxCapacityExceededError
 from deerflow.sandbox.sandbox import Sandbox
 from deerflow.sandbox.sandbox_provider import SandboxProvider
 
@@ -148,6 +149,7 @@ class AioSandboxProvider(SandboxProvider):
                 provisioner_url=provisioner_url,
                 image=self._config["image"],
                 resources=self._config["resources"],
+                replicas=self._config["replicas"],
             )
 
         logger.info("Using local container sandbox backend")
@@ -192,6 +194,28 @@ class AioSandboxProvider(SandboxProvider):
             dumped = resources.model_dump(by_alias=True, exclude_none=True)
             return dumped or None
         return resources or None
+
+    def get_capacity(self) -> dict:
+        """Return a user-facing snapshot of sandbox capacity."""
+        replicas = int(self._config.get("replicas", DEFAULT_REPLICAS))
+        if isinstance(self._backend, RemoteSandboxBackend):
+            return self._backend.get_capacity(replicas)
+
+        with self._lock:
+            active = len(self._sandboxes)
+            warm = len(self._warm_pool)
+        total = active + warm
+        available = max(replicas - total, 0)
+        return {
+            "enabled": True,
+            "backend": "local",
+            "limit": replicas,
+            "active": active,
+            "warm": warm,
+            "total": total,
+            "available": available,
+            "saturated": available <= 0,
+        }
 
     @staticmethod
     def _resolve_env_vars(env_config: dict[str, str]) -> dict[str, str]:
@@ -637,17 +661,24 @@ class AioSandboxProvider(SandboxProvider):
         # Enforce replicas: only warm-pool containers count toward eviction budget.
         # Active sandboxes are in use by live threads and must not be forcibly stopped.
         replicas = self._config.get("replicas", DEFAULT_REPLICAS)
-        with self._lock:
-            total = len(self._sandboxes) + len(self._warm_pool)
-        if total >= replicas:
+        while True:
+            with self._lock:
+                total = len(self._sandboxes) + len(self._warm_pool)
+            if total < replicas:
+                break
             evicted = self._evict_oldest_warm()
             if evicted:
                 logger.info(f"Evicted warm-pool sandbox {evicted} to stay within replicas={replicas}")
-            else:
-                # All slots are occupied by active sandboxes — proceed anyway and log.
-                # The replicas limit is a soft cap; we never forcibly stop a container
-                # that is actively serving a thread.
-                logger.warning(f"All {replicas} replica slots are in active use; creating sandbox {sandbox_id} beyond the soft limit")
+                continue
+            capacity = self.get_capacity()
+            logger.warning(
+                "Sandbox capacity exhausted: active=%s warm=%s limit=%s; rejecting sandbox %s",
+                capacity["active"],
+                capacity["warm"],
+                capacity["limit"],
+                sandbox_id,
+            )
+            raise SandboxCapacityExceededError(capacity=capacity)
 
         info = self._backend.create(thread_id, sandbox_id, extra_mounts=extra_mounts or None)
 

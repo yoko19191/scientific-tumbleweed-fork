@@ -535,6 +535,11 @@ sandbox:
   # Docker uses limits only. Provisioner/Kubernetes uses requests and limits.
   # Apple Container does not support this; when resources are configured on
   # macOS local AIO mode, the runtime falls back to Docker.
+  # Note: Docker translates limits.ephemeral-storage into
+  # `docker run --storage-opt size=...`. Docker Desktop, OrbStack, and many
+  # non-XFS Docker storage backends may reject that option. Enable it only for
+  # provisioner/Kubernetes mode or a Docker host whose storage driver supports
+  # per-container rootfs size limits.
   resources:
     # requests:
     #   cpu: "100m"
@@ -543,7 +548,7 @@ sandbox:
     limits:
       cpu: "4"
       memory: "8Gi"
-      ephemeral-storage: "10Gi"
+      # ephemeral-storage: "10Gi"
 
   # Tool output truncation limits (characters). Set to 0 to disable truncation.
   bash_output_max_chars: 20000

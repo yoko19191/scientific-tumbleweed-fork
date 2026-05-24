@@ -5,7 +5,7 @@ import os
 import stat
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.gateway.thread_ownership import require_thread_owner
 from deerflow.config.app_config import get_app_config
@@ -13,12 +13,14 @@ from deerflow.config.paths import get_paths
 from deerflow.sandbox.sandbox_provider import SandboxProvider, get_sandbox_provider
 from deerflow.uploads.manager import (
     PathTraversalError,
+    UnsafeUploadPathError,
     delete_file_safe,
     enrich_file_listing,
     ensure_uploads_dir,
     get_uploads_dir,
     list_files_in_dir,
     normalize_filename,
+    open_upload_file_no_symlink,
     upload_artifact_url,
     upload_virtual_path,
 )
@@ -35,6 +37,7 @@ class UploadResponse(BaseModel):
     success: bool
     files: list[dict[str, str]]
     message: str
+    skipped_files: list[str] = Field(default_factory=list)
 
 
 def _make_file_sandbox_writable(file_path: os.PathLike[str] | str) -> None:
@@ -66,6 +69,40 @@ def _get_uploads_config_value(key: str, default: object) -> object:
     if isinstance(uploads_cfg, dict):
         return uploads_cfg.get(key, default)
     return getattr(uploads_cfg, key, default)
+
+
+def _cleanup_uploaded_paths(paths: list[os.PathLike[str] | str]) -> None:
+    for path in reversed(paths):
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            logger.warning("Failed to clean up upload path after rejected request: %s", path, exc_info=True)
+
+
+async def _write_upload_file_no_symlink(
+    file: UploadFile,
+    *,
+    uploads_dir: os.PathLike[str] | str,
+    display_filename: str,
+) -> tuple[os.PathLike[str] | str, int]:
+    file_size = 0
+    file_path, fh = open_upload_file_no_symlink(uploads_dir, display_filename)
+    try:
+        while chunk := await file.read(8192):
+            file_size += len(chunk)
+            fh.write(chunk)
+    except Exception:
+        fh.close()
+        try:
+            os.unlink(file_path)
+        except FileNotFoundError:
+            pass
+        raise
+    else:
+        fh.close()
+    return file_path, file_size
 
 
 def _auto_convert_documents_enabled() -> bool:
@@ -101,6 +138,9 @@ async def upload_files(
         raise HTTPException(status_code=400, detail=str(e))
     sandbox_uploads = get_paths().resolve_uploads_dir(thread_id, user_id)
     uploaded_files = []
+    written_paths = []
+    sandbox_sync_targets = []
+    skipped_files = []
 
     sandbox_provider = get_sandbox_provider()
     sync_to_sandbox = not _uses_thread_data_mounts(sandbox_provider)
@@ -121,25 +161,27 @@ async def upload_files(
             continue
 
         try:
-            content = await file.read()
-            file_path = uploads_dir / safe_filename
-            file_path.write_bytes(content)
+            file_path, file_size = await _write_upload_file_no_symlink(
+                file,
+                uploads_dir=uploads_dir,
+                display_filename=safe_filename,
+            )
+            written_paths.append(file_path)
 
             virtual_path = upload_virtual_path(safe_filename)
 
             if sync_to_sandbox and sandbox is not None:
-                _make_file_sandbox_writable(file_path)
-                sandbox.update_file(virtual_path, content)
+                sandbox_sync_targets.append((file_path, virtual_path))
 
             file_info = {
                 "filename": safe_filename,
-                "size": str(len(content)),
+                "size": str(file_size),
                 "path": str(sandbox_uploads / safe_filename),
                 "virtual_path": virtual_path,
                 "artifact_url": upload_artifact_url(thread_id, safe_filename),
             }
 
-            logger.info(f"Saved file: {safe_filename} ({len(content)} bytes) to {file_info['path']}")
+            logger.info(f"Saved file: {safe_filename} ({file_size} bytes) to {file_info['path']}")
 
             file_ext = file_path.suffix.lower()
             if auto_convert_documents and file_ext in CONVERTIBLE_EXTENSIONS:
@@ -148,8 +190,7 @@ async def upload_files(
                     md_virtual_path = upload_virtual_path(md_path.name)
 
                     if sync_to_sandbox and sandbox is not None:
-                        _make_file_sandbox_writable(md_path)
-                        sandbox.update_file(md_virtual_path, md_path.read_bytes())
+                        sandbox_sync_targets.append((md_path, md_virtual_path))
 
                     file_info["markdown_file"] = md_path.name
                     file_info["markdown_path"] = str(sandbox_uploads / md_path.name)
@@ -158,14 +199,32 @@ async def upload_files(
 
             uploaded_files.append(file_info)
 
+        except HTTPException as e:
+            _cleanup_uploaded_paths(written_paths)
+            raise e
+        except UnsafeUploadPathError as e:
+            logger.warning("Skipping upload with unsafe destination %s: %s", file.filename, e)
+            skipped_files.append(safe_filename)
+            continue
         except Exception as e:
             logger.error(f"Failed to upload {file.filename}: {e}")
+            _cleanup_uploaded_paths(written_paths)
             raise HTTPException(status_code=500, detail=f"Failed to upload {file.filename}: {str(e)}")
 
+    if sync_to_sandbox:
+        for file_path, virtual_path in sandbox_sync_targets:
+            _make_file_sandbox_writable(file_path)
+            sandbox.update_file(virtual_path, file_path.read_bytes())
+
+    message = f"Successfully uploaded {len(uploaded_files)} file(s)"
+    if skipped_files:
+        message += f"; skipped {len(skipped_files)} unsafe file(s)"
+
     return UploadResponse(
-        success=True,
+        success=not skipped_files,
         files=uploaded_files,
-        message=f"Successfully uploaded {len(uploaded_files)} file(s)",
+        message=message,
+        skipped_files=skipped_files,
     )
 
 

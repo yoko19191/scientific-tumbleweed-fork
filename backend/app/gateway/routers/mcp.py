@@ -98,6 +98,99 @@ class McpConfigUpdateRequest(BaseModel):
     )
 
 
+_MASKED_VALUE = "***"
+
+
+def _mask_server_config(server: McpServerConfigResponse) -> McpServerConfigResponse:
+    """Return a copy of server config with sensitive fields masked.
+
+    Masks env values, header values, and removes OAuth secrets so they
+    are not exposed through the GET API endpoint.
+    """
+    masked_env = {k: _MASKED_VALUE for k in server.env}
+    masked_headers = {k: _MASKED_VALUE for k in server.headers}
+    masked_oauth = None
+    if server.oauth is not None:
+        masked_oauth = server.oauth.model_copy(
+            update={
+                "client_secret": None,
+                "refresh_token": None,
+            }
+        )
+    return server.model_copy(
+        update={
+            "env": masked_env,
+            "headers": masked_headers,
+            "oauth": masked_oauth,
+        }
+    )
+
+
+def _merge_preserving_secrets(
+    incoming: McpServerConfigResponse,
+    existing: McpServerConfigResponse,
+) -> McpServerConfigResponse:
+    """Merge incoming config with existing, preserving secrets masked by GET.
+
+    When the frontend toggles ``enabled`` it round-trips the full config:
+    GET (masked) → modify enabled → PUT (masked values sent back).
+    This function ensures masked values (``***``) are replaced with the
+    real secrets from the current on-disk config.
+
+    ``***`` is only accepted for keys that already exist in *existing*.
+    New keys must provide a real value.
+
+    For OAuth secrets, ``None`` means "preserve the existing stored value"
+    so masked GET responses can be safely round-tripped. To explicitly clear
+    a stored secret, clients may send an empty string, which is converted
+    to ``None`` before persisting.
+    """
+    merged_env = {}
+    for k, v in incoming.env.items():
+        if v == _MASKED_VALUE:
+            if k in existing.env:
+                merged_env[k] = existing.env[k]
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot set env key '{k}' to masked value '***'; provide a real value.",
+                )
+        else:
+            merged_env[k] = v
+
+    merged_headers = {}
+    for k, v in incoming.headers.items():
+        if v == _MASKED_VALUE:
+            if k in existing.headers:
+                merged_headers[k] = existing.headers[k]
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot set header '{k}' to masked value '***'; provide a real value.",
+                )
+        else:
+            merged_headers[k] = v
+
+    merged_oauth = incoming.oauth
+    if incoming.oauth is not None and existing.oauth is not None:
+        # None = preserve (masked round-trip), "" = explicitly clear, else = new value
+        merged_client_secret = existing.oauth.client_secret if incoming.oauth.client_secret is None else (None if incoming.oauth.client_secret == "" else incoming.oauth.client_secret)
+        merged_refresh_token = existing.oauth.refresh_token if incoming.oauth.refresh_token is None else (None if incoming.oauth.refresh_token == "" else incoming.oauth.refresh_token)
+        merged_oauth = incoming.oauth.model_copy(
+            update={
+                "client_secret": merged_client_secret,
+                "refresh_token": merged_refresh_token,
+            }
+        )
+    return incoming.model_copy(
+        update={
+            "env": merged_env,
+            "headers": merged_headers,
+            "oauth": merged_oauth,
+        }
+    )
+
+
 @router.get(
     "/mcp/config",
     response_model=McpConfigResponse,
@@ -114,7 +207,7 @@ async def get_mcp_configuration(request: Request) -> McpConfigResponse:
         The current MCP configuration with all servers.
     """
     config = get_extensions_config()
-    servers = {name: McpServerConfigResponse(**server.model_dump()) for name, server in config.mcp_servers.items()}
+    servers = {name: _mask_server_config(McpServerConfigResponse(**server.model_dump())) for name, server in config.mcp_servers.items()}
 
     # Anonymous callers see the public config; logged-in users get the
     # per-user override merged on top.

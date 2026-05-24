@@ -1,4 +1,5 @@
 import asyncio
+import os
 import stat
 from io import BytesIO
 from pathlib import Path
@@ -64,12 +65,13 @@ def test_upload_files_skips_acquire_when_thread_data_is_mounted(tmp_path):
     provider.uses_thread_data_mounts = True
 
     with (
+        _patch_require_owner(),
         patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "get_sandbox_provider", return_value=provider),
     ):
         file = UploadFile(filename="notes.txt", file=BytesIO(b"hello uploads"))
-        result = asyncio.run(uploads.upload_files("thread-mounted", files=[file]))
+        result = asyncio.run(uploads.upload_files("thread-mounted", _mock_request(), files=[file]))
 
     assert result.success is True
     assert (thread_uploads_dir / "notes.txt").read_bytes() == b"hello uploads"
@@ -88,6 +90,7 @@ def test_upload_files_does_not_auto_convert_documents_by_default(tmp_path):
     provider.get.return_value = sandbox
 
     with (
+        _patch_require_owner(),
         patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
         patch.object(uploads, "get_sandbox_provider", return_value=provider),
@@ -95,7 +98,7 @@ def test_upload_files_does_not_auto_convert_documents_by_default(tmp_path):
         patch.object(uploads, "convert_file_to_markdown", AsyncMock()) as convert_mock,
     ):
         file = UploadFile(filename="report.pdf", file=BytesIO(b"pdf-bytes"))
-        result = asyncio.run(uploads.upload_files("thread-local", files=[file]))
+        result = asyncio.run(uploads.upload_files("thread-local", _mock_request(), files=[file]))
 
     assert result.success is True
     assert len(result.files) == 1
@@ -259,6 +262,109 @@ def test_upload_files_rejects_dotdot_and_dot_filenames(tmp_path):
 
     # Only the safely normalised file should exist
     assert [f.name for f in thread_uploads_dir.iterdir()] == ["passwd"]
+
+
+def test_upload_files_rejects_preexisting_symlink_destination(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("protected", encoding="utf-8")
+    (thread_uploads_dir / "victim.txt").symlink_to(outside_file)
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        _patch_require_owner(),
+        patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        file = UploadFile(filename="victim.txt", file=BytesIO(b"attacker upload"))
+        result = asyncio.run(uploads.upload_files("thread-local", _mock_request(), files=[file]))
+
+    assert result.success is False
+    assert result.files == []
+    assert result.skipped_files == ["victim.txt"]
+    assert "skipped 1 unsafe file" in result.message
+    assert outside_file.read_text(encoding="utf-8") == "protected"
+    assert (thread_uploads_dir / "victim.txt").is_symlink()
+
+
+def test_upload_files_rejects_dangling_symlink_destination(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+    missing_target = tmp_path / "missing-target.txt"
+    (thread_uploads_dir / "victim.txt").symlink_to(missing_target)
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        _patch_require_owner(),
+        patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        file = UploadFile(filename="victim.txt", file=BytesIO(b"attacker upload"))
+        result = asyncio.run(uploads.upload_files("thread-local", _mock_request(), files=[file]))
+
+    assert result.success is False
+    assert result.files == []
+    assert result.skipped_files == ["victim.txt"]
+    assert not missing_target.exists()
+    assert (thread_uploads_dir / "victim.txt").is_symlink()
+
+
+def test_upload_files_rejects_hardlinked_destination_without_truncating(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+    outside_file = tmp_path / "outside.txt"
+    outside_file.write_text("protected", encoding="utf-8")
+    os.link(outside_file, thread_uploads_dir / "victim.txt")
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        _patch_require_owner(),
+        patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        file = UploadFile(filename="victim.txt", file=BytesIO(b"attacker upload"))
+        result = asyncio.run(uploads.upload_files("thread-local", _mock_request(), files=[file]))
+
+    assert result.success is False
+    assert result.files == []
+    assert result.skipped_files == ["victim.txt"]
+    assert outside_file.read_text(encoding="utf-8") == "protected"
+    assert (thread_uploads_dir / "victim.txt").read_text(encoding="utf-8") == "protected"
+
+
+def test_upload_files_overwrites_existing_regular_file(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+    existing_file = thread_uploads_dir / "notes.txt"
+    existing_file.write_bytes(b"old upload")
+    assert existing_file.stat().st_nlink == 1
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        _patch_require_owner(),
+        patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        file = UploadFile(filename="notes.txt", file=BytesIO(b"new upload"))
+        result = asyncio.run(uploads.upload_files("thread-local", _mock_request(), files=[file]))
+
+    assert result.success is True
+    assert [file_info["filename"] for file_info in result.files] == ["notes.txt"]
+    assert existing_file.read_bytes() == b"new upload"
+    assert existing_file.stat().st_nlink == 1
 
 
 def test_delete_uploaded_file_removes_generated_markdown_companion(tmp_path):

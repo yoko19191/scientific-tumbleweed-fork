@@ -21,6 +21,7 @@
 
 - 2026-05-24: 已刷新 `upstream/main`，发现实际 tip 已前进到 `e7967a7f`；本轮先严格执行本文档基准 `f0bae286` 及其以前列出的低歧义批次，不混入新增上游提交。
 - 2026-05-24: 已创建并切换到 `merge/2026-05-22-upstream-sync` 工作分支。
+- 2026-05-24: 已完成 F1 Sandbox 修复合并，吸收 async readiness、provider lifecycle reset、`/mnt/user-data` API 边界和 provisioner PVC user scope；保留 fork 的 `user_id` 显式传递、硬容量限制、`scientific-tumbleweed` 命名和用户目录布局。
 
 ## 前置准备
 
@@ -304,11 +305,11 @@ git cherry-pick aded753d
 
 ### F1: Sandbox 修复
 
-- [ ] `8b697245` fix(sandbox): avoid blocking sandbox readiness polling (#2822)
-- [ ] `2b5bece7` fix(harness): reset local sandbox singleton with provider lifecycle (#2834)
-- [ ] `380255f7` fix(sandbox): uphold /mnt/user-data contract at Sandbox API boundary (#2873) (#2881)
-- [ ] `e74e126e` fix(sandbox): scope provisioner PVC data by user (#2973)
-- [ ] 跳过 `bd45cb28` fix(sandbox): disable msys path conversion (#2766) — Windows 专用
+- [x] `8b697245` fix(sandbox): avoid blocking sandbox readiness polling (#2822)
+- [x] `2b5bece7` fix(harness): reset local sandbox singleton with provider lifecycle (#2834)
+- [x] `380255f7` fix(sandbox): uphold /mnt/user-data contract at Sandbox API boundary (#2873) (#2881)
+- [x] `e74e126e` fix(sandbox): scope provisioner PVC data by user (#2973)
+- [x] 跳过 `bd45cb28` fix(sandbox): disable msys path conversion (#2766) — Windows 专用，不适用于当前目标批次
 
 ```bash
 git cherry-pick 8b697245
@@ -316,6 +317,14 @@ git cherry-pick 2b5bece7
 git cherry-pick 380255f7
 git cherry-pick e74e126e
 ```
+
+**F1 执行结果**
+
+- 采用 `git cherry-pick -n` 合并四个 F1 commits，并手工解决 `AioSandboxProvider`、`RemoteSandboxBackend`、`LocalSandboxProvider`、sandbox tools、provisioner app 与相关 tests 的冲突。
+- `AioSandboxProvider` 保留 fork 的 `user_id:thread_id` cache key、user-scoped mount、硬容量上限和 warm-pool eviction 语义，同时接入上游 async acquire、async readiness polling 和 async tool coroutine wrapper。
+- `LocalSandboxProvider` 接收显式 `user_id`，对 `local:{thread_id}` 保持向后兼容；当 runtime 提供 `user_id` 时使用 `local:{user_id}:{thread_id}` 隔离 per-user path mappings。
+- `RemoteSandboxBackend` 继续透传 configured image/resources/replicas，并向 provisioner 显式发送 `user_id`；没有 runtime user 时降级为 `default`。
+- Provisioner PVC subPath 按 fork 当前路径模型调整为 `deer-flow/users/{user_id}/threads/{thread_id}`，避免和 `Paths.ensure_thread_dirs(thread_id, user_id)` 的用户目录布局脱节。
 
 ### F2: 通用修复
 
@@ -384,7 +393,9 @@ git cherry-pick 8e48b7e8
 **验证**
 
 - [ ] `make lint` 通过
-- [ ] sandbox 启动/停止/数据隔离测试
+- [x] 2026-05-24 F1 sandbox 回归: `PYTHONPATH=. uv run python -m pytest tests/test_aio_sandbox_provider.py tests/test_aio_sandbox_readiness.py tests/test_remote_sandbox_backend.py tests/test_sandbox_middleware.py tests/test_local_sandbox_provider_mounts.py tests/test_local_sandbox_virtual_path_contract.py tests/test_provisioner_pvc_volumes.py -q`，结果 `134 passed, 1 warning`。
+- [x] 2026-05-24 F1 静态检查: `rg -n "<<<<<<<|>>>>>>>" backend docker docs` 无残留冲突标记；`PYTHONPYCACHEPREFIX=/private/tmp/st-pycache python3 -m py_compile ...` 通过。
+- [ ] sandbox 启动/停止/数据隔离测试（F1 已覆盖 provider/mount/API 边界；真实 Docker/K8S 启停留到 F2 或最终 smoke）
 - [ ] gateway API 基本功能测试
 - [ ] nginx 配置测试: CORS、CSRF、端口
 

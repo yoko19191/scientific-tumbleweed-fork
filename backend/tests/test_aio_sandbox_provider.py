@@ -2,6 +2,7 @@
 
 import importlib
 import threading
+import weakref
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -267,6 +268,71 @@ def test_create_sandbox_evicts_warm_pool_before_enforcing_capacity(monkeypatch):
     provider._backend.create.assert_called_once()
 
 
+@pytest.mark.anyio
+async def test_create_sandbox_async_uses_async_readiness_polling(monkeypatch):
+    """Async sandbox creation should not block on synchronous readiness polling."""
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    provider._config = {"replicas": 3}
+    provider._backend = SimpleNamespace(
+        create=MagicMock(return_value=aio_mod.SandboxInfo(sandbox_id="sandbox-async", sandbox_url="http://sandbox")),
+        destroy=MagicMock(),
+    )
+    provider._lock = threading.Lock()
+    provider._sandboxes = {}
+    provider._sandbox_infos = {}
+    provider._thread_sandboxes = {}
+    provider._last_activity = {}
+    provider._warm_pool = {}
+    provider._get_extra_mounts = lambda _thread_id, _user_id: []
+
+    async_readiness_calls: list[tuple[str, int]] = []
+
+    async def fake_wait_for_sandbox_ready_async(sandbox_url: str, timeout: int = 30, poll_interval: float = 1.0) -> bool:
+        async_readiness_calls.append((sandbox_url, timeout))
+        return True
+
+    monkeypatch.setattr(aio_mod, "wait_for_sandbox_ready_async", fake_wait_for_sandbox_ready_async)
+    monkeypatch.setattr(
+        aio_mod,
+        "wait_for_sandbox_ready",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("sync readiness should not be used")),
+    )
+
+    sandbox_id = await aio_mod.AioSandboxProvider._create_sandbox_async(
+        provider,
+        "thread-async",
+        "user-async",
+        "user-async:thread-async",
+        "sandbox-async",
+    )
+
+    assert sandbox_id == "sandbox-async"
+    assert async_readiness_calls == [("http://sandbox", 60)]
+    assert provider._backend.destroy.call_count == 0
+    assert provider._thread_sandboxes["user-async:thread-async"] == "sandbox-async"
+
+
+@pytest.mark.anyio
+async def test_acquire_async_uses_user_scoped_cache_key(monkeypatch):
+    """Async acquisition should preserve the fork's user_id sandbox isolation."""
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    provider._lock = threading.Lock()
+    provider._thread_locks = weakref.WeakValueDictionary()
+
+    calls: list[tuple[str | None, str | None, str | None]] = []
+
+    async def fake_acquire_internal_async(thread_id: str | None, user_id: str | None, cache_key: str | None) -> str:
+        calls.append((thread_id, user_id, cache_key))
+        return "sandbox-user"
+
+    monkeypatch.setattr(provider, "_acquire_internal_async", fake_acquire_internal_async)
+
+    assert await provider.acquire_async("thread-1", "user-1") == "sandbox-user"
+    assert calls == [("thread-1", "user-1", "user-1:thread-1")]
+
+
 def test_remote_backend_posts_configured_image(monkeypatch):
     """Remote provisioner requests should carry the image from config.yaml."""
     remote_mod = importlib.import_module("deerflow.community.aio_sandbox.remote_backend")
@@ -326,3 +392,33 @@ def test_remote_backend_posts_configured_resources(monkeypatch):
     backend.create("thread-1", "sandbox-1")
 
     assert post_calls[0]["json"]["resources"] == resources
+
+
+def test_remote_backend_create_forwards_user_id(monkeypatch):
+    """Provisioner mode must receive user_id so PVC subPath matches user isolation."""
+    remote_mod = importlib.import_module("deerflow.community.aio_sandbox.remote_backend")
+    backend = remote_mod.RemoteSandboxBackend("http://provisioner:8002")
+    posted: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"sandbox_url": "http://sandbox.local"}
+
+    def fake_post(url, json, timeout):  # noqa: A002 - mirrors requests.post kwarg
+        posted.update({"url": url, "json": json, "timeout": timeout})
+        return FakeResponse()
+
+    monkeypatch.setattr(remote_mod.requests, "post", fake_post)
+
+    backend.create("thread-42", "sandbox-42", user_id="user-7")
+
+    assert posted["url"] == "http://provisioner:8002/api/sandboxes"
+    assert posted["json"] == {
+        "sandbox_id": "sandbox-42",
+        "thread_id": "thread-42",
+        "user_id": "user-7",
+        "image": None,
+    }

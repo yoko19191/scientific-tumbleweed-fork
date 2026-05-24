@@ -71,16 +71,17 @@ class RemoteSandboxBackend(SandboxBackend):
 
     def create(
         self,
-        thread_id: str,
+        thread_id: str | None,
         sandbox_id: str,
         extra_mounts: list[tuple[str, str, bool]] | None = None,
+        user_id: str | None = None,
     ) -> SandboxInfo:
         """Create a sandbox Pod + Service via the provisioner.
 
         Calls ``POST /api/sandboxes`` which creates a dedicated Pod +
         NodePort Service in k3s.
         """
-        return self._provisioner_create(thread_id, sandbox_id, extra_mounts)
+        return self._provisioner_create(thread_id, sandbox_id, extra_mounts, user_id)
 
     def destroy(self, info: SandboxInfo) -> None:
         """Destroy a sandbox Pod + Service via the provisioner."""
@@ -98,14 +99,57 @@ class RemoteSandboxBackend(SandboxBackend):
         """
         return self._provisioner_discover(sandbox_id)
 
+    def list_running(self) -> list[SandboxInfo]:
+        """Return all sandboxes currently managed by the provisioner."""
+        return self._provisioner_list()
+
     # ── Provisioner API calls ─────────────────────────────────────────────
 
-    def _provisioner_create(self, thread_id: str, sandbox_id: str, extra_mounts: list[tuple[str, str, bool]] | None = None) -> SandboxInfo:
+    def _provisioner_list(self) -> list[SandboxInfo]:
+        """GET /api/sandboxes → list all running sandboxes."""
+        try:
+            resp = requests.get(f"{self._provisioner_url}/api/sandboxes", timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if not isinstance(data, dict):
+                logger.warning("Provisioner list_running returned non-dict payload: %r", type(data))
+                return []
+
+            sandboxes = data.get("sandboxes", [])
+            if not isinstance(sandboxes, list):
+                logger.warning("Provisioner list_running returned non-list sandboxes: %r", type(sandboxes))
+                return []
+
+            infos: list[SandboxInfo] = []
+            for sandbox in sandboxes:
+                if not isinstance(sandbox, dict):
+                    logger.warning("Provisioner list_running entry is not a dict: %r", type(sandbox))
+                    continue
+
+                sandbox_id = sandbox.get("sandbox_id")
+                sandbox_url = sandbox.get("sandbox_url")
+                if isinstance(sandbox_id, str) and sandbox_id and isinstance(sandbox_url, str) and sandbox_url:
+                    infos.append(SandboxInfo(sandbox_id=sandbox_id, sandbox_url=sandbox_url))
+
+            logger.info("Provisioner list_running: %d sandbox(es) found", len(infos))
+            return infos
+        except requests.RequestException as exc:
+            logger.warning("Provisioner list_running failed: %s", exc)
+            return []
+
+    def _provisioner_create(
+        self,
+        thread_id: str | None,
+        sandbox_id: str,
+        extra_mounts: list[tuple[str, str, bool]] | None = None,
+        user_id: str | None = None,
+    ) -> SandboxInfo:
         """POST /api/sandboxes → create Pod + Service."""
         try:
             payload = {
                 "sandbox_id": sandbox_id,
                 "thread_id": thread_id,
+                "user_id": user_id or "default",
                 "image": self._image,
             }
             if self._resources:

@@ -65,7 +65,7 @@ git log --oneline upstream/main | head -5
 ## 推荐执行顺序
 
 - [x] A: Phase 1 安全修复
-- [ ] B: Phase 2 Middleware 修复
+- [x] B: Phase 2 Middleware 修复
 - [ ] C: Phase 5 MCP 修复 + Phase 6 Runtime 修复
 - [ ] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
 - [ ] E: Phase 11 前端修复
@@ -113,11 +113,11 @@ git cherry-pick 7ec8d3a6
 
 > 这些修复了生产环境中的 P0/P1 级 middleware 问题，直接影响 agent 运行稳定性。涉及 middleware 链，fork 的 `middleware_builder.py` 可能需要小调整。
 
-- [ ] `5fd0e6ac` fix(middleware): sync raw tool call metadata (#2757)
-- [ ] `20d2d2b3` fix(middleware): Handle invalid tool calls in dangling pairing middleware (#2890) (#2891)
-- [ ] `0c37509b` fix(middleware): Prevent todo completion reminder IMMessage leak (#2907) — todo 中间件 IM 消息泄漏
-- [ ] `181d8365` fix(middleware): normalize tool result adjacency before model calls (#2939) — dangling tool call middleware 修复，防止 tool_calls 和 ToolMessage 顺序错乱
-- [ ] `f0bae286` fix(middleware): handle repeated tool call ids (#3143)
+- [x] `5fd0e6ac` fix(middleware): sync raw tool call metadata (#2757)
+- [x] `20d2d2b3` fix(middleware): Handle invalid tool calls in dangling pairing middleware (#2890) (#2891)
+- [x] `0c37509b` fix(middleware): Prevent todo completion reminder IMMessage leak (#2907) — todo 中间件 IM 消息泄漏
+- [x] `181d8365` fix(middleware): normalize tool result adjacency before model calls (#2939) — dangling tool call middleware 修复，防止 tool_calls 和 ToolMessage 顺序错乱
+- [x] `f0bae286` fix(middleware): handle repeated tool call ids (#3143)
 
 ```bash
 git cherry-pick 5fd0e6ac
@@ -127,10 +127,16 @@ git cherry-pick 181d8365
 git cherry-pick f0bae286
 ```
 
+**执行备注**
+
+- `0c37509b` 的前端修改已适配 fork 现有拆分结构：隐藏控制消息名单放入 `frontend/src/core/messages/extraction.ts`，`grouping.ts` 继续通过 `isHiddenFromUIMessage()` 过滤，不恢复上游已删除的 `frontend/tests/unit/core/messages/utils.test.ts`。
+- `181d8365` 与 `f0bae286` 均改动 `DanglingToolCallMiddleware` 同一段逻辑，本次采用最终队列式实现，支持非相邻 ToolMessage 归位与重复 tool call id 按出现顺序消费。
+
 **验证**
 
 - [ ] `make lint` 通过
-- [ ] middleware 相关测试通过
+- [x] middleware 相关测试通过: `uv run python -m pytest tests/test_dangling_tool_call_middleware.py tests/test_subagent_limit_middleware.py tests/test_summarization_middleware.py tests/test_todo_middleware.py -q`，112 passed
+- [ ] 前端 typecheck: `pnpm typecheck` 当前失败于既有 test tsconfig/vitest 依赖问题（`src/core/threads/api-core.test.ts` BodyInit 类型、两个既有 vitest test 文件缺少 `vitest` 类型）；本批次未扩大该问题。
 - [ ] 集成测试: agent 运行一轮完整对话，验证 tool_calls/ToolMessage 配对正确
 
 ## C: MCP + Runtime 修复 (Phase 5 + 6)

@@ -64,10 +64,6 @@ export function groupMessages<T>(
       continue;
     }
 
-    if (message.name === "todo_reminder") {
-      continue;
-    }
-
     if (message.type === "human") {
       groups.push({ id: message.id, type: "human", messages: [message] });
       continue;

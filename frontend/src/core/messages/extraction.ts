@@ -1,6 +1,12 @@
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 
 const THINK_TAG_RE = /<think>\s*([\s\S]*?)\s*<\/think>/g;
+const HIDDEN_CONTROL_MESSAGE_NAMES = new Set([
+  "summary",
+  "loop_warning",
+  "todo_reminder",
+  "todo_completion_reminder",
+]);
 
 function splitInlineReasoning(content: string) {
   const reasoningParts: string[] = [];
@@ -198,7 +204,11 @@ export function findToolCallResult(toolCallId: string, messages: Message[]) {
 }
 
 export function isHiddenFromUIMessage(message: Message) {
-  return message.additional_kwargs?.hide_from_ui === true;
+  return (
+    message.additional_kwargs?.hide_from_ui === true ||
+    (typeof message.name === "string" &&
+      HIDDEN_CONTROL_MESSAGE_NAMES.has(message.name))
+  );
 }
 
 /**

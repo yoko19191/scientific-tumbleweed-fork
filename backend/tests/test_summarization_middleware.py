@@ -75,6 +75,14 @@ def _skill_conversation() -> list:
     ]
 
 
+def _raw_tool_call(tool_id: str, name: str = "read_file") -> dict:
+    return {
+        "id": tool_id,
+        "type": "function",
+        "function": {"name": name, "arguments": "{}"},
+    }
+
+
 def test_before_summarization_hook_receives_messages_before_compression() -> None:
     captured: list[SummarizationEvent] = []
     middleware = _middleware(before_summarization=[captured.append])
@@ -148,6 +156,7 @@ def test_memory_flush_hook_skips_when_memory_disabled(monkeypatch: pytest.Monkey
             preserved_messages=(),
             thread_id="thread-1",
             agent_name=None,
+            user_id=None,
             runtime=_runtime(),
         )
     )
@@ -166,6 +175,7 @@ def test_memory_flush_hook_skips_when_thread_id_missing(monkeypatch: pytest.Monk
             preserved_messages=(),
             thread_id=None,
             agent_name=None,
+            user_id=None,
             runtime=_runtime(None),
         )
     )
@@ -189,6 +199,7 @@ def test_memory_flush_hook_enqueues_filtered_messages_and_flushes(monkeypatch: p
             preserved_messages=(),
             thread_id="thread-1",
             agent_name=None,
+            user_id="user-1",
             runtime=_runtime(),
         )
     )
@@ -196,6 +207,7 @@ def test_memory_flush_hook_enqueues_filtered_messages_and_flushes(monkeypatch: p
     queue.add_nowait.assert_called_once()
     add_kwargs = queue.add_nowait.call_args.kwargs
     assert add_kwargs["thread_id"] == "thread-1"
+    assert add_kwargs["user_id"] == "user-1"
     assert [message.content for message in add_kwargs["messages"]] == ["Question", "Final answer"]
     assert add_kwargs["correction_detected"] is False
     assert add_kwargs["reinforcement_detected"] is False
@@ -413,6 +425,47 @@ def test_skill_rescue_does_not_preserve_non_skill_outputs_from_mixed_tool_calls(
     assert any(isinstance(m, ToolMessage) and m.content == "user notes" for m in summarized)
 
 
+def test_skill_rescue_syncs_raw_provider_tool_calls_on_split_ai_messages() -> None:
+    captured: list[SummarizationEvent] = []
+    middleware = _middleware(
+        before_summarization=[captured.append],
+        trigger=("messages", 4),
+        keep=("messages", 2),
+        preserve_recent_skill_count=5,
+        preserve_recent_skill_tokens=10_000,
+        preserve_recent_skill_tokens_per_skill=10_000,
+    )
+
+    messages = [
+        HumanMessage(content="u1"),
+        AIMessage(
+            content="reading skill and notes",
+            tool_calls=[
+                _skill_read_call("skill-1", "alpha"),
+                {"name": "read_file", "id": "file-1", "args": {"path": "/mnt/user-data/workspace/notes.md"}},
+            ],
+            additional_kwargs={"tool_calls": [_raw_tool_call("skill-1"), _raw_tool_call("file-1")]},
+        ),
+        ToolMessage(content="alpha skill body", tool_call_id="skill-1"),
+        ToolMessage(content="user notes", tool_call_id="file-1"),
+        HumanMessage(content="u2"),
+        AIMessage(content="done"),
+    ]
+
+    middleware.before_model({"messages": messages}, _runtime())
+
+    preserved = captured[0].preserved_messages
+    summarized = captured[0].messages_to_summarize
+
+    preserved_ai = next(m for m in preserved if isinstance(m, AIMessage) and m.tool_calls)
+    summarized_ai = next(m for m in summarized if isinstance(m, AIMessage) and m.tool_calls)
+
+    assert [tc["id"] for tc in preserved_ai.tool_calls] == ["skill-1"]
+    assert [tc["id"] for tc in preserved_ai.additional_kwargs["tool_calls"]] == ["skill-1"]
+    assert [tc["id"] for tc in summarized_ai.tool_calls] == ["file-1"]
+    assert [tc["id"] for tc in summarized_ai.additional_kwargs["tool_calls"]] == ["file-1"]
+
+
 def test_skill_rescue_clears_content_on_rescued_ai_clone() -> None:
     captured: list[SummarizationEvent] = []
     middleware = _middleware(
@@ -449,6 +502,42 @@ def test_skill_rescue_clears_content_on_rescued_ai_clone() -> None:
 
     assert preserved_ai.content == ""
     assert summarized_ai.content == "reading skill and notes"
+
+
+def test_skill_rescue_removes_raw_provider_tool_calls_from_content_only_summary_clone() -> None:
+    captured: list[SummarizationEvent] = []
+    middleware = _middleware(
+        before_summarization=[captured.append],
+        trigger=("messages", 4),
+        keep=("messages", 2),
+        preserve_recent_skill_count=5,
+        preserve_recent_skill_tokens=10_000,
+        preserve_recent_skill_tokens_per_skill=10_000,
+    )
+
+    messages = [
+        HumanMessage(content="u1"),
+        AIMessage(
+            content="reading skill",
+            tool_calls=[_skill_read_call("skill-1", "alpha")],
+            additional_kwargs={"tool_calls": [_raw_tool_call("skill-1")], "function_call": {"name": "read_file"}},
+            response_metadata={"finish_reason": "tool_calls"},
+        ),
+        ToolMessage(content="alpha skill body", tool_call_id="skill-1"),
+        HumanMessage(content="u2"),
+        AIMessage(content="done"),
+    ]
+
+    middleware.before_model({"messages": messages}, _runtime())
+
+    summarized = captured[0].messages_to_summarize
+    summarized_ai = next(m for m in summarized if isinstance(m, AIMessage))
+
+    assert summarized_ai.content == "reading skill"
+    assert summarized_ai.tool_calls == []
+    assert "tool_calls" not in summarized_ai.additional_kwargs
+    assert "function_call" not in summarized_ai.additional_kwargs
+    assert summarized_ai.response_metadata["finish_reason"] == "stop"
 
 
 def test_skill_rescue_only_preserves_skill_calls_with_matched_tool_results() -> None:
@@ -501,6 +590,7 @@ def test_memory_flush_hook_preserves_agent_scoped_memory(monkeypatch: pytest.Mon
             preserved_messages=(),
             thread_id="thread-1",
             agent_name="research-agent",
+            user_id="user-1",
             runtime=_runtime(agent_name="research-agent"),
         )
     )

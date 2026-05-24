@@ -78,6 +78,23 @@ git log --oneline upstream/main | head -5
 - [ ] L: Phase 15 新功能手动适配，逐项讨论
 - [x] M: Phase 16 Auth 独立修复
 
+## Trade-off 评分口径
+
+后续未完成批次按功能组记录 trade-off，不逐 commit 拆分评分。评分用于决定合并顺序和手工适配深度，不替代实际冲突解决。
+
+| 字段 | 含义 | 评分 |
+|------|------|------|
+| 当前适配度 | 当前 fork 对该功能组的自然承接程度；分越高，说明现有架构、文件拆分和产品语义越容易接住上游改动 | 1-5 |
+| 目标收益分 | 合并完成后对稳定性、能力、可维护性或用户体验的收益；分越高，说明越值得投入 | 1-5 |
+| 差距 | `目标收益分 - 当前适配度`；差距越大，越需要手工适配、专项验证或分支隔离 | 0-4 |
+| 补齐动作 | 为了把当前适配度补到目标收益，需要完成的代码适配、冲突处理、测试验证和回滚判断 | 文本 |
+
+默认解释:
+
+- `差距 0-1`: 可优先作为低歧义批次处理，仍需按相关测试验证。
+- `差距 2`: 建议单独 commit 或小分支处理，合并前确认 fork 自定义逻辑未被覆盖。
+- `差距 3-4`: 必须手工适配或单独验证分支处理，不直接整批 cherry-pick。
+
 ## A: 安全修复 (Phase 1)
 
 **优先级**: 🔴 最高
@@ -205,6 +222,16 @@ git cherry-pick 722c690f
 
 - [ ] `813d3c94` 修改 `subagents/executor.py`，fork 有定制，需手动解决
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 缺少上游 subagent timeout 原子终态、SystemMessage 合并和按 agent 隔离的 memory 队列；fork 的 `subagents/executor.py` 已有定制，不能无脑覆盖。 |
+| 分值 | 当前适配度 3/5；目标收益分 4/5；差距 1。 |
+| 取舍结论 | 采用，但 `813d3c94` 必须手工比对 executor 定制；优先保留 fork 的 subagent 执行语义，再叠加上游终态/消息结构修复。 |
+| 补齐动作 | 补 subagent timeout terminal state 测试；验证 SystemMessage 合并后 skills 与 system prompt 不重复、不丢失；补多 agent memory 队列隔离测试。 |
+| 建议 merge 节奏 | 作为中等耦合批次，在 I/H 之前或之后均可；若 executor 冲突扩大，单独提交 D 批次并暂停进入 G/L。 |
+
 **验证**
 
 - [ ] subagent 超时状态转换测试
@@ -244,6 +271,16 @@ git cherry-pick aded753d
 - `27559f36` 已按 fork 的 `InputBox` 目录结构适配：新增 `isWelcomeMode` 作为视觉欢迎态，保留 `isNewThread` 作为后端线程是否已创建的语义，避免新 chat 提前触发 history/runs 拉取。
 - `7c42ab3e` 未恢复上游已删除的旧 `prompt-input.tsx`、旧 `input-box.tsx`、旧 `chat.spec.ts` 和新增 Playwright e2e；当前 PromptInput 已支持 async submit，本次只保留页面层对带附件提交 Promise 的等待路径，避免把本批次扩大到 e2e 测试基础设施。
 - E 批次剩余项尚未处理：`4538c322`、`6d3cffb4`、`c0233cae`、`dfa4eb0c`、`222a7773`、`aded753d`，需基于当前 frontend 拆分结构单独适配。
+
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 已完成首条消息、新会话 404、async submit 三个低歧义修复；剩余项主要是消息兼容、恢复去重、登录页闪烁、suggestions 布局、错误提示和 gateway config fallback。 |
+| 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
+| 取舍结论 | 默认继续合并剩余前端 bugfix，但必须适配 fork 的拆分后 hooks/InputBox/message 结构，不恢复上游旧大文件或 e2e 基础设施。 |
+| 补齐动作 | 每个剩余 commit 先定位当前拆分文件；对 message content thinking/type guard、thread restore dedupe、login flicker、follow-up layout 和 prod fallback 分别做最小移植；补 frontend typecheck 或记录既有阻塞。 |
+| 建议 merge 节奏 | 放在下一轮低歧义批次优先处理；若 typecheck 仍被既有测试配置阻塞，只记录“未扩大既有问题”。 |
 
 **验证**
 
@@ -327,6 +364,16 @@ git cherry-pick 1336872b
 git cherry-pick 8e48b7e8
 ```
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | F1/F2 多数是 sandbox、gateway、skills、tools、nginx、docker 和 persistence 的局部 bugfix；整体价值高但文件面较散。 |
+| 分值 | 当前适配度 3/5；目标收益分 4/5；差距 1。 |
+| 取舍结论 | 采用低风险通用修复；Windows-only 或当前部署形态不适用的内容继续跳过；涉及 gateway/config 生命周期的改动要避免与 J/L2 重复。 |
+| 补齐动作 | 按 F1 sandbox、F2 gateway/skills/tools/deploy 分组提交；对 config hot reload、gateway timestamp、tool schema、sync wrapper、nginx CORS/CSRF 分别跑最小 smoke；确认不提前引入 L2 app_config threading。 |
+| 建议 merge 节奏 | 在 E 之后处理，先 F1 再 F2；若 F2 中某项触及架构重构，移到 J/L2 手动适配批次。 |
+
 **验证**
 
 - [ ] `make lint` 通过
@@ -364,6 +411,16 @@ git cherry-pick 08ee7ade
 - [ ] `prompt.py`: 保留 fork 的 `user_id` 参数，删除 memory/date 注入逻辑
 - [ ] `memory_middleware.py`: memory 注入逻辑被 DynamicContextMiddleware 替代
 - [ ] `middleware_builder.py`: 添加 DynamicContextMiddleware 注册位置
+
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 当前 fork 仍由 system prompt / memory middleware 承担动态上下文注入；上游改为 `<system-reminder>` HumanMessage 以提升 prefix-cache 复用。 |
+| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
+| 取舍结论 | 采用，但必须单独分支验证；这是缓存效率和上下文语义的架构迁移，不作为普通 middleware bugfix 混入其他批次。 |
+| 补齐动作 | 保留 fork 的 `user_id` 参数和自定义 prompt 语义；迁移 memory/date 注入位置；适配 summarization/title generation；验证 dynamic reminder 不破坏 tool-call transcript。 |
+| 建议 merge 节奏 | 放在 I/H/D 之后、L 系列之前；完成后再推进 L1 token usage 和 L2 app_config，避免多条架构线同时移动。 |
 
 **验证**
 
@@ -405,6 +462,16 @@ git cherry-pick dcc6f1e6
 - [ ] fork 使用 `middleware_builder`，需在 builder 中注册 `LoopDetectionConfig.from_config()`
 - [ ] 新增 `config.yaml` 中的 `loop_detection` 配置节
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 已有 loop detection 能力，但缺少 per-tool 配置、延迟注入和更严格的 tool-call 配对保护。 |
+| 分值 | 当前适配度 3/5；目标收益分 4/5；差距 1。 |
+| 取舍结论 | 采用，优先解决 provider 兼容与循环提醒误伤；配置入口必须落在 fork 的 `middleware_builder` 路径，而不是恢复上游 factory 注册方式。 |
+| 补齐动作 | 新增/适配 `loop_detection` config；在 builder 中注册 `LoopDetectionConfig.from_config()`；验证 warn 注入不破坏 OpenAI/Moonshot tool_calls pairing。 |
+| 建议 merge 节奏 | 建议在 I 之后处理，和 D 一样作为中等耦合稳定性批次；若与 G 的 dynamic context 注入顺序冲突，以不破坏 tool pairing 为最高优先级。 |
+
 **验证**
 
 - [ ] `config.yaml` 中 `loop_detection` 配置生效
@@ -436,6 +503,16 @@ git cherry-pick be0eae98
 **冲突解决要点**
 
 - [ ] 在 fork 的 `middleware_builder.py` 中注册 `SafetyFinishReasonMiddleware`
+
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 当前 fork 对 provider safety termination 携带截断 tool_calls 的防护不足，可能触发无意义重试或错误执行。 |
+| 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
+| 取舍结论 | 默认采用；功能独立且风险集中在 middleware 注册顺序，适合作为下一轮低风险稳定性 commit。 |
+| 补齐动作 | 注册 `SafetyFinishReasonMiddleware`；补 content_filter / safety finish_reason 模拟测试；确认正常 tool_calls 不被误清理。 |
+| 建议 merge 节奏 | 优先于 H/G 处理，用作 middleware 架构改动前的安全垫。 |
 
 **验证**
 
@@ -478,6 +555,16 @@ git show e93f6584 > /tmp/stability-p0.patch
 - [ ] `gateway/app.py`、`gateway/deps.py` 的 config 生命周期变化: 去掉 `app.state.config`，改用 `get_app_config()` 热重载
 - [ ] 需评估与 fork 的 gateway 层兼容性，前端部分可选择性提取
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | `e93f6584` 是 mega commit，包含 task_tool callback、frontend 状态/导出过滤和 gateway config hot reload；当前 fork 只适合选择性提取。 |
+| 分值 | 当前适配度 2/5；目标收益分 4/5；差距 2。 |
+| 取舍结论 | 采用子修复，不整 commit cherry-pick；前端状态/导出过滤可直接吸收，gateway config 生命周期需与 L2 app_config threading 对齐。 |
+| 补齐动作 | 手工提取 BUG-002/006/007；gateway 热重载先画清楚 `app.state.config` 到 `get_app_config()` 的替换边界；避免重复实现 F2 的 config-backed singleton reset。 |
+| 建议 merge 节奏 | 放在 F 后、L2 前后择一处理；若先做 L2，则 J 的 gateway 热重载按新 app_config 路径适配。 |
+
 **验证**
 
 - [ ] task_tool callback 正常工作
@@ -515,6 +602,16 @@ git cherry-pick 4063dd71
 git cherry-pick 680187dd
 ```
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | K 批次是相对独立的小 feature / 小补全，包括 Serper provider、sandbox download、trace agent_name、subagent token usage stream、debug path 和 remote list_running。 |
+| 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
+| 取舍结论 | 默认直接 cherry-pick；但 `eab7ae3d` 与 L1 token usage 相关，若产生冲突则移入 L1 一起处理。 |
+| 补齐动作 | 检查每项是否依赖尚未合并的 L 系列能力；Serper 必须保持可选配置；sandbox download/list_running 需验证本地和 remote backend 都不破坏。 |
+| 建议 merge 节奏 | 可放在 F 之后作为低风险功能补齐；token usage 相关项遇到冲突时延后到 L1。 |
+
 **验证**
 
 - [ ] Serper provider 配置可选
@@ -527,6 +624,16 @@ git cherry-pick 680187dd
 **策略**: 每个系列单独分支 + 手动适配
 **预计耗时**: 10-14h，是最耗时批次
 **决策状态**: 多项已决定采用
+
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | L 是剩余工作中耦合最高的 feature 集合，横跨 token usage、app_config、RunStore、custom agent、持久层和 tracing。 |
+| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
+| 取舍结论 | 不做整批合并；每个 L 子系列单独分支、单独验证、单独中文 commit。 |
+| 补齐动作 | 先确定 L2 app_config 与 J gateway hot reload 的先后关系；L1/L3/L6 涉及 backend/frontend/trace 数据流，必须写清楚输入输出和验证证据。 |
+| 建议 merge 节奏 | 建议顺序为 L2 -> L3 -> L1 -> L5 -> L6 -> L4；若 custom agent 自更新与 user_id 隔离冲突扩大，L4 单独延后。 |
 
 ### L1: Token Usage 显示体系重构
 
@@ -563,6 +670,16 @@ git cherry-pick 2eeb5979
 - [ ] 从上游吸收 header DropdownMenu preset 切换: `per_turn` / `per_run` / `step_debug` / `off`
 - [ ] 默认展示模式设为 `per_turn`
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | fork 已有 turn-anchored 展示和 `useTweenNumber` 动画，但后端归因、subagent 归并、header total 和 debug 模式需要吸收上游。 |
+| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
+| 取舍结论 | 后端归因系统全盘采用；前端保留 fork 的 turn 结构和动画，只叠加上游 preset/debug 能力。 |
+| 补齐动作 | 对齐 token usage 数据模型、message id 去重、subagent bucket、thread header total；补 per_turn/per_run/step_debug/off 四种 UI 验证。 |
+| 建议 merge 节奏 | 在 L2/L3 后处理，避免 app_config / RunStore 数据流尚未稳定时重做前端归因。 |
+
 **验证**
 
 - [ ] 后端 token usage 归因正确: thinking / final_answer / tool_batch / subagent
@@ -588,6 +705,16 @@ git cherry-pick 8ba01dfd
 - [ ] `agents/lead_agent/agent.py` 大量定制，逐段适配
 - [ ] `agents/factory.py` 适配 `app_config` 传入
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 当前 lead/subagent/task 路径仍有隐式 `get_app_config()` 依赖；上游改为显式 app_config 穿透，能支撑热重载和多路径一致性。 |
+| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
+| 取舍结论 | 采用，但这是 L 系列优先级最高的底座改造；必须保留 fork 的 `middleware_builder.py` 和 lead agent 定制。 |
+| 补齐动作 | 逐层传入 app_config；更新 lead/subagent/task 创建路径；确认 gateway/J 的 config hot reload 与 F2 singleton reset 不重复或互相覆盖。 |
+| 建议 merge 节奏 | L 系列第一个处理，为 L1/L3/J gateway 热重载提供稳定底座。 |
+
 **验证**
 
 - [ ] lead/subagent/task 路径不再隐式依赖 `get_app_config()`
@@ -608,6 +735,16 @@ git checkout -b merge/run-store merge/2026-05-22-upstream-sync
 git cherry-pick c810e9f8
 git cherry-pick 39f901d3
 ```
+
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 当前运行态恢复能力不足；上游 RunStore hydration 可让 gateway 重启后恢复历史 run，并持久化 interrupted 状态。 |
+| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
+| 取舍结论 | 采用 breaking change，但必须围绕 `RunManager.get()` async 调用链和持久化状态做专项验证。 |
+| 补齐动作 | 适配 RunManager 从内存 + RunStore 混合读取；补 interrupted status 持久化；验证 gateway restart 后历史 run、active run、cancelled/interrupted run 的恢复语义。 |
+| 建议 merge 节奏 | 紧跟 L2 后处理；L1 header totals 和 J gateway 热重载都可能依赖更稳定的 run 状态来源。 |
 
 **验证**
 
@@ -633,6 +770,16 @@ git cherry-pick 59c4a3f0
 - [ ] fork 已有 `user_id` 隔离逻辑，需与上游的 user isolation 合并
 - [ ] `agents_config.py` 和 `paths.py` 中两套隔离逻辑需统一
 
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | fork 已有 user_id 隔离语义；上游新增 `update_agent` 自更新工具和用户隔离链路，价值高但权限边界敏感。 |
+| 分值 | 当前适配度 2/5；目标收益分 4/5；差距 2。 |
+| 取舍结论 | 采用但靠后处理；权限、路径和用户隔离必须优先于功能可用性，不能让 agent 自更新越权写入其他用户配置。 |
+| 补齐动作 | 合并两套 `agents_config.py` / `paths.py` 隔离逻辑；限定 `SOUL.md` / `config.yaml` 更新范围；补用户 A/B 隔离和非法路径测试。 |
+| 建议 merge 节奏 | L6 后或单独延后处理；如果 user isolation 冲突扩大，拆成独立评审批次。 |
+
 **验证**
 
 - [ ] `update_agent` 工具可用
@@ -646,6 +793,16 @@ git cherry-pick 59c4a3f0
 ```bash
 git cherry-pick de253e4a
 ```
+
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | model_name 持久化是小范围数据补全，但最好与 L3 RunStore 持久化路径一起验证。 |
+| 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
+| 取舍结论 | 默认采用；若 schema/SQLite 路径与 L3 冲突，则并入 L3 commit。 |
+| 补齐动作 | 确认 gateway 入参到 SQLite 字段的传递路径；补历史 run 查询或导出中 model_name 可见性验证。 |
+| 建议 merge 节奏 | L3 后处理，作为持久层信息补全小提交。 |
 
 ### L6: Langfuse Tracing 增强
 
@@ -663,6 +820,16 @@ git cherry-pick df951542
 - [ ] 涉及 fork 定制的 `agents/lead_agent/agent.py` 和 `models/factory.py`
 - [ ] Langfuse callback 从 model 级移到 graph root，需在 fork 的 agent 构建流程中适配
 - [ ] 保留 fork 的 `user_id` 传播路径，确保与上游的 `session_id` / `user_id` / `trace_name` 注入合并
+
+**Trade-off**
+
+| 项目 | 说明 |
+|------|------|
+| 当前状态 | 当前 tracing 对 session/user/trace_name/tags 传播不足；上游将 Langfuse callback 提升到 graph root，能改善可观测性但会碰到 agent/model factory 定制。 |
+| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
+| 取舍结论 | 采用并手工适配；必须保留 fork 的 `user_id` 传播和现有 agent 构建流程，不把 callback 迁移做成模型工厂破坏性重构。 |
+| 补齐动作 | 梳理 model-level callback 到 graph-root callback 的迁移边界；补 Langfuse trace 中 session_id/user_id/trace_name/tags 验证；确认非 Langfuse tracing 不受影响。 |
+| 建议 merge 节奏 | L1/L3 后处理，因为 token/run 上下文稳定后 tracing 归因更可靠。 |
 
 **验证**
 

@@ -66,7 +66,7 @@ git log --oneline upstream/main | head -5
 
 - [x] A: Phase 1 安全修复
 - [x] B: Phase 2 Middleware 修复
-- [ ] C: Phase 5 MCP 修复 + Phase 6 Runtime 修复
+- [x] C: Phase 5 MCP 修复 + Phase 6 Runtime 修复（适用项）
 - [ ] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
 - [ ] E: Phase 11 前端修复
 - [ ] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
@@ -147,8 +147,8 @@ git cherry-pick f0bae286
 
 ### C1: MCP 修复
 
-- [ ] `9afeaf66` Fix env resolution in MCP config lists (#2556)
-- [ ] `c881d958` fix(mcp): persist MCP sessions across tool calls for stateful servers (#3089) — 新增 MCPSessionPool，Playwright 等有状态 MCP server 不再丢失会话
+- [x] `9afeaf66` Fix env resolution in MCP config lists (#2556)
+- [x] `c881d958` fix(mcp): persist MCP sessions across tool calls for stateful servers (#3089) — 新增 MCPSessionPool，Playwright 等有状态 MCP server 不再丢失会话
 
 ```bash
 git cherry-pick 9afeaf66
@@ -157,11 +157,11 @@ git cherry-pick c881d958
 
 ### C2: Runtime / RunManager 修复
 
-- [ ] `9b19cca9` fix(runtime): make RunManager.cancel() idempotent for already-interrupted runs (#3055) (#3058)
-- [ ] `1c5c5857` fix(runtime): bound write_file execution-failure observations (#3133)
-- [ ] `e19bec14` fix(task-tool): cancel and schedule deferred cleanup on polling safety timeout (#3097)
-- [ ] `2b1fcb3e` fix(task): remove max_turns parameter from task tool interface (#2783)
-- [ ] `45060a9f` fix(runtime): avoid postgres aggregate row lock (#2962)
+- [x] `9b19cca9` fix(runtime): make RunManager.cancel() idempotent for already-interrupted runs (#3055) (#3058)
+- [x] `1c5c5857` fix(runtime): bound write_file execution-failure observations (#3133)
+- [x] `e19bec14` fix(task-tool): cancel and schedule deferred cleanup on polling safety timeout (#3097)
+- [x] `2b1fcb3e` fix(task): remove max_turns parameter from task tool interface (#2783)
+- [x] `45060a9f` fix(runtime): avoid postgres aggregate row lock (#2962) — 跳过，不适用于当前 fork 已删除的 `runtime/events/store/db.py` 旧事件存储路径
 
 ```bash
 git cherry-pick 9b19cca9
@@ -171,11 +171,19 @@ git cherry-pick 2b1fcb3e
 git cherry-pick 45060a9f
 ```
 
+**执行备注**
+
+- `c881d958` 与 fork 的 MCP sync wrapper / custom interceptor 支持有局部冲突；本次保留 fork 的 `_make_sync_tool_wrapper()`，叠加上游 `MCPSessionPool`、按 `(server_name, thread_id)` 复用 session、OAuth/custom interceptor 链路和 cache reset 时关闭 session pool。
+- `e19bec14` 与当前 task tool 尚未引入 token usage L 系列逻辑有局部冲突；本次只采用 polling safety timeout 后的 cooperative cancel + deferred cleanup，不引入上游 token usage cache/reporting 依赖。
+- `2b1fcb3e` 已移除 task tool model-facing `max_turns` 参数，继续使用 subagent config 中的 `max_turns`；保留 fork 当前 skills appendix 注入方式，待 D/L 相关批次再处理 subagent skill 注入架构。
+- `45060a9f` 修改的 `runtime/events/store/db.py` 与 `test_run_event_store.py` 在当前 fork 中不存在；未恢复旧文件，记录为不适用，后续若重新引入 DB RunEventStore 再单独评估 Postgres advisory lock。
+
 **验证**
 
 - [ ] `make lint` 通过
 - [ ] MCP server 连接测试，有状态 server 如 Playwright 不丢失会话
-- [ ] RunManager 取消操作幂等性测试
+- [x] C 批次相关单元测试通过: `uv run python -m pytest tests/test_mcp_client_config.py tests/test_mcp_session_pool.py tests/test_cancel_run_idempotent.py tests/test_sandbox_tools_security.py tests/test_task_tool_core_logic.py -q`，149 passed
+- [x] RunManager 取消操作幂等性测试
 
 ## D: Subagent + Memory 修复 (Phase 9 + 10)
 

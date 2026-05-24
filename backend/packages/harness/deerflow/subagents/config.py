@@ -11,6 +11,7 @@ class SubagentConfig:
         name: Unique identifier for the subagent.
         description: When Claude should delegate to this subagent.
         system_prompt: The system prompt that guides the subagent's behavior.
+        skills: Optional list of skill names to allow. If None, inherits allowed parent skills.
         tools: Optional list of tool names to allow. If None, inherits all tools.
         disallowed_tools: Optional list of tool names to deny.
         model: Model to use - 'inherit' uses parent's model.
@@ -21,6 +22,7 @@ class SubagentConfig:
     name: str
     description: str
     system_prompt: str
+    skills: list[str] | None = None
     tools: list[str] | None = None
     disallowed_tools: list[str] | None = field(default_factory=lambda: ["task"])
     model: str = "inherit"

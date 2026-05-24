@@ -76,7 +76,7 @@ git log --oneline upstream/main | head -5
 - [ ] J: Phase 8 Stability P0，选择性提取
 - [ ] K: Phase 14 新功能直接 cherry-pick
 - [ ] L: Phase 15 新功能手动适配，逐项讨论
-- [ ] M: Phase 16 Auth 独立修复
+- [x] M: Phase 16 Auth 独立修复
 
 ## A: 安全修复 (Phase 1)
 
@@ -662,13 +662,18 @@ git cherry-pick df951542
 
 > 以下 auth 修复独立于上游的 auth 大重构，可单独适用。
 
-- [ ] `6d611c2b` fix(auth): persist auto-generated JWT secret to survive restarts (#2933)
-- [ ] `b5108e35` fix(auth): replace setup-status 429 rate limit with cached response (#2915)
+- [x] `6d611c2b` fix(auth): persist auto-generated JWT secret to survive restarts (#2933)
+- [x] `b5108e35` fix(auth): replace setup-status 429 rate limit with cached response (#2915)
 
 ```bash
 git cherry-pick 6d611c2b
 git cherry-pick b5108e35
 ```
+
+**执行备注**
+
+- `6d611c2b` 已采用运行时代码与 `test_auth_config.py` 中的 JWT secret 持久化测试；未恢复上游 `backend/docs/AUTH_UPGRADE.md`，因为该文档描述了当前 fork 尚未完整采用的 `/initialize` 首次 admin 创建流程。
+- `b5108e35` 仅移植 `/setup-status` per-IP cache 与 single-flight 查询逻辑，保留 fork 当前 `count_users()` 判定与 `username` / `display_name` 响应结构，不引入上游 auth 初始化端点。
 
 **验证**
 

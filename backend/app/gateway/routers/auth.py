@@ -1,5 +1,6 @@
 """Authentication endpoints."""
 
+import asyncio
 import logging
 import time
 
@@ -275,11 +276,71 @@ async def get_me(request: Request):
     return UserResponse(id=str(user.id), email=user.email, username=user.username, display_name=user.display_name, system_role=user.system_role, needs_setup=user.needs_setup)
 
 
+# Per-IP cache: ip -> (timestamp, result_dict).
+# Returns the cached result within the TTL instead of 429, because
+# the answer rarely changes and returning 429 breaks multi-tab reconnection.
+_SETUP_STATUS_CACHE: dict[str, tuple[float, dict]] = {}
+_SETUP_STATUS_CACHE_TTL_SECONDS = 60
+_MAX_TRACKED_SETUP_STATUS_IPS = 10000
+_SETUP_STATUS_INFLIGHT: dict[str, asyncio.Task[dict]] = {}
+_SETUP_STATUS_INFLIGHT_GUARD = asyncio.Lock()
+
+
 @router.get("/setup-status")
-async def setup_status():
+async def setup_status(request: Request):
     """Check if admin account exists. Always False after first boot."""
-    user_count = await get_local_provider().count_users()
-    return {"needs_setup": user_count == 0}
+    client_ip = _get_client_ip(request)
+    now = time.time()
+
+    # Return cached result when within TTL to avoid multi-tab reconnection storms.
+    cached = _SETUP_STATUS_CACHE.get(client_ip)
+    if cached is not None:
+        cached_time, cached_result = cached
+        if now - cached_time < _SETUP_STATUS_CACHE_TTL_SECONDS:
+            return cached_result
+
+    async with _SETUP_STATUS_INFLIGHT_GUARD:
+        # Recheck cache after waiting for the inflight guard.
+        now = time.time()
+        cached = _SETUP_STATUS_CACHE.get(client_ip)
+        if cached is not None:
+            cached_time, cached_result = cached
+            if now - cached_time < _SETUP_STATUS_CACHE_TTL_SECONDS:
+                return cached_result
+
+        task = _SETUP_STATUS_INFLIGHT.get(client_ip)
+        if task is None:
+            # Evict stale entries when dict grows too large to bound memory usage.
+            if len(_SETUP_STATUS_CACHE) >= _MAX_TRACKED_SETUP_STATUS_IPS:
+                cutoff = now - _SETUP_STATUS_CACHE_TTL_SECONDS
+                stale = [k for k, (t, _) in _SETUP_STATUS_CACHE.items() if t < cutoff]
+                for k in stale:
+                    del _SETUP_STATUS_CACHE[k]
+                if len(_SETUP_STATUS_CACHE) >= _MAX_TRACKED_SETUP_STATUS_IPS:
+                    by_time = sorted(_SETUP_STATUS_CACHE.items(), key=lambda entry: entry[1][0])
+                    for k, _ in by_time[: len(by_time) // 2]:
+                        del _SETUP_STATUS_CACHE[k]
+
+            async def _compute_setup_status() -> dict:
+                user_count = await get_local_provider().count_users()
+                return {"needs_setup": user_count == 0}
+
+            task = asyncio.create_task(_compute_setup_status())
+            _SETUP_STATUS_INFLIGHT[client_ip] = task
+
+    try:
+        result = await task
+    finally:
+        async with _SETUP_STATUS_INFLIGHT_GUARD:
+            if _SETUP_STATUS_INFLIGHT.get(client_ip) is task:
+                del _SETUP_STATUS_INFLIGHT[client_ip]
+
+    # Cache only the stable "initialized" result to avoid stale setup redirects.
+    if result["needs_setup"] is False:
+        _SETUP_STATUS_CACHE[client_ip] = (time.time(), result)
+    else:
+        _SETUP_STATUS_CACHE.pop(client_ip, None)
+    return result
 
 
 # ── OAuth Endpoints (Future/Placeholder) ─────────────────────────────────

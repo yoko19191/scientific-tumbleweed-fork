@@ -31,6 +31,7 @@ export type ThreadStreamOptions = {
   context: LocalSettings["context"];
   isMock?: boolean;
   userId?: string | null;
+  onSend?: (threadId: string) => void;
   onStart?: (threadId: string) => void;
   onFinish?: (state: AgentThreadState) => void;
   onToolEnd?: (event: ToolEndEvent) => void;
@@ -45,6 +46,7 @@ export function useThreadStream({
   context,
   isMock,
   userId,
+  onSend,
   onStart,
   onFinish,
   onToolEnd,
@@ -58,6 +60,7 @@ export function useThreadStream({
   const startedRef = useRef(false);
 
   const listeners = useRef({
+    onSend,
     onStart,
     onFinish,
     onToolEnd,
@@ -65,8 +68,8 @@ export function useThreadStream({
 
   // Keep listeners ref updated with latest callbacks
   useEffect(() => {
-    listeners.current = { onStart, onFinish, onToolEnd };
-  }, [onStart, onFinish, onToolEnd]);
+    listeners.current = { onSend, onStart, onFinish, onToolEnd };
+  }, [onSend, onStart, onFinish, onToolEnd]);
 
   useEffect(() => {
     const normalizedThreadId = threadId ?? null;
@@ -236,6 +239,11 @@ export function useThreadStream({
   const sendInFlightRef = useRef(false);
   // Track message count before sending so we know when server has responded
   const prevMsgCountRef = useRef(thread.messages.length);
+  // Track human message count before sending so optimistic human messages are
+  // not cleared by earlier AI stream chunks.
+  const prevHumanMsgCountRef = useRef(
+    thread.messages.filter((m) => m.type === "human").length,
+  );
 
   // Reset thread-local pending UI state when switching between threads so
   // optimistic messages and in-flight guards do not leak across chat views.
@@ -243,16 +251,23 @@ export function useThreadStream({
     startedRef.current = false;
     sendInFlightRef.current = false;
     prevMsgCountRef.current = 0;
+    prevHumanMsgCountRef.current = 0;
     setOptimisticMessages([]);
     setIsUploading(false);
   }, [threadId]);
 
-  // Clear optimistic when server messages arrive (count increases)
+  // Clear optimistic when the server has caught up with the optimistic item.
   useEffect(() => {
-    if (
-      optimisticMessages.length > 0 &&
-      thread.messages.length > prevMsgCountRef.current
-    ) {
+    if (optimisticMessages.length === 0) return;
+
+    const hasHumanOptimistic = optimisticMessages.some(
+      (m) => m.type === "human",
+    );
+    const newHumanMsgArrived =
+      thread.messages.filter((m) => m.type === "human").length >
+      prevHumanMsgCountRef.current;
+
+    if (!hasHumanOptimistic || newHumanMsgArrived) {
       setOptimisticMessages([]);
     }
   }, [thread.messages.length, optimisticMessages.length]);
@@ -277,6 +292,9 @@ export function useThreadStream({
 
       // Capture current count before showing optimistic messages
       prevMsgCountRef.current = thread.messages.length;
+      prevHumanMsgCountRef.current = thread.messages.filter(
+        (m) => m.type === "human",
+      ).length;
 
       // Build optimistic files list with uploading status
       const optimisticFiles: FileInMessage[] = (message.files ?? []).map(
@@ -313,6 +331,7 @@ export function useThreadStream({
         });
       }
       setOptimisticMessages(newOptimistic);
+      listeners.current.onSend?.(threadId);
 
       // Only fire onStart immediately for an existing persisted thread.
       // Brand-new chats should wait for onCreated(meta.thread_id) so URL sync

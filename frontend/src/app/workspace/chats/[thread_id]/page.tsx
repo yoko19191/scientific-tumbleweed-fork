@@ -45,6 +45,12 @@ export default function ChatPage() {
   const { user } = useAuth();
   const { threadId, setThreadId, isNewThread, setIsNewThread, isMock } =
     useThreadChat();
+  // `isNewThread` tracks whether the backend has the thread yet - gates the
+  // SDK's history fetch (see issue #2746).  `isWelcomeMode` is the visual
+  // welcome layout (centered input, hero, quick actions); we flip it to false
+  // the moment the user submits so the UI animates immediately, even though
+  // `isNewThread` stays true until the backend actually creates the thread.
+  const [isWelcomeMode, setIsWelcomeMode] = useState(isNewThread);
   const [settings, setSettings] = useThreadSettings(threadId);
   const [mounted, setMounted] = useState(false);
   const [threadInaccessible, setThreadInaccessible] = useState(false);
@@ -60,6 +66,14 @@ export default function ChatPage() {
     setThreadInaccessible(false);
   }, [threadId]);
 
+  // Keep welcome layout in sync when navigating between threads (sidebar
+  // clicks, "new chat" button).  Submitting in /chats/new flips the layout
+  // via onSend below; `isNewThread` stays true until onStart, so this effect
+  // is harmless during the submit transition.
+  useEffect(() => {
+    setIsWelcomeMode(isNewThread);
+  }, [isNewThread]);
+
   const { showNotification } = useNotification();
 
   const [thread, sendMessage, isUploading] = useThreadStream({
@@ -67,6 +81,12 @@ export default function ChatPage() {
     context: settings.context,
     isMock,
     userId: user?.id,
+    // onSend only animates the UI; do NOT flip `isNewThread` here - the
+    // LangGraph SDK eagerly fetches /history the moment it receives a
+    // thread id and assumes the thread exists on the backend (issue #2746).
+    onSend: () => {
+      setIsWelcomeMode(false);
+    },
     onStart: (createdThreadId) => {
       setThreadId(createdThreadId);
       setIsNewThread(false);
@@ -91,7 +111,7 @@ export default function ChatPage() {
     },
   });
 
-  // Detect 401/403/404 errors from the stream — thread is not accessible to this user
+  // Detect 401/403/404 errors from the stream - thread is not accessible to this user
   useEffect(() => {
     if (!thread.error || isNewThread) return;
     const err = thread.error as unknown;
@@ -108,7 +128,11 @@ export default function ChatPage() {
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
-      void sendMessage(threadId, message);
+      const sendPromise = sendMessage(threadId, message);
+      if ((message.files?.length ?? 0) > 0) {
+        return sendPromise;
+      }
+      void sendPromise;
     },
     [sendMessage, threadId],
   );
@@ -194,7 +218,7 @@ export default function ChatPage() {
           <header
             className={cn(
               "absolute top-0 right-0 left-0 z-30 flex h-12 shrink-0 items-center px-4",
-              isNewThread
+              isWelcomeMode
                 ? "bg-background/0 backdrop-blur-none"
                 : "bg-background/80 shadow-xs backdrop-blur",
             )}
@@ -220,7 +244,7 @@ export default function ChatPage() {
           <main className="flex min-h-0 max-w-full grow flex-col">
             <div className="flex size-full justify-center">
               <MessageList
-                className={cn("size-full", !isNewThread && "pt-10")}
+                className={cn("size-full", !isWelcomeMode && "pt-10")}
                 threadId={threadId}
                 thread={thread}
                 paddingBottom={messageListPaddingBottom}
@@ -232,8 +256,8 @@ export default function ChatPage() {
               <div
                 className={cn(
                   "relative w-full",
-                  isNewThread && "-translate-y-[calc(50vh-96px)]",
-                  isNewThread
+                  isWelcomeMode && "-translate-y-[calc(50vh-96px)]",
+                  isWelcomeMode
                     ? "max-w-(--container-width-sm)"
                     : "max-w-(--container-width-md)",
                 )}
@@ -255,13 +279,14 @@ export default function ChatPage() {
                 {mounted ? (
                   <InputBox
                     className={cn("bg-background/5 w-full -translate-y-4")}
+                    isWelcomeMode={isWelcomeMode}
                     isNewThread={isNewThread}
                     threadId={threadId}
-                    autoFocus={isNewThread}
+                    autoFocus={isWelcomeMode}
                     status={threadStatus}
                     context={settings.context}
                     extraHeader={
-                      isNewThread && <Welcome mode={settings.context.mode} />
+                      isWelcomeMode && <Welcome mode={settings.context.mode} />
                     }
                     disabled={
                       env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" ||

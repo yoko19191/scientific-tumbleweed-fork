@@ -81,6 +81,7 @@ export function InputBox({
   status = "ready",
   context,
   extraHeader,
+  isWelcomeMode,
   isNewThread,
   threadId: _threadId,
   initialValue,
@@ -101,6 +102,7 @@ export function InputBox({
     tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
   };
   extraHeader?: React.ReactNode;
+  isWelcomeMode?: boolean;
   isNewThread?: boolean;
   threadId: string;
   initialValue?: string;
@@ -131,6 +133,7 @@ export function InputBox({
   const sandboxCapacityUnavailableForMode =
     sandboxCapacitySaturated &&
     (context.mode === "agent" || context.mode === "swarm");
+  const showWelcomeMode = isWelcomeMode ?? isNewThread;
 
   useEffect(() => {
     if (models.length === 0) {
@@ -668,12 +671,12 @@ export function InputBox({
             />
           </PromptInputTools>
         </PromptInputFooter>
-        {!isNewThread && (
+        {!showWelcomeMode && (
           <div className="bg-background absolute right-0 -bottom-[17px] left-0 z-0 h-4"></div>
         )}
       </PromptInput>
 
-      {isNewThread && searchParams.get("mode") !== "skill" && (
+      {showWelcomeMode && searchParams.get("mode") !== "skill" && (
         <div className="flex items-center justify-center pt-1">
           <SuggestionList />
         </div>

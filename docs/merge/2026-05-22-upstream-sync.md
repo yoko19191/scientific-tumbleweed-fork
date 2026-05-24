@@ -68,7 +68,7 @@ git log --oneline upstream/main | head -5
 - [x] B: Phase 2 Middleware 修复
 - [x] C: Phase 5 MCP 修复 + Phase 6 Runtime 修复（适用项）
 - [ ] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
-- [ ] E: Phase 11 前端修复
+- [ ] E: Phase 11 前端修复（已合并低歧义子项）
 - [ ] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
 - [ ] G: Phase 3 DynamicContextMiddleware，单独分支验证
 - [ ] H: Phase 4 Loop Detection 增强，单独分支验证
@@ -216,9 +216,9 @@ git cherry-pick 722c690f
 **策略**: 批量 cherry-pick，大部分应该无冲突
 **预计耗时**: 1h
 
-- [ ] `6c220a9a` fix(chat): prevent first user message from being swallowed in new conversations (#2731) — 修复首条消息被乐观清除
-- [ ] `27559f36` fix(frontend): defer thread id to onStart to avoid 404 on new chat (#2749) — 修复新会话 404
-- [ ] `7c42ab3e` fix(frontend): wait for async chat submit before clearing (#2940)
+- [x] `6c220a9a` fix(chat): prevent first user message from being swallowed in new conversations (#2731) — 修复首条消息被乐观清除
+- [x] `27559f36` fix(frontend): defer thread id to onStart to avoid 404 on new chat (#2749) — 修复新会话 404
+- [x] `7c42ab3e` fix(frontend): wait for async chat submit before clearing (#2940) — 已按当前拆分后的 PromptInput/InputBox 结构适配
 - [ ] `4538c322` Fix type check for 'thinking' in message content (#2964) — Gemini via Vertex AI 兼容修复
 - [ ] `6d3cffb4` fix(frontend): deduplicate restored thread messages (#2958)
 - [ ] `c0233cae` fix(frontend): resolve login page flickering and resize observer loop (#2954)
@@ -238,11 +238,19 @@ git cherry-pick 222a7773
 git cherry-pick aded753d
 ```
 
+**执行备注**
+
+- 当前 fork 已将 `frontend/src/core/threads/hooks.ts` 拆为 re-export + `use-thread-stream.ts` / `use-threads.ts`，本次未恢复上游旧大文件；`6c220a9a` 的 optimistic message 清理逻辑已移植到 `use-thread-stream.ts`。
+- `27559f36` 已按 fork 的 `InputBox` 目录结构适配：新增 `isWelcomeMode` 作为视觉欢迎态，保留 `isNewThread` 作为后端线程是否已创建的语义，避免新 chat 提前触发 history/runs 拉取。
+- `7c42ab3e` 未恢复上游已删除的旧 `prompt-input.tsx`、旧 `input-box.tsx`、旧 `chat.spec.ts` 和新增 Playwright e2e；当前 PromptInput 已支持 async submit，本次只保留页面层对带附件提交 Promise 的等待路径，避免把本批次扩大到 e2e 测试基础设施。
+- E 批次剩余项尚未处理：`4538c322`、`6d3cffb4`、`c0233cae`、`dfa4eb0c`、`222a7773`、`aded753d`，需基于当前 frontend 拆分结构单独适配。
+
 **验证**
 
 - [ ] `pnpm lint && pnpm typecheck` 通过
 - [ ] 新会话首条消息不丢失
 - [ ] 前端页面无 404/闪烁
+- [ ] 前端 typecheck: `pnpm --dir frontend typecheck` 仍失败于既有 `src/core/threads/api-core.test.ts` BodyInit 类型和两个 vitest 类型缺失；本批次未扩大为修复这些既有问题
 
 ## F: Sandbox + 通用修复 (Phase 12 + 13)
 

@@ -20,7 +20,6 @@ import { InputBox } from "@/components/workspace/input-box";
 import {
   MessageList,
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
-  MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM,
 } from "@/components/workspace/messages";
 import type { ClarificationResponse } from "@/components/workspace/messages/clarification-ui";
 import { ThreadContext } from "@/components/workspace/messages/context";
@@ -183,10 +182,6 @@ export default function ChatPage() {
     [sendMessage, threadId],
   );
 
-  const messageListPaddingBottom = showFollowups
-    ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
-      MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
-    : undefined;
   const todos = thread.values.todos ?? [];
   const showSandboxCapacity =
     isNewThread &&
@@ -242,17 +237,22 @@ export default function ChatPage() {
           </header>
           {showSandboxCapacity && <SandboxCapacityIndicator />}
           <main className="flex min-h-0 max-w-full grow flex-col">
-            <div className="flex size-full justify-center">
+            <div className="flex min-h-0 flex-1 justify-center">
               <MessageList
                 className={cn("size-full", !isWelcomeMode && "pt-10")}
                 threadId={threadId}
                 thread={thread}
-                paddingBottom={messageListPaddingBottom}
+                paddingBottom={MESSAGE_LIST_DEFAULT_PADDING_BOTTOM}
                 tokenUsageEnabled={tokenUsageEnabled}
                 onClarificationSubmit={handleClarificationSubmit}
               />
             </div>
-            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4 pb-[6px]">
+            <div
+              className={cn(
+                "right-0 bottom-0 left-0 z-30 flex justify-center px-4",
+                isWelcomeMode ? "absolute pb-[6px]" : "relative shrink-0 pb-4",
+              )}
+            >
               <div
                 className={cn(
                   "relative w-full",
@@ -262,8 +262,18 @@ export default function ChatPage() {
                     : "max-w-(--container-width-md)",
                 )}
               >
-                <div className="absolute -top-4 right-0 left-0 z-0">
-                  <div className="absolute right-0 bottom-0 left-0 flex flex-col-reverse">
+                <div
+                  className={cn(
+                    "right-0 left-0 z-0",
+                    isWelcomeMode ? "absolute -top-4" : "relative",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "right-0 bottom-0 left-0 flex flex-col-reverse",
+                      isWelcomeMode ? "absolute" : "relative",
+                    )}
+                  >
                     {todos.length > 0 && (
                       <TodoList className="bg-background/5" todos={todos} />
                     )}
@@ -278,7 +288,10 @@ export default function ChatPage() {
                 </div>
                 {mounted ? (
                   <InputBox
-                    className={cn("bg-background/5 w-full -translate-y-4")}
+                    className={cn(
+                      "bg-background/5 w-full",
+                      isWelcomeMode && "-translate-y-4",
+                    )}
                     isWelcomeMode={isWelcomeMode}
                     isNewThread={isNewThread}
                     threadId={threadId}
@@ -302,7 +315,8 @@ export default function ChatPage() {
                   <div
                     aria-hidden="true"
                     className={cn(
-                      "bg-background/5 h-32 w-full -translate-y-4 rounded-2xl border",
+                      "bg-background/5 h-32 w-full rounded-2xl border",
+                      isWelcomeMode && "-translate-y-4",
                     )}
                   />
                 )}

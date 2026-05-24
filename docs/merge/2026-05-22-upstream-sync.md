@@ -68,7 +68,7 @@ git log --oneline upstream/main | head -5
 - [x] B: Phase 2 Middleware 修复
 - [x] C: Phase 5 MCP 修复 + Phase 6 Runtime 修复（适用项）
 - [ ] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
-- [ ] E: Phase 11 前端修复（已合并低歧义子项）
+- [x] E: Phase 11 前端修复（适用项已合并，不适用项已记录）
 - [ ] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
 - [ ] G: Phase 3 DynamicContextMiddleware，单独分支验证
 - [ ] H: Phase 4 Loop Detection 增强，单独分支验证
@@ -246,12 +246,12 @@ git cherry-pick 722c690f
 - [x] `6c220a9a` fix(chat): prevent first user message from being swallowed in new conversations (#2731) — 修复首条消息被乐观清除
 - [x] `27559f36` fix(frontend): defer thread id to onStart to avoid 404 on new chat (#2749) — 修复新会话 404
 - [x] `7c42ab3e` fix(frontend): wait for async chat submit before clearing (#2940) — 已按当前拆分后的 PromptInput/InputBox 结构适配
-- [ ] `4538c322` Fix type check for 'thinking' in message content (#2964) — Gemini via Vertex AI 兼容修复
-- [ ] `6d3cffb4` fix(frontend): deduplicate restored thread messages (#2958)
-- [ ] `c0233cae` fix(frontend): resolve login page flickering and resize observer loop (#2954)
-- [ ] `dfa4eb0c` [codex] fix follow-up suggestions layout (#2836)
-- [ ] `222a7773` fix(frontend): avoid misleading error message when agent api is disable (#2697) (#2698)
-- [ ] `aded753d` fix(frontend): restore localhost fallback for getGatewayConfig in prod mode (#2705) (#2718)
+- [x] `4538c322` Fix type check for 'thinking' in message content (#2964) — Gemini via Vertex AI 兼容修复
+- [x] `6d3cffb4` fix(frontend): deduplicate restored thread messages (#2958) — 跳过，不适用于当前 fork 已拆分且未使用上游旧 `useThreadHistory` / `mergeMessages` 路径
+- [x] `c0233cae` fix(frontend): resolve login page flickering and resize observer loop (#2954)
+- [x] `dfa4eb0c` [codex] fix follow-up suggestions layout (#2836)
+- [x] `222a7773` fix(frontend): avoid misleading error message when agent api is disable (#2697) (#2698)
+- [x] `aded753d` fix(frontend): restore localhost fallback for getGatewayConfig in prod mode (#2705) (#2718) — 跳过代码路径，当前 fork 的 `frontend/next.config.js` 已通过 `getInternalServiceURL()` 提供 prod/dev localhost fallback
 
 ```bash
 git cherry-pick 6c220a9a
@@ -270,17 +270,22 @@ git cherry-pick aded753d
 - 当前 fork 已将 `frontend/src/core/threads/hooks.ts` 拆为 re-export + `use-thread-stream.ts` / `use-threads.ts`，本次未恢复上游旧大文件；`6c220a9a` 的 optimistic message 清理逻辑已移植到 `use-thread-stream.ts`。
 - `27559f36` 已按 fork 的 `InputBox` 目录结构适配：新增 `isWelcomeMode` 作为视觉欢迎态，保留 `isNewThread` 作为后端线程是否已创建的语义，避免新 chat 提前触发 history/runs 拉取。
 - `7c42ab3e` 未恢复上游已删除的旧 `prompt-input.tsx`、旧 `input-box.tsx`、旧 `chat.spec.ts` 和新增 Playwright e2e；当前 PromptInput 已支持 async submit，本次只保留页面层对带附件提交 Promise 的等待路径，避免把本批次扩大到 e2e 测试基础设施。
-- E 批次剩余项尚未处理：`4538c322`、`6d3cffb4`、`c0233cae`、`dfa4eb0c`、`222a7773`、`aded753d`，需基于当前 frontend 拆分结构单独适配。
+- `4538c322` 已落到当前拆分后的 `frontend/src/core/messages/extraction.ts`，保留 `utils.ts` re-export 结构，不恢复上游旧 monolithic `utils.ts`。
+- `6d3cffb4` 的主体依赖上游旧 `frontend/src/core/threads/hooks.ts` 中的 `useThreadHistory()` / `mergeMessages()`；当前 fork 已拆分为 `use-thread-stream.ts` / `use-threads.ts` 且没有对应 restored history merge 路径，本轮未恢复旧大文件和对应测试，记录为不适用。
+- `c0233cae` 保留 fork 的 LZLab 登录页左右布局，仅吸收外层 overflow 修复；`flickering-grid.tsx` 的 `overflow-hidden` 与 canvas `block` 修复已保留。
+- `dfa4eb0c` 已按 fork 的外置 `FollowupSuggestions` 组件和拆分后的 `input-box` 目录适配：取消 follow-up 额外顶高 MessageList，非欢迎态输入区改为文档流占位，欢迎态继续居中。
+- `222a7773` 已新增 `AgentsApiDisabledError` 和中英文提示，避免 agents API disabled 时显示误导性的网络/名称错误。
+- `aded753d` 上游新增的 `gateway-config.ts` 路径在当前 fork 中未使用；当前 `frontend/next.config.js` 已对 `DEER_FLOW_INTERNAL_GATEWAY_BASE_URL` / `DEER_FLOW_INTERNAL_LANGGRAPH_BASE_URL` 使用 localhost fallback，因此未引入未使用的 auth gateway-config 文件和测试。
 
 **Trade-off**
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | 已完成首条消息、新会话 404、async submit 三个低歧义修复；剩余项主要是消息兼容、恢复去重、登录页闪烁、suggestions 布局、错误提示和 gateway config fallback。 |
+| 当前状态 | 已完成首条消息、新会话 404、async submit、thinking content type guard、登录页闪烁、suggestions 布局、agents API disabled 错误提示；恢复去重和 gateway-config 旧路径已判定为当前 fork 不适用。 |
 | 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
-| 取舍结论 | 默认继续合并剩余前端 bugfix，但必须适配 fork 的拆分后 hooks/InputBox/message 结构，不恢复上游旧大文件或 e2e 基础设施。 |
-| 补齐动作 | 每个剩余 commit 先定位当前拆分文件；对 message content thinking/type guard、thread restore dedupe、login flicker、follow-up layout 和 prod fallback 分别做最小移植；补 frontend typecheck 或记录既有阻塞。 |
-| 建议 merge 节奏 | 放在下一轮低歧义批次优先处理；若 typecheck 仍被既有测试配置阻塞，只记录“未扩大既有问题”。 |
+| 取舍结论 | E 批次适用项已完成；不适用项不恢复上游旧大文件，避免破坏 fork 的前端拆分结构。 |
+| 补齐动作 | 后续如重新引入 restored history merge 或 auth gateway-config 路径，再单独评估 `6d3cffb4` / `aded753d` 的完整测试迁移。 |
+| 建议 merge 节奏 | E 批次结束，可进入 F1 sandbox 修复或 K 中低风险直接 cherry-pick。 |
 
 **验证**
 
@@ -288,6 +293,8 @@ git cherry-pick aded753d
 - [ ] 新会话首条消息不丢失
 - [ ] 前端页面无 404/闪烁
 - [ ] 前端 typecheck: `pnpm --dir frontend typecheck` 仍失败于既有 `src/core/threads/api-core.test.ts` BodyInit 类型和两个 vitest 类型缺失；本批次未扩大为修复这些既有问题
+- [x] 2026-05-24 E 剩余项验证: `pnpm --dir frontend typecheck` 仍失败于同一组既有问题（`src/core/threads/api-core.test.ts` BodyInit 类型、`tests/unit/core/reasoning-trigger.test.ts` / `tests/unit/core/streamdown/plugins.test.ts` 缺少 `vitest` 类型），未发现本批次新增 typecheck 错误。
+- [x] 2026-05-24 E 剩余项验证: `pnpm --dir frontend lint` 仍失败于既有 lint 债务（如 `workspace/layout.tsx` import/order、`clarification-ui.tsx` optional-chain/dot-notation、`openui/parser*.ts` no-floating-promises 等）；本批次记录阻塞，不在 E 前端修复中扩大为全量 lint 清理。
 
 ## F: Sandbox + 通用修复 (Phase 12 + 13)
 

@@ -97,9 +97,9 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <div className="relative flex min-h-screen overflow-x-hidden overflow-y-auto">
       {/* Left: brand image — fills the entire left half */}
-      <div className="hidden md:block md:w-1/2 relative border-r border-border">
+      <div className="relative hidden border-r border-border md:block md:w-1/2">
         <Image
           src="/lzlab/front_gate.png"
           alt="LZLab"

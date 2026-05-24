@@ -2,7 +2,7 @@
 
 import { BotIcon, PlusSquare } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,6 @@ import { InputBox } from "@/components/workspace/input-box";
 import {
   MessageList,
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
-  MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM,
 } from "@/components/workspace/messages";
 import type { ClarificationResponse } from "@/components/workspace/messages/clarification-ui";
 import { ThreadContext } from "@/components/workspace/messages/context";
@@ -49,13 +48,22 @@ export default function AgentChatPage() {
 
   const { threadId, setThreadId, isNewThread, setIsNewThread } =
     useThreadChat();
+  const [isWelcomeMode, setIsWelcomeMode] = useState(isNewThread);
   const [settings, setSettings] = useThreadSettings(threadId);
   const { tokenUsageEnabled } = useModels();
 
   const { showNotification } = useNotification();
+
+  useEffect(() => {
+    setIsWelcomeMode(isNewThread);
+  }, [isNewThread]);
+
   const [thread, sendMessage] = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: { ...settings.context, agent_name: agent_name },
+    onSend: () => {
+      setIsWelcomeMode(false);
+    },
     onStart: (createdThreadId) => {
       setThreadId(createdThreadId);
       setIsNewThread(false);
@@ -141,10 +149,6 @@ export default function AgentChatPage() {
     [sendMessage, threadId, agent_name],
   );
 
-  const messageListPaddingBottom = showFollowups
-    ? MESSAGE_LIST_DEFAULT_PADDING_BOTTOM +
-      MESSAGE_LIST_FOLLOWUPS_EXTRA_PADDING_BOTTOM
-    : undefined;
   const todos = thread.values.todos ?? [];
 
   return (
@@ -154,7 +158,7 @@ export default function AgentChatPage() {
           <header
             className={cn(
               "absolute top-0 right-0 left-0 z-30 flex h-12 shrink-0 items-center gap-2 px-4",
-              isNewThread
+              isWelcomeMode
                 ? "bg-background/0 backdrop-blur-none"
                 : "bg-background/80 shadow-xs backdrop-blur",
             )}
@@ -193,29 +197,44 @@ export default function AgentChatPage() {
           </header>
 
           <main className="flex min-h-0 max-w-full grow flex-col">
-            <div className="flex size-full justify-center">
+            <div className="flex min-h-0 flex-1 justify-center">
               <MessageList
-                className={cn("size-full", !isNewThread && "pt-10")}
+                className={cn("size-full", !isWelcomeMode && "pt-10")}
                 threadId={threadId}
                 thread={thread}
-                paddingBottom={messageListPaddingBottom}
+                paddingBottom={MESSAGE_LIST_DEFAULT_PADDING_BOTTOM}
                 tokenUsageEnabled={tokenUsageEnabled}
                 onClarificationSubmit={handleClarificationSubmit}
               />
             </div>
 
-            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">
+            <div
+              className={cn(
+                "right-0 bottom-0 left-0 z-30 flex justify-center px-4",
+                isWelcomeMode ? "absolute" : "relative shrink-0 pb-4",
+              )}
+            >
               <div
                 className={cn(
                   "relative w-full",
-                  isNewThread && "-translate-y-[calc(50vh-96px)]",
-                  isNewThread
+                  isWelcomeMode && "-translate-y-[calc(50vh-96px)]",
+                  isWelcomeMode
                     ? "max-w-(--container-width-sm)"
                     : "max-w-(--container-width-md)",
                 )}
               >
-                <div className="absolute -top-4 right-0 left-0 z-0">
-                  <div className="absolute right-0 bottom-0 left-0 flex flex-col-reverse">
+                <div
+                  className={cn(
+                    "right-0 left-0 z-0",
+                    isWelcomeMode ? "absolute -top-4" : "relative",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "right-0 bottom-0 left-0 flex flex-col-reverse",
+                      isWelcomeMode ? "absolute" : "relative",
+                    )}
+                  >
                     {todos.length > 0 && (
                       <TodoList className="bg-background/5" todos={todos} />
                     )}
@@ -230,15 +249,18 @@ export default function AgentChatPage() {
                 </div>
 
                 <InputBox
-                  className={cn("bg-background/5 w-full -translate-y-4")}
-                  isWelcomeMode={isNewThread}
+                  className={cn(
+                    "bg-background/5 w-full",
+                    isWelcomeMode && "-translate-y-4",
+                  )}
+                  isWelcomeMode={isWelcomeMode}
                   isNewThread={isNewThread}
                   threadId={threadId}
-                  autoFocus={isNewThread}
+                  autoFocus={isWelcomeMode}
                   status={threadStatus}
                   context={settings.context}
                   extraHeader={
-                    isNewThread && (
+                    isWelcomeMode && (
                       <AgentWelcome agent={agent} agentName={agent_name} />
                     )
                   }

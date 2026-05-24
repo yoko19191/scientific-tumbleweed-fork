@@ -156,19 +156,19 @@ export function FollowupSuggestions({
 
   return (
     <>
-      <div className="mb-3 flex items-center justify-center">
+      <div className="flex items-center justify-center pb-1">
         <div className="flex items-center gap-2">
           {followupsLoading ? (
-            <div className="text-muted-foreground bg-background/80 rounded-full border px-4 py-2 text-xs backdrop-blur-sm">
+            <div className="text-muted-foreground bg-background/80 rounded-full border px-4 py-1.5 text-xs backdrop-blur-sm">
               {t.inputBox.followupLoading}
             </div>
           ) : (
-            <Suggestions className="w-fit items-start">
+            <Suggestions className="w-fit items-center">
               {followups.map((s) => (
                 <Tooltip key={s}>
                   <TooltipTrigger asChild>
                     <Suggestion
-                      className="max-w-[min(22rem,calc(100vw-6rem))] overflow-hidden text-left whitespace-nowrap"
+                      className="max-w-[min(22rem,calc(100vw-6rem))] overflow-hidden py-1.5 text-left whitespace-nowrap"
                       suggestion={<span className="min-w-0 truncate">{s}</span>}
                       onClick={() => handleClick(s)}
                     />
@@ -180,7 +180,7 @@ export function FollowupSuggestions({
               ))}
               <Button
                 aria-label={t.common.close}
-                className="text-muted-foreground cursor-pointer rounded-full px-3 text-xs font-normal"
+                className="text-muted-foreground h-auto cursor-pointer rounded-full px-2.5 py-1.5 text-xs font-normal"
                 variant="outline"
                 size="sm"
                 type="button"

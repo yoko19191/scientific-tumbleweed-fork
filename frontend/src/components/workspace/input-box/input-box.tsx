@@ -361,7 +361,12 @@ export function InputBox({
   );
 
   return (
-    <div className="relative flex flex-col gap-3">
+    <div
+      className={cn(
+        "relative flex flex-col",
+        showWelcomeMode ? "gap-3" : "gap-2",
+      )}
+    >
       <PromptInput
         className={cn(
           "bg-background/85 rounded-2xl backdrop-blur-sm transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-2xl",

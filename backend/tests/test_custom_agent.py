@@ -9,6 +9,9 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from deerflow.config.storage_config import FilesystemStorageConfig, StorageConfig, set_storage_config
+from deerflow.storage import reset_operators, user_agent_config_key, user_agent_soul_key, user_profile_key
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -22,18 +25,23 @@ def _make_paths(base_dir: Path):
 
 
 def _write_agent(base_dir: Path, name: str, config: dict, soul: str = "You are helpful.") -> None:
-    """Write an agent directory with config.yaml and SOUL.md."""
-    agent_dir = base_dir / "agents" / name
-    agent_dir.mkdir(parents=True, exist_ok=True)
+    """Write an agent into the fs-backed OpenDAL test layout."""
+    _configure_storage(base_dir)
 
     config_copy = dict(config)
     if "name" not in config_copy:
         config_copy["name"] = name
 
-    with open(agent_dir / "config.yaml", "w") as f:
-        yaml.dump(config_copy, f)
+    config_path = base_dir / user_agent_config_key(None, name)
+    soul_path = base_dir / user_agent_soul_key(None, name)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.dump(config_copy), encoding="utf-8")
+    soul_path.write_text(soul, encoding="utf-8")
 
-    (agent_dir / "SOUL.md").write_text(soul, encoding="utf-8")
+
+def _configure_storage(root: Path) -> None:
+    set_storage_config(StorageConfig(fs=FilesystemStorageConfig(root=str(root))))
+    reset_operators()
 
 
 # ===========================================================================
@@ -113,43 +121,40 @@ class TestLoadAgentConfig:
         config_dict = {"name": "code-reviewer", "description": "Code review agent", "model": "deepseek-v3"}
         _write_agent(tmp_path, "code-reviewer", config_dict)
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        from deerflow.config.agents_config import load_agent_config
 
-            cfg = load_agent_config("code-reviewer")
+        cfg = load_agent_config("code-reviewer")
 
         assert cfg.name == "code-reviewer"
         assert cfg.description == "Code review agent"
         assert cfg.model == "deepseek-v3"
 
     def test_load_missing_agent_raises(self, tmp_path):
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        _configure_storage(tmp_path)
+        from deerflow.config.agents_config import load_agent_config
 
-            with pytest.raises(FileNotFoundError):
-                load_agent_config("nonexistent-agent")
+        with pytest.raises(FileNotFoundError):
+            load_agent_config("nonexistent-agent")
 
     def test_load_missing_config_yaml_raises(self, tmp_path):
-        # Create directory without config.yaml
-        (tmp_path / "agents" / "broken-agent").mkdir(parents=True)
+        _configure_storage(tmp_path)
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        from deerflow.config.agents_config import load_agent_config
 
-            with pytest.raises(FileNotFoundError):
-                load_agent_config("broken-agent")
+        with pytest.raises(FileNotFoundError):
+            load_agent_config("broken-agent")
 
     def test_load_config_infers_name_from_dir(self, tmp_path):
         """Config without 'name' field should use directory name."""
-        agent_dir = tmp_path / "agents" / "inferred-name"
-        agent_dir.mkdir(parents=True)
-        (agent_dir / "config.yaml").write_text("description: My agent\n")
-        (agent_dir / "SOUL.md").write_text("Hello")
+        _configure_storage(tmp_path)
+        config_path = tmp_path / user_agent_config_key(None, "inferred-name")
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("description: My agent\n", encoding="utf-8")
+        (tmp_path / user_agent_soul_key(None, "inferred-name")).write_text("Hello", encoding="utf-8")
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        from deerflow.config.agents_config import load_agent_config
 
-            cfg = load_agent_config("inferred-name")
+        cfg = load_agent_config("inferred-name")
 
         assert cfg.name == "inferred-name"
 
@@ -157,10 +162,9 @@ class TestLoadAgentConfig:
         config_dict = {"name": "restricted", "tool_groups": ["file:read", "file:write"]}
         _write_agent(tmp_path, "restricted", config_dict)
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        from deerflow.config.agents_config import load_agent_config
 
-            cfg = load_agent_config("restricted")
+        cfg = load_agent_config("restricted")
 
         assert cfg.tool_groups == ["file:read", "file:write"]
 
@@ -168,10 +172,9 @@ class TestLoadAgentConfig:
         config_dict = {"name": "no-skills-agent", "skills": []}
         _write_agent(tmp_path, "no-skills-agent", config_dict)
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        from deerflow.config.agents_config import load_agent_config
 
-            cfg = load_agent_config("no-skills-agent")
+        cfg = load_agent_config("no-skills-agent")
 
         assert cfg.skills == []
 
@@ -179,24 +182,23 @@ class TestLoadAgentConfig:
         config_dict = {"name": "default-skills-agent"}
         _write_agent(tmp_path, "default-skills-agent", config_dict)
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        from deerflow.config.agents_config import load_agent_config
 
-            cfg = load_agent_config("default-skills-agent")
+        cfg = load_agent_config("default-skills-agent")
 
         assert cfg.skills is None
 
     def test_legacy_prompt_file_field_ignored(self, tmp_path):
         """Unknown fields like the old prompt_file should be silently ignored."""
-        agent_dir = tmp_path / "agents" / "legacy-agent"
-        agent_dir.mkdir(parents=True)
-        (agent_dir / "config.yaml").write_text("name: legacy-agent\nprompt_file: system.md\n")
-        (agent_dir / "SOUL.md").write_text("Soul content")
+        _configure_storage(tmp_path)
+        config_path = tmp_path / user_agent_config_key(None, "legacy-agent")
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("name: legacy-agent\nprompt_file: system.md\n", encoding="utf-8")
+        (tmp_path / user_agent_soul_key(None, "legacy-agent")).write_text("Soul content", encoding="utf-8")
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import load_agent_config
+        from deerflow.config.agents_config import load_agent_config
 
-            cfg = load_agent_config("legacy-agent")
+        cfg = load_agent_config("legacy-agent")
 
         assert cfg.name == "legacy-agent"
 
@@ -211,39 +213,38 @@ class TestLoadAgentSoul:
         expected_soul = "You are a specialized code review expert."
         _write_agent(tmp_path, "code-reviewer", {"name": "code-reviewer"}, soul=expected_soul)
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import AgentConfig, load_agent_soul
+        from deerflow.config.agents_config import AgentConfig, load_agent_soul
 
-            cfg = AgentConfig(name="code-reviewer")
-            soul = load_agent_soul(cfg.name)
+        cfg = AgentConfig(name="code-reviewer")
+        soul = load_agent_soul(cfg.name)
 
         assert soul == expected_soul
 
     def test_missing_soul_file_returns_none(self, tmp_path):
-        agent_dir = tmp_path / "agents" / "no-soul"
-        agent_dir.mkdir(parents=True)
-        (agent_dir / "config.yaml").write_text("name: no-soul\n")
+        _configure_storage(tmp_path)
+        config_path = tmp_path / user_agent_config_key(None, "no-soul")
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("name: no-soul\n", encoding="utf-8")
         # No SOUL.md created
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import AgentConfig, load_agent_soul
+        from deerflow.config.agents_config import AgentConfig, load_agent_soul
 
-            cfg = AgentConfig(name="no-soul")
-            soul = load_agent_soul(cfg.name)
+        cfg = AgentConfig(name="no-soul")
+        soul = load_agent_soul(cfg.name)
 
         assert soul is None
 
     def test_empty_soul_file_returns_none(self, tmp_path):
-        agent_dir = tmp_path / "agents" / "empty-soul"
-        agent_dir.mkdir(parents=True)
-        (agent_dir / "config.yaml").write_text("name: empty-soul\n")
-        (agent_dir / "SOUL.md").write_text("   \n   ")
+        _configure_storage(tmp_path)
+        config_path = tmp_path / user_agent_config_key(None, "empty-soul")
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("name: empty-soul\n", encoding="utf-8")
+        (tmp_path / user_agent_soul_key(None, "empty-soul")).write_text("   \n   ", encoding="utf-8")
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import AgentConfig, load_agent_soul
+        from deerflow.config.agents_config import AgentConfig, load_agent_soul
 
-            cfg = AgentConfig(name="empty-soul")
-            soul = load_agent_soul(cfg.name)
+        cfg = AgentConfig(name="empty-soul")
+        soul = load_agent_soul(cfg.name)
 
         assert soul is None
 
@@ -255,10 +256,10 @@ class TestLoadAgentSoul:
 
 class TestListCustomAgents:
     def test_empty_when_no_agents_dir(self, tmp_path):
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import list_custom_agents
+        _configure_storage(tmp_path)
+        from deerflow.config.agents_config import list_custom_agents
 
-            agents = list_custom_agents()
+        agents = list_custom_agents()
 
         assert agents == []
 
@@ -266,10 +267,9 @@ class TestListCustomAgents:
         _write_agent(tmp_path, "agent-a", {"name": "agent-a"})
         _write_agent(tmp_path, "agent-b", {"name": "agent-b", "description": "B"})
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import list_custom_agents
+        from deerflow.config.agents_config import list_custom_agents
 
-            agents = list_custom_agents()
+        agents = list_custom_agents()
 
         names = [a.name for a in agents]
         assert "agent-a" in names
@@ -278,28 +278,25 @@ class TestListCustomAgents:
     def test_skips_dirs_without_config_yaml(self, tmp_path):
         # Valid agent
         _write_agent(tmp_path, "valid-agent", {"name": "valid-agent"})
-        # Invalid dir (no config.yaml)
-        (tmp_path / "agents" / "invalid-dir").mkdir(parents=True)
+        (tmp_path / "custom-agents" / "__global__" / "invalid-dir").mkdir(parents=True)
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import list_custom_agents
+        from deerflow.config.agents_config import list_custom_agents
 
-            agents = list_custom_agents()
+        agents = list_custom_agents()
 
         assert len(agents) == 1
         assert agents[0].name == "valid-agent"
 
     def test_skips_non_directory_entries(self, tmp_path):
-        # Create the agents dir with a file (not a dir)
-        agents_dir = tmp_path / "agents"
+        _configure_storage(tmp_path)
+        agents_dir = tmp_path / "custom-agents" / "__global__"
         agents_dir.mkdir(parents=True)
         (agents_dir / "not-a-dir.txt").write_text("hello")
         _write_agent(tmp_path, "real-agent", {"name": "real-agent"})
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import list_custom_agents
+        from deerflow.config.agents_config import list_custom_agents
 
-            agents = list_custom_agents()
+        agents = list_custom_agents()
 
         assert len(agents) == 1
         assert agents[0].name == "real-agent"
@@ -309,10 +306,9 @@ class TestListCustomAgents:
         _write_agent(tmp_path, "a-agent", {"name": "a-agent"})
         _write_agent(tmp_path, "m-agent", {"name": "m-agent"})
 
-        with patch("deerflow.config.agents_config.get_paths", return_value=_make_paths(tmp_path)):
-            from deerflow.config.agents_config import list_custom_agents
+        from deerflow.config.agents_config import list_custom_agents
 
-            agents = list_custom_agents()
+        agents = list_custom_agents()
 
         names = [a.name for a in agents]
         assert names == sorted(names)
@@ -391,18 +387,12 @@ def _make_test_app(tmp_path: Path):
 
 @pytest.fixture()
 def agent_client(tmp_path):
-    """TestClient with agents router, using tmp_path as base_dir."""
-    paths_instance = _make_paths(tmp_path)
-
-    # User-scoped agents dir must exist for the test user
-    user_agents_dir = tmp_path / "users" / _TEST_USER_ID / "agents"
-    user_agents_dir.mkdir(parents=True, exist_ok=True)
-
-    with patch("deerflow.config.agents_config.get_paths", return_value=paths_instance), patch("app.gateway.routers.agents.get_paths", return_value=paths_instance):
-        app = _make_test_app(tmp_path)
-        with TestClient(app) as client:
-            client._tmp_path = tmp_path  # type: ignore[attr-defined]
-            yield client
+    """TestClient with agents router, using tmp_path as fs-backed object storage."""
+    _configure_storage(tmp_path)
+    app = _make_test_app(tmp_path)
+    with TestClient(app) as client:
+        client._tmp_path = tmp_path  # type: ignore[attr-defined]
+        yield client
 
 
 class TestAgentsAPI:
@@ -519,19 +509,16 @@ class TestAgentsAPI:
     def test_create_persists_files_on_disk(self, agent_client, tmp_path):
         agent_client.post("/api/agents", json={"name": "disk-check", "soul": "disk soul"})
 
-        agent_dir = tmp_path / "users" / _TEST_USER_ID / "agents" / "disk-check"
-        assert agent_dir.exists()
-        assert (agent_dir / "config.yaml").exists()
-        assert (agent_dir / "SOUL.md").exists()
-        assert (agent_dir / "SOUL.md").read_text() == "disk soul"
+        assert (tmp_path / user_agent_config_key(_TEST_USER_ID, "disk-check")).exists()
+        assert (tmp_path / user_agent_soul_key(_TEST_USER_ID, "disk-check")).read_text(encoding="utf-8") == "disk soul"
 
     def test_delete_removes_files_from_disk(self, agent_client, tmp_path):
         agent_client.post("/api/agents", json={"name": "remove-me", "soul": "bye"})
-        agent_dir = tmp_path / "users" / _TEST_USER_ID / "agents" / "remove-me"
-        assert agent_dir.exists()
+        config_path = tmp_path / user_agent_config_key(_TEST_USER_ID, "remove-me")
+        assert config_path.exists()
 
         agent_client.delete("/api/agents/remove-me")
-        assert not agent_dir.exists()
+        assert not config_path.exists()
 
 
 # ===========================================================================
@@ -541,30 +528,30 @@ class TestAgentsAPI:
 
 class TestUserProfileAPI:
     def test_get_user_profile_empty(self, agent_client):
-        response = agent_client.get("/api/user-profile")
+        response = agent_client.get("/api/agents/user-profile")
         assert response.status_code == 200
         assert response.json()["content"] is None
 
     def test_put_user_profile(self, agent_client, tmp_path):
         content = "# User Profile\n\nI am a developer."
-        response = agent_client.put("/api/user-profile", json={"content": content})
+        response = agent_client.put("/api/agents/user-profile", json={"content": content})
         assert response.status_code == 200
         assert response.json()["content"] == content
 
         # File should be written to disk (user-scoped path)
-        user_md = tmp_path / "users" / _TEST_USER_ID / "USER.md"
+        user_md = tmp_path / user_profile_key(_TEST_USER_ID)
         assert user_md.exists()
         assert user_md.read_text(encoding="utf-8") == content
 
     def test_get_user_profile_after_put(self, agent_client):
         content = "# Profile\n\nI work on data science."
-        agent_client.put("/api/user-profile", json={"content": content})
+        agent_client.put("/api/agents/user-profile", json={"content": content})
 
-        response = agent_client.get("/api/user-profile")
+        response = agent_client.get("/api/agents/user-profile")
         assert response.status_code == 200
         assert response.json()["content"] == content
 
     def test_put_empty_user_profile_returns_none(self, agent_client):
-        response = agent_client.put("/api/user-profile", json={"content": ""})
+        response = agent_client.put("/api/agents/user-profile", json={"content": ""})
         assert response.status_code == 200
         assert response.json()["content"] is None

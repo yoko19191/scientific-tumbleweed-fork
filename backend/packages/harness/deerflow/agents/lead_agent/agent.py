@@ -489,7 +489,7 @@ def _load_enabled_skills_for_tool_policy(available_skills: set[str] | None, *, a
 def make_lead_agent(config: RunnableConfig):
     # Lazy import to avoid circular dependency
     from deerflow.tools import get_available_tools
-    from deerflow.tools.builtins import setup_agent
+    from deerflow.tools.builtins import setup_agent, update_agent
 
     cfg = _get_runtime_config(config)
     runtime_app_config = cfg.get("app_config")
@@ -586,6 +586,8 @@ def make_lead_agent(config: RunnableConfig):
     if has_runtime_app_config:
         available_tools_kwargs["app_config"] = app_config
     tools = get_available_tools(**available_tools_kwargs)
+    if agent_name:
+        tools = tools + [update_agent]
     return create_agent(
         model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, app_config=app_config_for_child_calls),
         tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),

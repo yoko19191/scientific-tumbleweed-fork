@@ -889,7 +889,7 @@ git cherry-pick 39f901d3
 **决策状态**: ✅ 已决定采用
 **说明**: 新增 `update_agent` 内置工具，支持自定义 agent 在聊天中自行更新 `SOUL.md` / `config.yaml` + 用户隔离。
 
-- [ ] `59c4a3f0` feat(agent): add custom-agent self-updates with user isolation (#2713) — 18 files, 956+ lines
+- [x] `59c4a3f0` feat(agent): add custom-agent self-updates with user isolation (#2713) — 手工适配完成；未整批 cherry-pick
 
 ```bash
 git checkout -b merge/custom-agent merge/2026-05-22-upstream-sync
@@ -899,24 +899,35 @@ git cherry-pick 59c4a3f0
 
 **冲突解决要点**
 
-- [ ] fork 已有 `user_id` 隔离逻辑，需与上游的 user isolation 合并
-- [ ] `agents_config.py` 和 `paths.py` 中两套隔离逻辑需统一
+- [x] fork 已有 `user_id` 隔离逻辑，需与上游的 user isolation 合并 — 已以 fork 的 OpenDAL `custom-agents/{user_id}/...` 布局为准
+- [x] `agents_config.py` 和 `paths.py` 中两套隔离逻辑需统一 — 不引入上游 filesystem `paths.user_agent_dir()` 新路径；保留现有 object storage key builders
 
 **Trade-off**
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | fork 已有 user_id 隔离语义；上游新增 `update_agent` 自更新工具和用户隔离链路，价值高但权限边界敏感。 |
-| 分值 | 当前适配度 2/5；目标收益分 4/5；差距 2。 |
-| 取舍结论 | 采用但靠后处理；权限、路径和用户隔离必须优先于功能可用性，不能让 agent 自更新越权写入其他用户配置。 |
-| 补齐动作 | 合并两套 `agents_config.py` / `paths.py` 隔离逻辑；限定 `SOUL.md` / `config.yaml` 更新范围；补用户 A/B 隔离和非法路径测试。 |
-| 建议 merge 节奏 | L6 后或单独延后处理；如果 user isolation 冲突扩大，拆成独立评审批次。 |
+| 当前状态 | 已完成适配：新增 `update_agent` 工具，custom agent 非 bootstrap 会绑定该工具，系统提示会要求自更新走 `update_agent`；`setup_agent` 也改为写入 OpenDAL user-scoped custom-agent storage。 |
+| 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
+| 取舍结论 | 采用能力，但不采用上游 filesystem user isolation 迁移形态；fork 已经把 custom agents 放在 OpenDAL `custom-agents/{user_id}/...`，因此权限边界以 object key builders 和 runtime `user_id` 为准。 |
+| 补齐动作 | 已补 `update_agent` 的字段级 partial update、agent_name 校验、model 校验、用户 A/B 隔离、no-op 检测；`setup_agent` 禁止覆盖已存在 agent 并在失败时清理已写对象。对象存储后端不承诺上游 filesystem 的双文件 atomic rename，风险通过先校验后写入与测试覆盖降低。 |
+| 建议 merge 节奏 | L4 已完成；后续若做迁移脚本，只应迁移历史 filesystem agent 到 OpenDAL，不反向引入上游 `users/{id}/agents` 目录结构。 |
+
+**执行备注**
+
+- 上游的 user isolation 代码依赖 `paths.user_agent_dir(user_id, agent_name)`；当前 fork 的 canonical 存储是 `deerflow.storage.user_agent_config_key()` / `user_agent_soul_key()`，本批保留该边界。
+- `runtime/runs/worker.py` 会把 run metadata 中的 `user_id` 注入 runtime context，工具侧通过 `resolve_runtime_user_id(runtime)` 定位当前用户。
+- `setup_agent` 现在写 OpenDAL `config.yaml` / `SOUL.md`，并在目标 agent 已存在时拒绝覆盖，避免 bootstrap 工具误清空用户已有配置。
+- `update_agent` 只在 custom agent 普通会话绑定；默认 agent 和 bootstrap 创建流程不暴露该工具。
+- prompt 新增 `<self_update>` 动态段，要求 agent 修改自身配置时使用 `update_agent`，不要通过 bash/write_file 等临时工作区路径绕行。
 
 **验证**
 
-- [ ] `update_agent` 工具可用
-- [ ] agent 自更新 `SOUL.md` / `config.yaml` 后立即生效
-- [ ] 用户隔离: 用户 A 的修改不影响用户 B
+- [x] `update_agent` 工具可用 — `tests/test_update_agent_tool.py`
+- [x] agent 自更新 `SOUL.md` / `config.yaml` 后可通过 OpenDAL loader 读取；新配置在下一轮 agent rebuild 生效
+- [x] 用户隔离: 用户 A 的修改不影响用户 B — `tests/test_update_agent_tool.py::test_update_agent_preserves_other_user_agent`
+- [x] 2026-05-25 L4 回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_update_agent_tool.py tests/test_setup_agent_tool.py tests/test_lead_agent_prompt.py tests/test_custom_agent.py -q` — 71 passed
+- [x] 2026-05-25 L4 扩展回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_lead_agent_model_resolution.py tests/test_gateway_services.py tests/test_run_worker_rollback.py -q` — 57 passed
+- [x] 2026-05-25 L4 静态检查: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m py_compile ...` — 通过；`rg -n "^(<<<<<<<|=======|>>>>>>>)" ...` 无冲突标记；`git diff --check` — 通过
 
 ### L5: model_name 穿透到持久层
 

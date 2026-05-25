@@ -1,15 +1,21 @@
 import logging
 
 import yaml
+import opendal.exceptions as opendal_exc
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
 from langgraph.types import Command
 
 from deerflow.config.agents_config import validate_agent_name
-from deerflow.config.paths import get_paths
+from deerflow.runtime.user_context import resolve_runtime_user_id
+from deerflow.storage import get_operator, user_agent_config_key, user_agent_prefix, user_agent_soul_key
 from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
+
+
+def _is_not_found(exc: BaseException) -> bool:
+    return isinstance(exc, (opendal_exc.NotFound, FileNotFoundError))
 
 
 @tool(parse_docstring=True)
@@ -26,30 +32,41 @@ def setup_agent(
     """
 
     agent_name: str | None = runtime.context.get("agent_name") if runtime.context else None
-    agent_dir = None
-    is_new_dir = False
+    created_keys: list[str] = []
 
     try:
         agent_name = validate_agent_name(agent_name)
-        paths = get_paths()
-        agent_dir = paths.agent_dir(agent_name) if agent_name else paths.base_dir
-        is_new_dir = not agent_dir.exists()
-        agent_dir.mkdir(parents=True, exist_ok=True)
+        operator = get_operator()
 
         if agent_name:
-            # If agent_name is provided, we are creating a custom agent in the agents/ directory
+            user_id = resolve_runtime_user_id(runtime)
             config_data: dict = {"name": agent_name}
             if description:
                 config_data["description"] = description
 
-            config_file = agent_dir / "config.yaml"
-            with open(config_file, "w", encoding="utf-8") as f:
-                yaml.dump(config_data, f, default_flow_style=False, allow_unicode=True)
+            config_key = user_agent_config_key(user_id, agent_name)
+            try:
+                operator.stat(config_key)
+                raise FileExistsError(f"Agent '{agent_name}' already exists for the current user.")
+            except Exception as exc:
+                if not _is_not_found(exc):
+                    raise
 
-        soul_file = agent_dir / "SOUL.md"
-        soul_file.write_text(soul, encoding="utf-8")
+            config_yaml = yaml.dump(config_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            operator.write(config_key, config_yaml.encode("utf-8"))
+            created_keys.append(config_key)
 
-        logger.info(f"[agent_creator] Created agent '{agent_name}' at {agent_dir}")
+            soul_key = user_agent_soul_key(user_id, agent_name)
+            operator.write(soul_key, soul.encode("utf-8"))
+            created_keys.append(soul_key)
+        else:
+            # The bootstrap/default-agent setup path historically wrote to
+            # base_dir/SOUL.md. Custom agent creation is the only active caller
+            # for setup_agent in the gateway, so keep the no-name path disabled
+            # rather than silently writing an unscoped object-store key.
+            raise ValueError("setup_agent requires an agent_name in runtime context.")
+
+        logger.info("[agent_creator] Created agent '%s' at %s", agent_name, user_agent_prefix(resolve_runtime_user_id(runtime), agent_name))
         return Command(
             update={
                 "created_agent_name": agent_name,
@@ -58,10 +75,12 @@ def setup_agent(
         )
 
     except Exception as e:
-        import shutil
-
-        if agent_name and is_new_dir and agent_dir is not None and agent_dir.exists():
-            # Cleanup the custom agent directory only if it was newly created during this call
-            shutil.rmtree(agent_dir)
+        if created_keys:
+            try:
+                operator = get_operator()
+                for key in created_keys:
+                    operator.delete(key)
+            except Exception:
+                logger.debug("Failed to clean up partially created agent objects", exc_info=True)
         logger.error(f"[agent_creator] Failed to create agent '{agent_name}': {e}", exc_info=True)
         return Command(update={"messages": [ToolMessage(content=f"Error: {e}", tool_call_id=runtime.tool_call_id)]})

@@ -133,6 +133,9 @@ async def run_agent(
         # Inject runtime context so middlewares/tools can access thread_id and
         # the request-resolved AppConfig without ambient singleton lookups.
         runtime_ctx = _build_runtime_context(thread_id, run_id, config.get("context"), app_config)
+        user_id = (config.get("metadata") or {}).get("user_id")
+        if user_id is not None:
+            runtime_ctx.setdefault("user_id", user_id)
         _install_runtime_context(config, runtime_ctx)
         runtime = Runtime(context=runtime_ctx, store=store)
         config.setdefault("configurable", {})["__pregel_runtime"] = runtime

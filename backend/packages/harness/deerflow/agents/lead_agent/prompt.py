@@ -679,6 +679,10 @@ def _apply_prompt_via_builder(
     # Citations
     builder.with_citations(_build_citations_section())
 
+    self_update_section = _build_self_update_section(agent_name)
+    if self_update_section:
+        builder.add_dynamic_section(self_update_section)
+
     return builder.build()
 
 
@@ -791,6 +795,21 @@ def _build_working_directory_section(acp_section: str) -> str:
 </working_directory>"""
 
 
+def _build_self_update_section(agent_name: str | None) -> str:
+    if not agent_name:
+        return ""
+    return """<self_update>
+You are running as a custom agent. When the user asks you to refine your own
+identity, behavior, SOUL.md, description, model, skill whitelist, or tool-group
+policy, use the `update_agent` tool to persist the change. Do not use bash,
+write_file, or ad-hoc filesystem edits for self-updates.
+
+Only call `update_agent` when the user is asking to change this custom agent's
+configuration. Omitted fields remain unchanged; if you update SOUL.md, provide
+the full replacement content.
+</self_update>"""
+
+
 def _build_citations_section() -> str:
     return """<citations>
 引用格式：使用 Markdown 链接 `[显示文本](URL)` 紧跟在所支持的论断之后。
@@ -887,6 +906,7 @@ def _apply_legacy_prompt_template(
     acp_section = _call_with_optional_app_config(_build_acp_section, app_config=app_config)
     custom_mounts_section = _call_with_optional_app_config(_build_custom_mounts_section, app_config=app_config)
     acp_and_mounts_section = "\n".join(section for section in (acp_section, custom_mounts_section) if section)
+    self_update_section = _build_self_update_section(agent_name)
 
     # Format the prompt with dynamic skills and memory
     prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -906,5 +926,8 @@ def _apply_legacy_prompt_template(
         subagent_thinking=subagent_thinking,
         acp_section=acp_and_mounts_section,
     )
+
+    if self_update_section:
+        prompt = f"{prompt}\n\n{self_update_section}"
 
     return prompt

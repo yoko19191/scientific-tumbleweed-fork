@@ -64,6 +64,23 @@ def test_apply_prompt_template_custom_agent_keeps_name_and_platform_style(monkey
     assert "让回答像自然发生的协作，而不是模板生成" in prompt
 
 
+def test_apply_prompt_template_custom_agent_includes_self_update_section(monkeypatch):
+    _patch_prompt_dependencies(monkeypatch)
+
+    prompt = prompt_module.apply_prompt_template(agent_name="lab-agent")
+
+    assert "<self_update>" in prompt
+    assert "update_agent" in prompt
+
+
+def test_apply_prompt_template_default_agent_omits_self_update_section(monkeypatch):
+    _patch_prompt_dependencies(monkeypatch)
+
+    prompt = prompt_module.apply_prompt_template()
+
+    assert "<self_update>" not in prompt
+
+
 def test_apply_prompt_template_subagent_section_still_feature_gated(monkeypatch):
     _patch_prompt_dependencies(monkeypatch)
 

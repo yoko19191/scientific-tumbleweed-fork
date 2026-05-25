@@ -145,6 +145,11 @@ async def run_agent(
         config.setdefault("run_name", resolve_root_run_name(config, getattr(record, "assistant_id", None)))
         runnable_config = RunnableConfig(**config)
         agent = agent_factory(config=runnable_config)
+        metadata = getattr(agent, "metadata", {}) or {}
+        if isinstance(metadata, dict):
+            effective_model_name = metadata.get("model_name")
+            if effective_model_name and effective_model_name != record.model_name:
+                await run_manager.update_model_name(record.run_id, str(effective_model_name))
 
         # 4. Attach checkpointer and store
         if checkpointer is not None:

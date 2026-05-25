@@ -931,7 +931,7 @@ git cherry-pick 59c4a3f0
 
 ### L5: model_name 穿透到持久层
 
-- [ ] `de253e4a` feat(run): Propagates model_name from gateway to SQLite (#2775)
+- [x] `de253e4a` feat(run): Propagates model_name from gateway to SQLite (#2775) — 手工适配完成；未整批 cherry-pick
 
 ```bash
 git cherry-pick de253e4a
@@ -941,11 +941,26 @@ git cherry-pick de253e4a
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | model_name 持久化是小范围数据补全，但最好与 L3 RunStore 持久化路径一起验证。 |
+| 当前状态 | 已完成适配：gateway 会提取并校验请求 model_name，RunManager/RunStore 会持久化 model_name，worker 会在 agent 创建后捕获实际解析后的 model_name 并回写。 |
 | 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
-| 取舍结论 | 默认采用；若 schema/SQLite 路径与 L3 冲突，则并入 L3 commit。 |
-| 补齐动作 | 确认 gateway 入参到 SQLite 字段的传递路径；补历史 run 查询或导出中 model_name 可见性验证。 |
-| 建议 merge 节奏 | L3 后处理，作为持久层信息补全小提交。 |
+| 取舍结论 | 采用；但目标持久层不是上游 SQLite RunRepository，而是 L3 已建立的 fork RunStore/ LangGraph Store 适配层。 |
+| 补齐动作 | 已补 `body.context` / `config.context` / `config.configurable` 的 model_name 提取、非字符串 coercion、strip + 128 字符截断、allowlist 校验、effective model_name 回写和 store round-trip 测试。 |
+| 建议 merge 节奏 | L5 已完成；后续 L1 token usage 可复用同一 RunStore row 展示模型与 token 归因。 |
+
+**执行备注**
+
+- L3 已预先引入 `RunRecord.model_name`、`RunManager.update_model_name()` 与 RunStore 字段，本批补齐上游 L5 剩余语义。
+- `app.gateway.services._extract_requested_model_name()` 以 `body.context` 优先，其次读取 `body.config.context` / `body.config.configurable`，并在创建 run 前用当前 `AppConfig` 做模型 allowlist 校验。
+- `runtime/runs/worker.py` 在 agent factory 完成后读取 `agent.metadata["model_name"]`，如果实际解析模型和请求模型不同，则通过 `RunManager.update_model_name()` 回写。
+- Store 层做防御式规范化，避免对象存储/未来 SQL 后端写入超长或空白 model_name。
+
+**验证**
+
+- [x] gateway 入参到持久层 model_name 路径正确
+- [x] effective model_name 可在 worker agent 创建后回写
+- [x] model_name 规范化与 store round-trip 正常
+- [x] 2026-05-25 L5 回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_run_manager.py tests/test_gateway_services.py tests/test_run_worker_rollback.py -q` — 64 passed
+- [x] 2026-05-25 L5 静态检查: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m py_compile ...` — 通过；`rg -n "^(<<<<<<<|=======|>>>>>>>)" ...` 无冲突标记；`git diff --check` — 通过
 
 ### L6: Langfuse Tracing 增强
 

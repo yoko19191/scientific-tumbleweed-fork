@@ -7,6 +7,17 @@ from typing import Any
 from deerflow.runtime.runs.store.base import RunStore
 from deerflow.utils.time import now_iso
 
+_MAX_MODEL_NAME_LEN = 128
+
+
+def _normalize_model_name(model_name: str | None) -> str | None:
+    if model_name is None:
+        return None
+    if not isinstance(model_name, str):
+        model_name = str(model_name)
+    normalized = model_name.strip()
+    return normalized[:_MAX_MODEL_NAME_LEN] if normalized else None
+
 
 class MemoryRunStore(RunStore):
     """Simple dict-backed RunStore."""
@@ -42,7 +53,7 @@ class MemoryRunStore(RunStore):
             "metadata": metadata or {},
             "kwargs": kwargs or {},
             "error": error,
-            "model_name": model_name,
+            "model_name": _normalize_model_name(model_name),
             "created_at": created_at or now,
             "updated_at": now,
         }
@@ -83,7 +94,7 @@ class MemoryRunStore(RunStore):
         row = self._runs.get(run_id)
         if row is None:
             return
-        row["model_name"] = model_name
+        row["model_name"] = _normalize_model_name(model_name)
         row["updated_at"] = now_iso()
 
     async def delete(self, run_id: str) -> None:

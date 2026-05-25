@@ -112,6 +112,40 @@ def normalize_input(raw_input: dict[str, Any] | None) -> dict[str, Any]:
 
 
 _DEFAULT_ASSISTANT_ID = "lead_agent"
+_MAX_MODEL_NAME_LEN = 128
+
+
+def _coerce_model_name(value: Any) -> str | None:
+    """Normalize model_name values before persistence and allowlist checks."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    value = value.strip()
+    if not value:
+        return None
+    return value[:_MAX_MODEL_NAME_LEN]
+
+
+def _extract_requested_model_name(body: Any) -> str | None:
+    """Extract model_name from request context/config with body.context precedence."""
+    body_context = getattr(body, "context", None)
+    if isinstance(body_context, Mapping):
+        model_name = _coerce_model_name(body_context.get("model_name"))
+        if model_name is not None:
+            return model_name
+
+    body_config = getattr(body, "config", None)
+    if isinstance(body_config, Mapping):
+        config_context = body_config.get("context")
+        config_configurable = body_config.get("configurable")
+        if isinstance(config_context, Mapping):
+            model_name = _coerce_model_name(config_context.get("model_name"))
+            if model_name is not None:
+                return model_name
+        if isinstance(config_configurable, Mapping):
+            return _coerce_model_name(config_configurable.get("model_name"))
+    return None
 
 
 def resolve_agent_factory(assistant_id: str | None):
@@ -315,17 +349,12 @@ async def start_run(
     else:
         run_metadata = body.metadata or {}
 
-    model_name = None
-    body_context = getattr(body, "context", None)
-    if isinstance(body_context, Mapping):
-        model_name = body_context.get("model_name")
-    if model_name is None and isinstance(body.config, Mapping):
-        config_context = body.config.get("context")
-        config_configurable = body.config.get("configurable")
-        if isinstance(config_context, Mapping):
-            model_name = config_context.get("model_name")
-        if model_name is None and isinstance(config_configurable, Mapping):
-            model_name = config_configurable.get("model_name")
+    model_name = _extract_requested_model_name(body)
+    if model_name and app_config.get_model_config(model_name) is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model {model_name!r} is not in the configured model allowlist",
+        )
 
     try:
         record = await run_mgr.create_or_reject(

@@ -11,6 +11,7 @@ from deerflow.runtime.runs.store.base import RunStore
 from deerflow.utils.time import now_iso
 
 RUNS_NS: tuple[str, ...] = ("runs",)
+_MAX_MODEL_NAME_LEN = 128
 
 
 def _safe_json(value: Any) -> Any:
@@ -31,6 +32,15 @@ def _safe_json(value: Any) -> Any:
         return value
     except (TypeError, ValueError):
         return str(value)
+
+
+def _normalize_model_name(model_name: str | None) -> str | None:
+    if model_name is None:
+        return None
+    if not isinstance(model_name, str):
+        model_name = str(model_name)
+    normalized = model_name.strip()
+    return normalized[:_MAX_MODEL_NAME_LEN] if normalized else None
 
 
 class LangGraphRunStore(RunStore):
@@ -68,7 +78,7 @@ class LangGraphRunStore(RunStore):
             "metadata": _safe_json(metadata) or {},
             "kwargs": _safe_json(kwargs) or {},
             "error": error,
-            "model_name": model_name,
+            "model_name": _normalize_model_name(model_name),
             "created_at": created_at or now,
             "updated_at": now,
         }
@@ -113,7 +123,7 @@ class LangGraphRunStore(RunStore):
         row = await self.get(run_id)
         if row is None:
             return
-        row["model_name"] = model_name
+        row["model_name"] = _normalize_model_name(model_name)
         row["updated_at"] = now_iso()
         await self._store.aput(self._ns, run_id, row)
 

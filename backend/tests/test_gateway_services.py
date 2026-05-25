@@ -299,6 +299,24 @@ def test_run_create_request_context_defaults_to_none():
     assert body.context is None
 
 
+def test_extract_requested_model_name_normalizes_context_value():
+    from app.gateway.routers.thread_runs import RunCreateRequest
+    from app.gateway.services import _extract_requested_model_name
+
+    body = RunCreateRequest(input=None, context={"model_name": "  deepseek-v3  "})
+
+    assert _extract_requested_model_name(body) == "deepseek-v3"
+
+
+def test_extract_requested_model_name_coerces_non_string_configurable_value():
+    from app.gateway.routers.thread_runs import RunCreateRequest
+    from app.gateway.services import _extract_requested_model_name
+
+    body = RunCreateRequest(input=None, config={"configurable": {"model_name": 12345}})
+
+    assert _extract_requested_model_name(body) == "12345"
+
+
 def test_context_merges_into_configurable():
     """Context values must be merged into config['configurable'] by start_run.
 

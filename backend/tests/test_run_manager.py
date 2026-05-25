@@ -201,3 +201,33 @@ async def test_cancel_persists_interrupted_status_for_restarted_manager():
     assert hydrated is not None
     assert hydrated.status == RunStatus.interrupted
     assert hydrated.store_only is True
+
+
+@pytest.mark.anyio
+async def test_model_name_create_or_reject_persists_to_store():
+    """create_or_reject should persist the requested model_name."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+
+    record = await manager.create_or_reject("thread-1", model_name=" deepseek-v3 ")
+
+    assert record.model_name == " deepseek-v3 "
+    stored = await store.get(record.run_id)
+    assert stored is not None
+    assert stored["model_name"] == "deepseek-v3"
+
+
+@pytest.mark.anyio
+async def test_update_model_name_normalizes_and_persists():
+    """update_model_name should update memory and store consistently."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+    record = await manager.create_or_reject("thread-1")
+    long_model_name = " " + ("x" * 140) + " "
+
+    await manager.update_model_name(record.run_id, long_model_name)
+
+    assert record.model_name == long_model_name
+    stored = await store.get(record.run_id)
+    assert stored is not None
+    assert stored["model_name"] == "x" * 128

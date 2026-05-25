@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, call
 import pytest
 
 from deerflow.runtime.runs.manager import RunManager
+from deerflow.runtime.runs.store import MemoryRunStore
 from deerflow.runtime.runs.worker import _rollback_to_pre_run_checkpoint, run_agent
 
 
@@ -154,6 +155,42 @@ async def test_run_agent_threads_app_config_into_runtime_context():
     assert captured["astream_app_config"] is app_config
     assert captured["thread_id"] == "thread-1"
     assert captured["run_id"] == record.run_id
+
+
+@pytest.mark.anyio
+async def test_run_agent_persists_effective_model_name_from_agent_metadata():
+    store = MemoryRunStore()
+    run_manager = RunManager(store=store)
+    record = await run_manager.create("thread-1", assistant_id="lead_agent", metadata={"user_id": "user-1"})
+    bridge = SimpleNamespace(
+        publish=AsyncMock(),
+        publish_end=AsyncMock(),
+        cleanup=AsyncMock(),
+    )
+
+    class DummyAgent:
+        metadata = {"model_name": "resolved-model"}
+
+        async def astream(self, graph_input, config=None, stream_mode=None, subgraphs=False):
+            yield {"messages": []}
+
+    def factory(*, config):
+        return DummyAgent()
+
+    await run_agent(
+        bridge,
+        run_manager,
+        record,
+        checkpointer=None,
+        agent_factory=factory,
+        graph_input={},
+        config={"metadata": {"user_id": "user-1"}},
+    )
+
+    assert record.model_name == "resolved-model"
+    stored = await store.get(record.run_id, user_id="user-1")
+    assert stored is not None
+    assert stored["model_name"] == "resolved-model"
 
 
 @pytest.mark.anyio

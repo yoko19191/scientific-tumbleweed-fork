@@ -23,6 +23,7 @@
 - 2026-05-24: 已创建并切换到 `merge/2026-05-22-upstream-sync` 工作分支。
 - 2026-05-24: 已完成 F1 Sandbox 修复合并，吸收 async readiness、provider lifecycle reset、`/mnt/user-data` API 边界和 provisioner PVC user scope；保留 fork 的 `user_id` 显式传递、硬容量限制、`scientific-tumbleweed` 命名和用户目录布局。
 - 2026-05-25: 已完成 K 批次适用小功能合并：Serper 可选 provider、sandbox download、trace run_name、debug presented paths 物理路径解析、RemoteSandboxBackend `list_running` 说明补齐；`eab7ae3d` 因 backend/frontend token usage 冲突转入 L1 统一处理。
+- 2026-05-25: 已完成 I Safety Termination 合并，新增 `SafetyFinishReasonMiddleware`、provider safety detector 注册表和 `safety_finish_reason` 配置；保留当前 fork runtime/context 结构，未引入 L2/L3 的 app_config threading、RunJournal/database/run_events 改造。
 
 ## 前置准备
 
@@ -74,7 +75,7 @@ git log --oneline upstream/main | head -5
 - [x] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
 - [ ] G: Phase 3 DynamicContextMiddleware，单独分支验证
 - [ ] H: Phase 4 Loop Detection 增强，单独分支验证
-- [ ] I: Phase 7 Safety Termination，单独分支验证
+- [x] I: Phase 7 Safety Termination，单独分支验证
 - [ ] J: Phase 8 Stability P0，选择性提取
 - [x] K: Phase 14 新功能直接 cherry-pick（适用项已合并，`eab7ae3d` 转 L1）
 - [ ] L: Phase 15 新功能手动适配，逐项讨论
@@ -525,7 +526,7 @@ git branch -d merge/loop-detection
 
 > 当 LLM provider 因安全原因终止生成时，响应仍可能携带截断的 tool_calls。新增 `SafetyFinishReasonMiddleware` 检测并清除这些 tool_calls，避免 agent 进入重试循环。
 
-- [ ] `be0eae98` fix(runtime): suppress tool execution when provider safety-terminates with tool_calls (#3035) — 新增 SafetyFinishReasonMiddleware + 检测器注册表
+- [x] `be0eae98` fix(runtime): suppress tool execution when provider safety-terminates with tool_calls (#3035) — 新增 SafetyFinishReasonMiddleware + 检测器注册表
 
 ```bash
 git checkout -b merge/safety-termination merge/2026-05-22-upstream-sync
@@ -535,7 +536,7 @@ git cherry-pick be0eae98
 
 **冲突解决要点**
 
-- [ ] 在 fork 的 `middleware_builder.py` 中注册 `SafetyFinishReasonMiddleware`
+- [x] 在 fork 的 `middleware_builder.py` 中注册 `SafetyFinishReasonMiddleware`
 
 **Trade-off**
 
@@ -543,15 +544,26 @@ git cherry-pick be0eae98
 |------|------|
 | 当前状态 | 当前 fork 对 provider safety termination 携带截断 tool_calls 的防护不足，可能触发无意义重试或错误执行。 |
 | 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
-| 取舍结论 | 默认采用；功能独立且风险集中在 middleware 注册顺序，适合作为下一轮低风险稳定性 commit。 |
-| 补齐动作 | 注册 `SafetyFinishReasonMiddleware`；补 content_filter / safety finish_reason 模拟测试；确认正常 tool_calls 不被误清理。 |
-| 建议 merge 节奏 | 优先于 H/G 处理，用作 middleware 架构改动前的安全垫。 |
+| 取舍结论 | 已采用；仅吸收 safety finish reason 核心能力，不混入上游同 commit 上下文中的 L2/L3 runtime/context 持久化结构。 |
+| 补齐动作 | 已注册 lead agent、canonical `middleware_builder.py` 和 subagent runtime；已补 content_filter / Anthropic refusal / Gemini safety detector 测试，并确认正常 tool_calls 不被误清理。 |
+| 建议 merge 节奏 | I 已完成；后续可继续 H Loop Detection 或 D Subagent/Memory，中等耦合批次仍需保持单组提交。 |
+
+**执行备注**
+
+- `SafetyFinishReasonMiddleware` 注册在 `LoopDetectionMiddleware` 和 custom middlewares 之后、`ClarificationMiddleware` 之前，利用 LangChain after_model 反向执行顺序让 safety 先清理截断 tool_calls。
+- `AppConfig` 新增 `safety_finish_reason` 字段，`config.example.yaml` 增加配置块并将 `config_version` 从 5 bump 到 6；未采用上游 `config_version: 10`，避免提前引入未合并的 database/run_events/loop_detection schema。
+- `worker.py` 冲突中保留当前 fork 的 runtime context 注入方式；`RunJournal` audit event 会在 L3 RunStore/RunJournal 合并时再接入。
+- subagent runtime 通过 `build_subagent_runtime_middlewares()` 追加同一个 safety guard，避免被安全截断的子任务 tool_calls 继续传播回 lead agent。
 
 **验证**
 
-- [ ] 模拟 provider safety termination，例如 `content_filter` finish_reason
-- [ ] 确认截断的 tool_calls 被清除，不进入重试循环
-- [ ] 正常 tool_calls 不受影响
+- [x] 模拟 provider safety termination，例如 `content_filter` finish_reason
+- [x] 确认截断的 tool_calls 被清除，不进入重试循环
+- [x] 正常 tool_calls 不受影响
+- [x] `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_safety_termination_detectors.py tests/test_safety_finish_reason_middleware.py tests/test_safety_finish_reason_graph_integration.py tests/test_lead_agent_model_resolution.py tests/test_tool_error_handling_middleware.py -q` — 71 passed
+- [x] `PYTHONPYCACHEPREFIX=/private/tmp/st-pycache python3 -m py_compile ...` — I 相关 Python 文件通过
+- [x] `rg -n "<<<<<<<|>>>>>>>" ...` — I 相关文件无冲突标记
+- [x] `git diff --cached --check` — 通过
 
 ```bash
 git checkout merge/2026-05-22-upstream-sync

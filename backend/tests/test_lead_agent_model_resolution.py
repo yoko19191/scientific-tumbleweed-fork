@@ -204,8 +204,11 @@ def test_build_middlewares_uses_resolved_model_name_for_vision(monkeypatch):
     middlewares = lead_agent_module._build_middlewares({"configurable": {"model_name": "stale-model", "is_plan_mode": False, "subagent_enabled": False}}, model_name="vision-model", custom_middlewares=[MagicMock()])
 
     assert any(isinstance(m, lead_agent_module.ViewImageMiddleware) for m in middlewares)
-    # verify the custom middleware is injected correctly
-    assert len(middlewares) > 0 and isinstance(middlewares[-2], MagicMock)
+    # verify the custom middleware is injected correctly.
+    # Chain tail order after the custom middleware is:
+    #   ..., custom, SafetyFinishReasonMiddleware, ClarificationMiddleware
+    # so the custom mock sits at index [-3].
+    assert len(middlewares) > 0 and isinstance(middlewares[-3], MagicMock)
 
 
 def test_create_summarization_middleware_uses_configured_model_alias(monkeypatch):

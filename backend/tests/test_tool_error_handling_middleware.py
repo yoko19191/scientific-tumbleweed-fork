@@ -4,7 +4,10 @@ import pytest
 from langchain_core.messages import ToolMessage
 from langgraph.errors import GraphInterrupt
 
+from deerflow.agents.middlewares import tool_error_handling_middleware as tool_error_module
+from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
 from deerflow.agents.middlewares.tool_error_handling_middleware import ToolErrorHandlingMiddleware
+from deerflow.config.safety_finish_reason_config import SafetyFinishReasonConfig
 
 
 def _request(name: str = "web_search", tool_call_id: str | None = "tc-1"):
@@ -12,6 +15,19 @@ def _request(name: str = "web_search", tool_call_id: str | None = "tc-1"):
     if tool_call_id is not None:
         tool_call["id"] = tool_call_id
     return SimpleNamespace(tool_call=tool_call)
+
+
+def test_build_subagent_runtime_middlewares_appends_safety_finish_reason(monkeypatch):
+    base = [ToolErrorHandlingMiddleware()]
+    app_config = SimpleNamespace(safety_finish_reason=SafetyFinishReasonConfig(enabled=True))
+
+    monkeypatch.setattr(tool_error_module, "_build_runtime_middlewares", lambda **_kwargs: list(base))
+    monkeypatch.setattr("deerflow.config.app_config.get_app_config", lambda: app_config)
+
+    middlewares = tool_error_module.build_subagent_runtime_middlewares(lazy_init=False)
+
+    assert middlewares[:-1] == base
+    assert isinstance(middlewares[-1], SafetyFinishReasonMiddleware)
 
 
 def test_wrap_tool_call_passthrough_on_success():

@@ -10,6 +10,7 @@ from deerflow.agents.memory.summarization_hook import memory_flush_hook
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
+from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 from deerflow.agents.middlewares.summarization_middleware import BeforeSummarizationHook, DeerFlowSummarizationMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
@@ -322,7 +323,7 @@ def _create_compaction_middleware() -> AgentMiddleware | None:
 # Middleware chain assembly
 # ---------------------------------------------------------------------------
 #
-# Canonical order (21 positions):
+# Canonical order (22 positions):
 #   [0-2]  Sandbox infrastructure (ThreadData → Uploads → Sandbox)
 #   [3]    DanglingToolCallMiddleware
 #   [4]    GuardrailMiddleware (if configured)
@@ -342,7 +343,8 @@ def _create_compaction_middleware() -> AgentMiddleware | None:
 #   [17]   SubagentLimitMiddleware
 #   [18]   LoopDetectionMiddleware
 #   [19]   [custom middlewares]
-#   [20]   ClarificationMiddleware (always last)
+#   [20]   SafetyFinishReasonMiddleware
+#   [21]   ClarificationMiddleware (always last)
 
 
 def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None):
@@ -419,6 +421,15 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     # Inject custom middlewares before ClarificationMiddleware
     if custom_middlewares:
         middlewares.extend(custom_middlewares)
+
+    # SafetyFinishReasonMiddleware — suppress tool execution when the provider
+    # safety-terminated the response. Registered after custom middlewares so
+    # that LangChain's reverse-order after_model dispatch runs Safety first;
+    # cleared tool_calls then flow through Loop/Subagent accounting without
+    # firing extra alarms. See safety_finish_reason_middleware.py docstring.
+    safety_config = app_config.safety_finish_reason
+    if safety_config.enabled:
+        middlewares.append(SafetyFinishReasonMiddleware.from_config(safety_config))
 
     # ClarificationMiddleware should always be last
     middlewares.append(ClarificationMiddleware())

@@ -40,6 +40,7 @@ class MiddlewareFeatures:
     deferred_tool_filter: bool = False
     subagent_limit: bool = False
     loop_detection: bool = True
+    safety_finish_reason: bool = True
     clarification: bool = True
 
     lazy_init: bool = True
@@ -74,7 +75,8 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
       [17] SubagentLimitMiddleware       (optional)
       [18] LoopDetectionMiddleware
       [19] [custom middlewares]
-      [20] ClarificationMiddleware       (always last)
+      [20] SafetyFinishReasonMiddleware
+      [21] ClarificationMiddleware       (always last)
     """
     chain: list[AgentMiddleware] = []
 
@@ -182,7 +184,17 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
     for mw in features.custom_middlewares:
         chain.append(mw)
 
-    # --- [20] ClarificationMiddleware (always last) ---
+    # --- [20] SafetyFinishReasonMiddleware ---
+    if features.safety_finish_reason:
+        from deerflow.config.app_config import get_app_config
+
+        safety_config = get_app_config().safety_finish_reason
+        if safety_config.enabled:
+            from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
+
+            chain.append(SafetyFinishReasonMiddleware.from_config(safety_config))
+
+    # --- [21] ClarificationMiddleware (always last) ---
     if features.clarification:
         from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 

@@ -29,7 +29,7 @@ from deerflow.agents.checkpointer.provider import (
     POSTGRES_INSTALL,
     SQLITE_INSTALL,
 )
-from deerflow.config.app_config import get_app_config
+from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.runtime.store._sqlite_utils import ensure_sqlite_parent_dir, resolve_sqlite_conn_str
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ async def _async_checkpointer(config) -> AsyncIterator[Checkpointer]:
 
 
 @contextlib.asynccontextmanager
-async def make_checkpointer() -> AsyncIterator[Checkpointer]:
+async def make_checkpointer(app_config: AppConfig | None = None) -> AsyncIterator[Checkpointer]:
     """Async context manager that yields a checkpointer for the caller's lifetime.
     Resources are opened on enter and closed on exit — no global state::
 
@@ -94,7 +94,7 @@ async def make_checkpointer() -> AsyncIterator[Checkpointer]:
     Yields an ``InMemorySaver`` when no checkpointer is configured in *config.yaml*.
     """
 
-    config = get_app_config()
+    config = app_config or get_app_config()
 
     if config.checkpointer is None:
         from langgraph.checkpoint.memory import InMemorySaver

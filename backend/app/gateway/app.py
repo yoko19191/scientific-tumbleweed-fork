@@ -71,10 +71,12 @@ async def _run_tool_cache_vacuum_loop() -> None:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
 
-    # Load config and check necessary environment variables at startup
+    # Load a startup snapshot for restart-required infrastructure. Request-time
+    # config access must go through deps.get_config()/get_app_config() so edits
+    # to config.yaml are picked up without restarting the gateway.
     try:
-        app.state.config = get_app_config()
-        apply_logging_level(app.state.config.log_level)
+        startup_config = get_app_config()
+        apply_logging_level(startup_config.log_level)
         logger.info("Configuration loaded successfully")
     except Exception as e:
         error_msg = f"Failed to load configuration during gateway startup: {e}"
@@ -153,7 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.tool_cache_vacuum_task = tool_cache_vacuum_task
 
     # Initialize LangGraph runtime components (StreamBridge, RunManager, checkpointer, store)
-    async with langgraph_runtime(app):
+    async with langgraph_runtime(app, startup_config):
         logger.info("LangGraph runtime initialised")
 
         # Start IM channel service if any channels are configured

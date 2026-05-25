@@ -17,7 +17,7 @@ from fastapi import FastAPI
 
 
 @asynccontextmanager
-async def _noop_langgraph_runtime(_app):
+async def _noop_langgraph_runtime(_app, _startup_config):
     yield
 
 
@@ -39,10 +39,20 @@ async def _run_lifespan_with_hanging_stop() -> float:
     async def fake_start():
         return fake_service
 
+    async def noop_async(*_args, **_kwargs):
+        return None
+
     with (
         patch("app.gateway.app.get_app_config"),
         patch("app.gateway.app.get_gateway_config", return_value=MagicMock(host="x", port=0)),
         patch("app.gateway.app.langgraph_runtime", _noop_langgraph_runtime),
+        patch("deerflow.db.init_engine", side_effect=noop_async),
+        patch("deerflow.db.ensure_schema", side_effect=noop_async),
+        patch("deerflow.db.init_pool", side_effect=noop_async),
+        patch("deerflow.db.close_pool", side_effect=noop_async),
+        patch("deerflow.db.close_engine", side_effect=noop_async),
+        patch("deerflow.db.init_sync_engine"),
+        patch("deerflow.db.close_sync_engine"),
         patch("app.channels.service.start_channel_service", side_effect=fake_start),
         patch("app.channels.service.stop_channel_service", side_effect=hang_forever),
     ):

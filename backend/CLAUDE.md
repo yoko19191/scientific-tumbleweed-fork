@@ -226,6 +226,8 @@ Setup: Copy `config.example.yaml` to `config.yaml` in the **project root** direc
 
 **Config Caching**: `get_app_config()` caches the parsed config, but automatically reloads it when the resolved config path changes or the file's mtime increases. This keeps Gateway and LangGraph reads aligned with `config.yaml` edits without requiring a manual process restart.
 
+**Gateway Hot-Reload Boundary**: Gateway lifespan captures a local `startup_config` snapshot only for restart-required infrastructure such as logging level, checkpointer, store, stream bridge, and IM channel startup. Request-time Gateway dependencies must call `app.gateway.deps.get_config()`, which delegates to `get_app_config()` and observes mtime reloads instead of reading `app.state.config`. Do not reintroduce `app.state.config` as a long-lived config snapshot.
+
 Configuration priority:
 1. Explicit `config_path` argument
 2. `DEER_FLOW_CONFIG_PATH` environment variable

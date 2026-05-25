@@ -28,6 +28,7 @@
 - 2026-05-25: 已完成 D Subagent + Memory 合并，吸收 subagent terminal state 原子写入、system prompt 与 skills 单 SystemMessage 合并、memory queue 按 thread/user/agent 隔离；保留 fork 的 subagent executor 执行语义、`skills=None` 默认加载 enabled skills、`max_turns=100` 和当前 runtime/context 边界。
 - 2026-05-25: 已完成 G DynamicContextMiddleware 合并，将 memory/current_date 从 lead agent system prompt 移入 hidden `<system-reminder>` HumanMessage；保留 fork 的 `SystemPromptBuilder`、平台人格与 skills/soul 结构，未引入 L4 self-update prompt。
 - 2026-05-25: 已完成 J Stability P0 中可独立提取的前端稳定性子项：subtask terminal status parser、chat export 默认过滤 hidden/reasoning/tool/internal marker；`task_tool` callback recorder 修复因当前 fork 尚无 usage recorder 路径记录为不适用，gateway hot reload 继续单独评估。
+- 2026-05-25: 已完成 J Stability P0 backend 子项：移除 gateway `app.state.config` 启动快照，新增 request-time `get_config()` 热重载依赖，并将 `startup_config` 显式传入 restart-required 的 LangGraph runtime bootstrap；J 批次适用项已收束。
 
 ## 前置准备
 
@@ -80,7 +81,7 @@ git log --oneline upstream/main | head -5
 - [x] G: Phase 3 DynamicContextMiddleware，单独分支验证
 - [x] H: Phase 4 Loop Detection 增强，单独分支验证
 - [x] I: Phase 7 Safety Termination，单独分支验证
-- [ ] J: Phase 8 Stability P0，选择性提取
+- [x] J: Phase 8 Stability P0，选择性提取
 - [x] K: Phase 14 新功能直接 cherry-pick（适用项已合并，`eab7ae3d` 转 L1）
 - [ ] L: Phase 15 新功能手动适配，逐项讨论
 - [x] M: Phase 16 Auth 独立修复
@@ -616,7 +617,7 @@ git branch -d merge/safety-termination
 
 > v2.0-m1-rc1 稳定性审计修复，涉及 gateway config 热重载、task_tool callback manager 兼容、前端 subtask 状态机、导出过滤等。这是一个 mega commit。
 
-- [ ] `e93f6584` fix(stability): resolve P0 blockers from v2.0-m1-rc1 stability audit (#3107) (#3131) — 手动适配
+- [x] `e93f6584` fix(stability): resolve P0 blockers from v2.0-m1-rc1 stability audit (#3107) (#3131) — 手动适配完成；BUG-002 当前不适用，BUG-001/006/007 已处理
 
 ```bash
 git checkout -b merge/stability-p0 merge/2026-05-22-upstream-sync
@@ -630,41 +631,44 @@ git show e93f6584 > /tmp/stability-p0.patch
 - [x] task_tool callback manager 兼容 (BUG-002) — skipped/not applicable: 当前 fork 尚未引入 L1 usage recorder / `record_external_llm_usage_records` 路径，`task_tool.py` 无对应 callback lookup
 - [x] 前端 subtask 状态机识别 `Error:` + `Task cancelled` + `Task polling timed out` (BUG-007) — 已提取
 - [x] 前端导出过滤 hidden/reasoning/tool 消息 (BUG-006) — 已提取
-- [ ] gateway config 热重载 (BUG-001) — ✅ 已决定采用，需适配 fork 的 `gateway/app.py` 生命周期；本轮未混入前端 P0 子项，继续单独评估
+- [x] gateway config 热重载 (BUG-001) — 已适配 fork 的 `gateway/app.py` 生命周期
 
 **冲突预警**
 
-- [ ] `gateway/app.py`、`gateway/deps.py` 的 config 生命周期变化: 去掉 `app.state.config`，改用 `get_app_config()` 热重载
-- [ ] 需评估与 fork 的 gateway 层兼容性，前端部分可选择性提取
+- [x] `gateway/app.py`、`gateway/deps.py` 的 config 生命周期变化: 去掉 `app.state.config`，改用 `get_app_config()` 热重载
+- [x] 需评估与 fork 的 gateway 层兼容性，前端部分可选择性提取
 
 **Trade-off**
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | 已选择性提取前端 subtask terminal parser 和 export filtering；task_tool callback recorder 在当前 fork 无承接路径，gateway config hot reload 仍待单独评估。 |
-| 分值 | 当前适配度 2/5；目标收益分 4/5；差距 2。 |
-| 取舍结论 | 不整批 cherry-pick；先落地直接适用且不触及 runtime 架构的前端 P0 子修复，gateway config hot reload 留作单独 backend 子批次。 |
-| 补齐动作 | 已补 subtask terminal parser 与 export filtering；后续仍需为 gateway config hot reload 写 freshness 测试，确认不破坏 fork 的 gateway 状态注入。 |
-| 建议 merge 节奏 | J 前端子项已完成；gateway hot reload 可作为 J-backend 子批次或并入 L2 app_config threading 前置评估。 |
+| 当前状态 | 已选择性提取前端 subtask terminal parser、export filtering 与 gateway config hot reload；task_tool callback recorder 在当前 fork 无承接路径，记录为 L1 token usage collector 前置依赖。 |
+| 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
+| 取舍结论 | 不整批 cherry-pick；保留 fork 当前 gateway/db/auth/channel 初始化结构，只吸收上游 request-time config freshness 边界和前端 P0 子修复。 |
+| 补齐动作 | 已补 `get_config()` freshness 测试、ContextVar / `set_app_config()` 回归、config load failure 503、防止 `app.state.config` 回归的文档说明；L1 再评估 callback recorder 归因路径。 |
+| 建议 merge 节奏 | J 已完成；后续进入 L2 app_config threading 时继续沿用 `startup_config` 与 request-time `get_config()` 的边界。 |
 
 **执行备注**
 
 - BUG-007: 新增 `frontend/src/core/tasks/subtask-result.ts`，将 `Task Succeeded. Result:` / `Task failed.` / `Task timed out` / `Task cancelled by user.` / `Task polling timed out` / `Error:` 前缀统一解析为 subtask 状态，`message-list.tsx` 只消费解析结果。
 - BUG-006: `formatThreadAsMarkdown()` / `formatThreadAsJSON()` 默认跳过 hidden UI messages、tool messages、reasoning 和 tool_calls；新增 opt-in `ExportOptions`，并通过 `stripInternalMarkers()` 防御性移除 `<uploaded_files>` / `<system-reminder>` / `<memory>` / `<current_date>` 内部标签。
 - BUG-002: 当前 fork 的 `task_tool.py` 没有 `_find_usage_recorder()` 或 callback recorder 归因路径，该修复留到 L1 token usage collector 合并时再评估。
-- BUG-001: 当前 gateway 结构与上游 `app.state.config` 依赖不同，且热重载会触及 lifespan/runtime singleton 边界；未与本轮前端 P0 子项混合。
+- BUG-001: 当前 fork 无上游 `get_run_context()` 路径，因此未引入 RunStore/run_events 相关改造；本次移除 `app.state.config` 长生命周期快照，新增 `app.gateway.deps.get_config()`，并将 `startup_config` 显式传入 `langgraph_runtime()`、`make_checkpointer()`、`make_store()` 和 `make_stream_bridge()`，保持 restart-required singleton 与 request-time hot reload 的边界清晰。
 
 **验证**
 
 - [x] task_tool callback 正常工作 — skipped/not applicable，见 BUG-002 备注
 - [x] subtask 错误状态正确显示
 - [x] 导出不包含 hidden/reasoning/tool 消息
-- [ ] `get_app_config()` 热重载正确替代 `app.state.config`
-- [ ] config 变更后无需重启 gateway
-- [ ] 现有 fork 的 gateway 中间件和依赖注入不受破坏
+- [x] `get_app_config()` 热重载正确替代 `app.state.config`
+- [x] config 变更后无需重启 gateway
+- [x] 现有 fork 的 gateway 中间件和依赖注入不受破坏
 - [x] 2026-05-25 J 前端静态检查: `pnpm --dir frontend typecheck` 仍失败于既有 `src/core/threads/api-core.test.ts` BodyInit 类型与两个 `vitest` 类型缺失；本轮未新增 typecheck 错误。
 - [x] `rg -n "^(<<<<<<<|=======|>>>>>>>)" ...` — J 前端相关文件无冲突标记
 - [x] `git diff --cached --check` — 通过
+- [x] 2026-05-25 J backend 回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_gateway_config_freshness.py tests/test_gateway_lifespan_shutdown.py tests/test_gateway_runtime_cleanup.py -q` — 11 passed
+- [x] 2026-05-25 J backend 扩展 smoke: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_app_config_reload.py tests/test_gateway_config_freshness.py tests/test_gateway_lifespan_shutdown.py tests/test_gateway_runtime_cleanup.py tests/test_gateway_services.py -q` — 51 passed
+- [x] 2026-05-25 J backend 静态检查: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m py_compile app/gateway/app.py app/gateway/deps.py packages/harness/deerflow/agents/checkpointer/async_provider.py packages/harness/deerflow/runtime/store/async_provider.py` — 通过；`git diff --check` — 通过
 
 ```bash
 git checkout merge/2026-05-22-upstream-sync

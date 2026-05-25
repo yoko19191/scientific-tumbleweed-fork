@@ -8,34 +8,52 @@ Initialization is handled directly in ``app.py`` via :class:`AsyncExitStack`.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request
 
+from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.runtime import RunManager, StreamBridge
 
 if TYPE_CHECKING:
     from app.gateway.auth.local_provider import LocalAuthProvider
 
+logger = logging.getLogger(__name__)
+
+
+def get_config() -> AppConfig:
+    """Return the freshest AppConfig for request-time Gateway dependencies."""
+    try:
+        return get_app_config()
+    except Exception as exc:
+        logger.exception("Failed to load AppConfig at request time")
+        raise HTTPException(status_code=503, detail="Configuration not available") from exc
+
 
 @asynccontextmanager
-async def langgraph_runtime(app: FastAPI) -> AsyncGenerator[None, None]:
+async def langgraph_runtime(app: FastAPI, startup_config: AppConfig) -> AsyncGenerator[None, None]:
     """Bootstrap and tear down all LangGraph runtime singletons.
+
+    ``startup_config`` is the AppConfig snapshot captured once during the
+    gateway lifespan for restart-required infrastructure. Request-time code
+    should use :func:`get_config`, which routes through the hot-reloading
+    ``get_app_config()`` cache instead of reading a stale ``app.state`` value.
 
     Usage in ``app.py``::
 
-        async with langgraph_runtime(app):
+        async with langgraph_runtime(app, startup_config):
             yield
     """
     from deerflow.agents.checkpointer.async_provider import make_checkpointer
     from deerflow.runtime import make_store, make_stream_bridge
 
     async with AsyncExitStack() as stack:
-        app.state.stream_bridge = await stack.enter_async_context(make_stream_bridge())
-        app.state.checkpointer = await stack.enter_async_context(make_checkpointer())
-        app.state.store = await stack.enter_async_context(make_store())
+        app.state.stream_bridge = await stack.enter_async_context(make_stream_bridge(startup_config.stream_bridge))
+        app.state.checkpointer = await stack.enter_async_context(make_checkpointer(startup_config))
+        app.state.store = await stack.enter_async_context(make_store(startup_config))
         app.state.run_manager = RunManager()
         yield
 

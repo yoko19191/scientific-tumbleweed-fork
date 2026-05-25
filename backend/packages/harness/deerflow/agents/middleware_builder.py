@@ -30,6 +30,7 @@ class MiddlewareFeatures:
     hooks: bool = True
     sandbox_audit: bool = True
     tool_error_handling: bool = True
+    dynamic_context: bool = True
     summarization: bool = False
     compaction: bool = False
     plan_mode: bool = False
@@ -64,19 +65,20 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
       [6]  HookMiddleware                (NEW)
       [7]  SandboxAuditMiddleware
       [8]  ToolErrorHandlingMiddleware
-      [9]  SummarizationMiddleware       (optional)
-      [10] CompactionMiddleware          (NEW, optional)
-      [11] TodoMiddleware                (optional)
-      [12] TokenUsageMiddleware          (optional)
-      [13] TitleMiddleware
-      [14] MemoryMiddleware
-      [15] ViewImageMiddleware           (optional)
-      [16] DeferredToolFilterMiddleware  (optional)
-      [17] SubagentLimitMiddleware       (optional)
-      [18] LoopDetectionMiddleware
-      [19] [custom middlewares]
-      [20] SafetyFinishReasonMiddleware
-      [21] ClarificationMiddleware       (always last)
+      [9]  DynamicContextMiddleware
+      [10] SummarizationMiddleware       (optional)
+      [11] CompactionMiddleware          (NEW, optional)
+      [12] TodoMiddleware                (optional)
+      [13] TokenUsageMiddleware          (optional)
+      [14] TitleMiddleware
+      [15] MemoryMiddleware
+      [16] ViewImageMiddleware           (optional)
+      [17] DeferredToolFilterMiddleware  (optional)
+      [18] SubagentLimitMiddleware       (optional)
+      [19] LoopDetectionMiddleware
+      [20] [custom middlewares]
+      [21] SafetyFinishReasonMiddleware
+      [22] ClarificationMiddleware       (always last)
     """
     chain: list[AgentMiddleware] = []
 
@@ -124,57 +126,63 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
 
         chain.append(ToolErrorHandlingMiddleware())
 
-    # --- [9] SummarizationMiddleware ---
+    # --- [9] DynamicContextMiddleware ---
+    if features.dynamic_context:
+        from deerflow.agents.middlewares.dynamic_context_middleware import DynamicContextMiddleware
+
+        chain.append(DynamicContextMiddleware(agent_name=features.agent_name))
+
+    # --- [10] SummarizationMiddleware ---
     if features.summarization:
         _maybe_add_summarization_middleware(chain)
 
-    # --- [10] CompactionMiddleware (NEW) ---
+    # --- [11] CompactionMiddleware (NEW) ---
     if features.compaction:
         _maybe_add_compaction_middleware(chain)
 
-    # --- [11] TodoMiddleware ---
+    # --- [12] TodoMiddleware ---
     if features.plan_mode:
         from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
 
         chain.append(TodoMiddleware())
 
-    # --- [12] TokenUsageMiddleware ---
+    # --- [13] TokenUsageMiddleware ---
     if features.token_usage:
         from deerflow.agents.middlewares.token_usage_middleware import TokenUsageMiddleware
 
         chain.append(TokenUsageMiddleware())
 
-    # --- [13] TitleMiddleware ---
+    # --- [14] TitleMiddleware ---
     if features.title:
         from deerflow.agents.middlewares.title_middleware import TitleMiddleware
 
         chain.append(TitleMiddleware())
 
-    # --- [14] MemoryMiddleware ---
+    # --- [15] MemoryMiddleware ---
     if features.memory:
         from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
 
         chain.append(MemoryMiddleware(agent_name=features.agent_name))
 
-    # --- [15] ViewImageMiddleware ---
+    # --- [16] ViewImageMiddleware ---
     if features.vision:
         from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 
         chain.append(ViewImageMiddleware())
 
-    # --- [16] DeferredToolFilterMiddleware ---
+    # --- [17] DeferredToolFilterMiddleware ---
     if features.deferred_tool_filter:
         from deerflow.agents.middlewares.deferred_tool_filter_middleware import DeferredToolFilterMiddleware
 
         chain.append(DeferredToolFilterMiddleware())
 
-    # --- [17] SubagentLimitMiddleware ---
+    # --- [18] SubagentLimitMiddleware ---
     if features.subagent_limit:
         from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 
         chain.append(SubagentLimitMiddleware(max_concurrent=features.max_concurrent_subagents))
 
-    # --- [18] LoopDetectionMiddleware ---
+    # --- [19] LoopDetectionMiddleware ---
     if features.loop_detection:
         from deerflow.config.app_config import get_app_config
 
@@ -184,11 +192,11 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
 
             chain.append(LoopDetectionMiddleware.from_config(loop_detection_config))
 
-    # --- [19] Custom middlewares ---
+    # --- [20] Custom middlewares ---
     for mw in features.custom_middlewares:
         chain.append(mw)
 
-    # --- [20] SafetyFinishReasonMiddleware ---
+    # --- [21] SafetyFinishReasonMiddleware ---
     if features.safety_finish_reason:
         from deerflow.config.app_config import get_app_config
 
@@ -198,7 +206,7 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
 
             chain.append(SafetyFinishReasonMiddleware.from_config(safety_config))
 
-    # --- [21] ClarificationMiddleware (always last) ---
+    # --- [22] ClarificationMiddleware (always last) ---
     if features.clarification:
         from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 

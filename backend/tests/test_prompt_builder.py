@@ -41,7 +41,7 @@ class TestSystemPromptBuilder:
 
         assert "避免机械开场" in prompt
         assert "不要夸问题、夸用户、总结需求来凑开头" in prompt
-        assert "不要用“作为一个 AI”" in prompt
+        assert '不要用"作为一个 AI"' in prompt
 
     def test_collaboration_mechanics_cover_third_layer(self):
         prompt = SystemPromptBuilder().build()
@@ -50,11 +50,11 @@ class TestSystemPromptBuilder:
         assert "技能路由" in prompt
         assert "文件交付" in prompt
         assert "工具判断" in prompt
-        assert "研究证据" in prompt
+        assert "学术搜索路由" in prompt
         assert "关系边界" in prompt
         assert "严肃主题" in prompt
         assert "当前用户明确指令优先于旧记忆" in prompt
-        assert "区分事实、推断、假设和建议" in prompt
+        assert "区分四类来源" in prompt
 
     def test_dynamic_sections_after_boundary(self):
         prompt = SystemPromptBuilder().with_memory("[Memory] user prefers Chinese").with_skills("[Skills] web_search").build()

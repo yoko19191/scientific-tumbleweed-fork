@@ -168,7 +168,8 @@ class SystemPromptBuilder:
         if self._memory:
             sections.append(self._memory)
 
-        sections.append(environment_section(self._cwd, self._date_str))
+        if self._cwd or self._date_str:
+            sections.append(environment_section(self._cwd, self._date_str))
 
         sections.append(tone_style_section(self._tone_style))
 

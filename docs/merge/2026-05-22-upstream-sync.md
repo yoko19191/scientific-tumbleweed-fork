@@ -26,6 +26,7 @@
 - 2026-05-25: 已完成 I Safety Termination 合并，新增 `SafetyFinishReasonMiddleware`、provider safety detector 注册表和 `safety_finish_reason` 配置；保留当前 fork runtime/context 结构，未引入 L2/L3 的 app_config threading、RunJournal/database/run_events 改造。
 - 2026-05-25: 已完成 H Loop Detection 增强合并，新增 `LoopDetectionConfig`、per-tool frequency overrides 和 `wrap_model_call` 延迟 warning 注入；配置版本从 6 bump 到 7，未采用上游更高版本号中尚未合并的 database/run_events schema。
 - 2026-05-25: 已完成 D Subagent + Memory 合并，吸收 subagent terminal state 原子写入、system prompt 与 skills 单 SystemMessage 合并、memory queue 按 thread/user/agent 隔离；保留 fork 的 subagent executor 执行语义、`skills=None` 默认加载 enabled skills、`max_turns=100` 和当前 runtime/context 边界。
+- 2026-05-25: 已完成 G DynamicContextMiddleware 合并，将 memory/current_date 从 lead agent system prompt 移入 hidden `<system-reminder>` HumanMessage；保留 fork 的 `SystemPromptBuilder`、平台人格与 skills/soul 结构，未引入 L4 self-update prompt。
 
 ## 前置准备
 
@@ -75,7 +76,7 @@ git log --oneline upstream/main | head -5
 - [x] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
 - [x] E: Phase 11 前端修复（适用项已合并，不适用项已记录）
 - [x] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
-- [ ] G: Phase 3 DynamicContextMiddleware，单独分支验证
+- [x] G: Phase 3 DynamicContextMiddleware，单独分支验证
 - [x] H: Phase 4 Loop Detection 增强，单独分支验证
 - [x] I: Phase 7 Safety Termination，单独分支验证
 - [ ] J: Phase 8 Stability P0，选择性提取
@@ -438,10 +439,10 @@ git cherry-pick 8e48b7e8
 
 > fork 的 `middleware_builder.py` 需要适配 DynamicContextMiddleware 的注册位置；`memory_middleware.py` 中关于注入 memory 到 system prompt 的逻辑被此系列替代。
 
-- [ ] `c1b7f1d1` feat: static system prompt with DynamicContextMiddleware for prefix-cache optimization (#2801) — 核心 middleware + token usage 日志增强
-- [ ] `881ff712` fix(harness): preserve dynamic context across summarization (#2823) — 摘要时保留 dynamic context
-- [ ] `f76e4e35` fix title generation with dynamic context reminder (#2830) — title 生成兼容 dynamic context
-- [ ] `08ee7ade` fix(lint): remove duplicate is_dynamic_context_reminder definition (#2837) — lint 清理
+- [x] `c1b7f1d1` feat: static system prompt with DynamicContextMiddleware for prefix-cache optimization (#2801) — 核心 middleware + token usage 日志增强
+- [x] `881ff712` fix(harness): preserve dynamic context across summarization (#2823) — 摘要时保留 dynamic context
+- [x] `f76e4e35` fix title generation with dynamic context reminder (#2830) — title 生成兼容 dynamic context
+- [x] `08ee7ade` fix(lint): remove duplicate is_dynamic_context_reminder definition (#2837) — lint 清理
 
 ```bash
 git checkout -b merge/dynamic-context merge/2026-05-22-upstream-sync
@@ -454,27 +455,39 @@ git cherry-pick 08ee7ade
 
 **冲突解决要点**
 
-- [ ] `prompt.py`: 保留 fork 的 `user_id` 参数，删除 memory/date 注入逻辑
-- [ ] `memory_middleware.py`: memory 注入逻辑被 DynamicContextMiddleware 替代
-- [ ] `middleware_builder.py`: 添加 DynamicContextMiddleware 注册位置
+- [x] `prompt.py`: 保留 fork 的 `user_id` 参数，删除 memory/date 注入逻辑
+- [x] `memory_middleware.py`: memory 注入逻辑被 DynamicContextMiddleware 替代
+- [x] `middleware_builder.py`: 添加 DynamicContextMiddleware 注册位置
 
 **Trade-off**
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | 当前 fork 仍由 system prompt / memory middleware 承担动态上下文注入；上游改为 `<system-reminder>` HumanMessage 以提升 prefix-cache 复用。 |
+| 当前状态 | 已将 memory/current_date 从 lead agent system prompt 移出，由 `DynamicContextMiddleware` 注入 hidden `<system-reminder>` HumanMessage；summary/title 已识别并保留或跳过该 reminder。 |
 | 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
-| 取舍结论 | 采用，但必须单独分支验证；这是缓存效率和上下文语义的架构迁移，不作为普通 middleware bugfix 混入其他批次。 |
-| 补齐动作 | 保留 fork 的 `user_id` 参数和自定义 prompt 语义；迁移 memory/date 注入位置；适配 summarization/title generation；验证 dynamic reminder 不破坏 tool-call transcript。 |
-| 建议 merge 节奏 | 放在 I/H/D 之后、L 系列之前；完成后再推进 L1 token usage 和 L2 app_config，避免多条架构线同时移动。 |
+| 取舍结论 | 已采用；保留 fork 的 `SystemPromptBuilder`、平台人格、skills/soul 和 `user_id` 语义，只迁移 memory/date 这类逐会话动态上下文。 |
+| 补齐动作 | 已适配 lead agent 直接链路和 canonical middleware builder；已补 dynamic reminder 注入、midnight update、summarization preserve、title ignore 和 prompt 静态化测试；未提前引入 L4 self-update prompt。 |
+| 建议 merge 节奏 | G 已完成；后续 L1 token usage 可在现有 token detail logging 基础上继续做 UI/collector 层，L2 app_config threading 仍单独处理。 |
+
+**执行备注**
+
+- `c1b7f1d1` 已按 fork 手工适配：`apply_prompt_template()` 和 legacy fallback 不再拼接 `<memory>` / `<current_date>`；`SystemPromptBuilder.build()` 仅在显式传入 cwd/date 时输出 environment section，避免默认日期进入 system prompt。
+- `DynamicContextMiddleware` 注册到 lead agent `_build_middlewares()` 与 canonical `middleware_builder.py`，位置在 tool error handling 之后、summarization 之前；memory 注入继续调用 fork 的 `_get_memory_context(user_id)`，runtime user 解析使用当前 `resolve_runtime_user_id()`。
+- `881ff712` 已让 summarization 把 dynamic reminder 移入 preserved messages，并将 summary HumanMessage 标记为 `name="summary"`，避免后续被 dynamic context 误判为首条用户消息。
+- `f76e4e35` 已让 title middleware 跳过 hidden dynamic reminder / summary，标题仍基于真实用户消息生成。
+- `08ee7ade` 已采用最终单一定义的 `is_dynamic_context_reminder()`；未引入上游同系列之外的 custom-agent self-update prompt。
 
 **验证**
 
-- [ ] system prompt 不再包含 memory/date 内容
-- [ ] `<system-reminder>` 中正确注入 memory + 当前日期
-- [ ] 摘要后 dynamic context 保留
-- [ ] title 生成正常工作
-- [ ] prefix-cache 命中率提升可观测，Anthropic API 响应中 `cache_read_input_tokens > 0`
+- [x] system prompt 不再包含 memory/date 内容
+- [x] `<system-reminder>` 中正确注入 memory + 当前日期
+- [x] 摘要后 dynamic context 保留
+- [x] title 生成正常工作
+- [ ] prefix-cache 命中率提升可观测，Anthropic API 响应中 `cache_read_input_tokens > 0`（需真实 provider smoke，单元测试未覆盖线上 cache 命中率）
+- [x] `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_dynamic_context_middleware.py tests/test_summarization_middleware.py tests/test_title_middleware_core_logic.py tests/test_lead_agent_prompt.py tests/test_prompt_builder.py tests/test_create_deerflow_agent.py tests/test_lead_agent_model_resolution.py tests/test_csrf_middleware.py -q` — 156 passed
+- [x] `PYTHONPYCACHEPREFIX=/private/tmp/st-pycache python3 -m py_compile ...` — G 相关 Python 文件通过
+- [x] `rg -n "^(<<<<<<<|=======|>>>>>>>)" ...` — G 相关文件无冲突标记
+- [x] `git diff --cached --check` — 通过
 
 ```bash
 git checkout merge/2026-05-22-upstream-sync

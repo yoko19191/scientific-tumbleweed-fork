@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import threading
-from datetime import datetime
 from functools import lru_cache
 
 from deerflow.config.agents_config import load_agent_soul
@@ -373,7 +372,6 @@ SYSTEM_PROMPT_TEMPLATE = """
 {collaboration_mechanics_section}
 
 {soul}
-{memory_context}
 
 <thinking_style>
 - Think concisely and strategically about the user's request BEFORE taking action
@@ -616,11 +614,6 @@ def _apply_prompt_via_builder(
     if soul:
         builder.with_soul(soul)
 
-    # Memory
-    memory = _get_memory_context(user_id)
-    if memory:
-        builder.with_memory(memory)
-
     # Skills
     skills = get_skills_prompt_section(available_skills, user_id=user_id)
     if skills:
@@ -630,9 +623,6 @@ def _apply_prompt_via_builder(
     deferred = get_deferred_tools_prompt_section()
     if deferred:
         builder.with_deferred_tools(deferred)
-
-    # Environment
-    builder.with_environment(cwd=None, date_str=datetime.now().strftime("%Y-%m-%d, %A"))
 
     # Subagent section
     if subagent_enabled:
@@ -816,9 +806,6 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
 def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, user_id: str | None = None, available_skills: set[str] | None = None) -> str:
     """Legacy template-based prompt assembly (kept as fallback)."""
-    # Get memory context
-    memory_context = _get_memory_context(user_id)
-
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
     subagent_section = _build_subagent_section(n) if subagent_enabled else ""
@@ -859,11 +846,10 @@ def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent
         citations_section=_build_citations_section(),
         skills_section=skills_section,
         deferred_tools_section=deferred_tools_section,
-        memory_context=memory_context,
         subagent_section=subagent_section,
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,
         acp_section=acp_and_mounts_section,
     )
 
-    return prompt + f"\n<current_date>{datetime.now().strftime('%Y-%m-%d, %A')}</current_date>"
+    return prompt

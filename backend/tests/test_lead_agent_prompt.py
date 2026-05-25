@@ -75,7 +75,7 @@ def test_apply_prompt_template_subagent_section_still_feature_gated(monkeypatch)
     assert "MAXIMUM 2 `task` CALLS PER RESPONSE" in enabled_prompt
 
 
-def test_dynamic_sections_remain_after_cache_boundary(monkeypatch):
+def test_session_sections_remain_after_cache_boundary_without_memory_or_date(monkeypatch):
     skill = Skill(
         name="science-skill",
         description="Description for science-skill",
@@ -94,7 +94,8 @@ def test_dynamic_sections_remain_after_cache_boundary(monkeypatch):
     assert "<platform_persona>" in prompt[:idx]
     assert "<conversation_craft>" in prompt[:idx]
     assert "<collaboration_mechanics>" in prompt[:idx]
-    assert "<memory>" in prompt[idx:]
+    assert "<memory>" not in prompt
+    assert "<current_date>" not in prompt
     assert "<skill_system>" in prompt[idx:]
 
 

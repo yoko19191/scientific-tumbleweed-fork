@@ -369,6 +369,12 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     if hook_mw is not None:
         middlewares.append(hook_mw)
 
+    # Always inject current date (and optionally memory) as <system-reminder> into the
+    # first HumanMessage to keep the system prompt fully static for prefix-cache reuse.
+    from deerflow.agents.middlewares.dynamic_context_middleware import DynamicContextMiddleware
+
+    middlewares.append(DynamicContextMiddleware(agent_name=agent_name))
+
     # Add summarization middleware if enabled
     summarization_middleware = _create_summarization_middleware()
     if summarization_middleware is not None:

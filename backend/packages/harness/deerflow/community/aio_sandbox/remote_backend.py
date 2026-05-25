@@ -100,7 +100,15 @@ class RemoteSandboxBackend(SandboxBackend):
         return self._provisioner_discover(sandbox_id)
 
     def list_running(self) -> list[SandboxInfo]:
-        """Return all sandboxes currently managed by the provisioner."""
+        """Return all sandboxes currently managed by the provisioner.
+
+        Calls ``GET /api/sandboxes`` so that ``AioSandboxProvider._reconcile_orphans()``
+        can adopt pods that were created by a previous process and were never
+        explicitly destroyed.
+        Without this, a process restart silently orphans all existing k8s Pods —
+        they stay running forever because the idle checker only
+        tracks in-process state.
+        """
         return self._provisioner_list()
 
     # ── Provisioner API calls ─────────────────────────────────────────────

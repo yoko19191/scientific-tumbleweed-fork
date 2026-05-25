@@ -26,6 +26,7 @@ from deerflow.runtime.stream_bridge import StreamBridge
 from deerflow.sandbox.exceptions import SandboxCapacityExceededError
 
 from .manager import RunManager, RunRecord
+from .naming import resolve_root_run_name
 from .schemas import RunStatus
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,9 @@ async def run_agent(
         runtime = Runtime(context={"thread_id": thread_id}, store=store)
         config.setdefault("configurable", {})["__pregel_runtime"] = runtime
 
+        # Resolve after runtime context installation so context/configurable reflect
+        # the agent name that this run will actually execute.
+        config.setdefault("run_name", resolve_root_run_name(config, record.assistant_id))
         runnable_config = RunnableConfig(**config)
         agent = agent_factory(config=runnable_config)
 

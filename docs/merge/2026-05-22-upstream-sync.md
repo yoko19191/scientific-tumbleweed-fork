@@ -22,6 +22,7 @@
 - 2026-05-24: 已刷新 `upstream/main`，发现实际 tip 已前进到 `e7967a7f`；本轮先严格执行本文档基准 `f0bae286` 及其以前列出的低歧义批次，不混入新增上游提交。
 - 2026-05-24: 已创建并切换到 `merge/2026-05-22-upstream-sync` 工作分支。
 - 2026-05-24: 已完成 F1 Sandbox 修复合并，吸收 async readiness、provider lifecycle reset、`/mnt/user-data` API 边界和 provisioner PVC user scope；保留 fork 的 `user_id` 显式传递、硬容量限制、`scientific-tumbleweed` 命名和用户目录布局。
+- 2026-05-25: 已完成 K 批次适用小功能合并：Serper 可选 provider、sandbox download、trace run_name、debug presented paths 物理路径解析、RemoteSandboxBackend `list_running` 说明补齐；`eab7ae3d` 因 backend/frontend token usage 冲突转入 L1 统一处理。
 
 ## 前置准备
 
@@ -75,7 +76,7 @@ git log --oneline upstream/main | head -5
 - [ ] H: Phase 4 Loop Detection 增强，单独分支验证
 - [ ] I: Phase 7 Safety Termination，单独分支验证
 - [ ] J: Phase 8 Stability P0，选择性提取
-- [ ] K: Phase 14 新功能直接 cherry-pick
+- [x] K: Phase 14 新功能直接 cherry-pick（适用项已合并，`eab7ae3d` 转 L1）
 - [ ] L: Phase 15 新功能手动适配，逐项讨论
 - [x] M: Phase 16 Auth 独立修复
 
@@ -618,12 +619,12 @@ git branch -d merge/stability-p0
 **策略**: 直接 cherry-pick
 **预计耗时**: 30min
 
-- [ ] `44ab21fc` feat(community): add Serper web search provider (#2630) — 新增 Serper 搜索 provider
-- [ ] `e37912e2` feat(sandbox): Adds download file interface in Sandbox (#3038) — sandbox 文件下载接口
-- [ ] `923f516d` feat(trace): LangGraph -> lead_agent and set custom agent_name to run_name (#3101) — trace 改进
-- [ ] `eab7ae3d` feat: stream subagent token usage to header via terminal task events (#2882)
-- [ ] `4063dd71` feat(debug): print presented file paths with physical resolution (#2825)
-- [ ] `680187dd` fix: Supplement list_running in RemoteSandboxBackend (#2716)
+- [x] `44ab21fc` feat(community): add Serper web search provider (#2630) — 新增 Serper 搜索 provider
+- [x] `e37912e2` feat(sandbox): Adds download file interface in Sandbox (#3038) — sandbox 文件下载接口
+- [x] `923f516d` feat(trace): LangGraph -> lead_agent and set custom agent_name to run_name (#3101) — trace 改进
+- [ ] `eab7ae3d` feat: stream subagent token usage to header via terminal task events (#2882) — 已从 K 批次延期到 L1 Token Usage 显示体系统一适配
+- [x] `4063dd71` feat(debug): print presented file paths with physical resolution (#2825)
+- [x] `680187dd` fix: Supplement list_running in RemoteSandboxBackend (#2716)
 
 ```bash
 git cherry-pick 44ab21fc
@@ -640,15 +641,27 @@ git cherry-pick 680187dd
 |------|------|
 | 当前状态 | K 批次是相对独立的小 feature / 小补全，包括 Serper provider、sandbox download、trace agent_name、subagent token usage stream、debug path 和 remote list_running。 |
 | 分值 | 当前适配度 4/5；目标收益分 4/5；差距 0。 |
-| 取舍结论 | 默认直接 cherry-pick；但 `eab7ae3d` 与 L1 token usage 相关，若产生冲突则移入 L1 一起处理。 |
-| 补齐动作 | 检查每项是否依赖尚未合并的 L 系列能力；Serper 必须保持可选配置；sandbox download/list_running 需验证本地和 remote backend 都不破坏。 |
-| 建议 merge 节奏 | 可放在 F 之后作为低风险功能补齐；token usage 相关项遇到冲突时延后到 L1。 |
+| 取舍结论 | 适用项已直接合并；`eab7ae3d` 与现有 token usage middleware、task_tool 和前端 message usage 数据流冲突，已移入 L1，避免在 K 批次做半套 token usage。 |
+| 补齐动作 | 已保持 Serper 为可选配置；sandbox download 覆盖 AIO/local 抽象；trace run_name 未引入 L3 `RunJournal` 依赖；RemoteSandboxBackend 保留 fork 的 `user_id`、image/resources/replicas 和容量异常语义。L1 需重新处理 `eab7ae3d` 的 terminal task event 到 header total 数据流。 |
+| 建议 merge 节奏 | K 适用项已完成；下一步可进入 I/H/D 中等耦合稳定性批次，L1 等 L 系列底座稳定后再处理 token usage header stream。 |
+
+**执行备注**
+
+- Serper provider 作为可选 community provider 合入，`.env.example` 只新增注释型 `SERPER_API_KEY`，`config.example.yaml` 保持 Tavily 为当前默认 `web_search`，Serper 配置以注释块形式保留。
+- sandbox download 合入 `Sandbox` 抽象、AIO sandbox 与 local sandbox；保留 `/mnt/user-data` 路径边界、append 并发测试和 provider mount 语义。
+- trace `run_name` 通过 `resolve_root_run_name()` 注入 worker/gateway；由于 L3 RunStore/RunJournal 尚未合并，本批未引入上游 journal callback 片段。
+- debug presented paths 输出同时展示虚拟路径和物理解析路径，并保留当前 EOF/KeyboardInterrupt 退出行为。
+- RemoteSandboxBackend 的 `list_running` 行为在 fork 中已存在；本批补齐上游 orphan reconcile 说明，并继续保留 `user_id` 默认值、配置化镜像/资源/replicas 和 capacity error 处理。
+- `eab7ae3d` 已尝试 cherry-pick，但冲突横跨 `token_usage_middleware.py`、`task_tool.py`、`message-token-usage.tsx`、`usage.ts` 和 thread hooks，符合本节预案，已撤出 K 批次并转入 L1。
 
 **验证**
 
-- [ ] Serper provider 配置可选
-- [ ] sandbox 文件下载功能可用
-- [ ] trace 中 agent_name 正确标记
+- [x] Serper provider 配置可选
+- [x] sandbox 文件下载功能可用
+- [x] trace 中 agent_name 正确标记
+- [x] `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_serper_tools.py tests/test_aio_sandbox.py tests/test_local_sandbox_provider_mounts.py tests/test_remote_sandbox_backend.py tests/test_gateway_services.py tests/test_run_naming.py tests/test_run_worker_rollback.py -q` — 158 passed
+- [x] `rg -n "<<<<<<<|>>>>>>>|^=======$" ...` — K 相关文件无冲突标记
+- [x] `git diff --cached --check` — 通过
 
 ## L: 新功能手动适配 (Phase 15)
 
@@ -678,6 +691,7 @@ git cherry-pick 680187dd
 - [ ] `41741608` fix: use backend thread token usage for header total (#2800)
 - [ ] `5127f08e` enable token usage by default (#2841)
 - [ ] `9892a7d4` fix: bucket subagent token usage into parent run totals (#2838)
+- [ ] `eab7ae3d` feat: stream subagent token usage to header via terminal task events (#2882) — K 批次冲突后转入 L1，需随 header total / subagent bucket 数据流一起适配
 - [ ] `2a1ac06b` fix(persistence): reuse token usage model grouping expression (#2910)
 - [ ] `2eeb5979` fix(runs): expose active progress counters (#3148)
 

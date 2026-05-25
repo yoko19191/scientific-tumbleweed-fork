@@ -98,7 +98,7 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
     Returns:
         A chat model instance.
     """
-    config = get_app_config()
+    config = kwargs.pop("app_config", None) or get_app_config()
     if name is None:
         name = config.models[0].name
     model_config = config.get_model_config(name)

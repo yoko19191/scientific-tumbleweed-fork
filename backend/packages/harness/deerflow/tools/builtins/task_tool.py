@@ -4,7 +4,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import replace
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 from langchain.tools import InjectedToolCallId, tool
 from langgraph.config import get_stream_writer
@@ -16,6 +16,18 @@ from deerflow.subagents.executor import SubagentStatus, cleanup_background_task,
 from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from deerflow.config.app_config import AppConfig
+
+
+def _get_runtime_app_config(runtime: Any) -> "AppConfig | None":
+    context = getattr(runtime, "context", None)
+    if isinstance(context, dict):
+        app_config = context.get("app_config")
+        if app_config is not None:
+            return cast("AppConfig", app_config)
+    return None
 
 
 def _merge_skill_allowlists(parent: list[str] | None, child: list[str] | None) -> list[str] | None:
@@ -75,15 +87,18 @@ async def task_tool(
         prompt: The task description for the subagent. Be specific and clear about what needs to be done. ALWAYS PROVIDE THIS PARAMETER SECOND.
         subagent_type: The type of subagent to use. ALWAYS PROVIDE THIS PARAMETER THIRD.
     """
-    available_subagent_names = get_available_subagent_names()
+    runtime_app_config = _get_runtime_app_config(runtime)
+    available_subagent_names = get_available_subagent_names(app_config=runtime_app_config) if runtime_app_config is not None else get_available_subagent_names()
 
     # Get subagent configuration
-    config = get_subagent_config(subagent_type)
+    config = get_subagent_config(subagent_type, app_config=runtime_app_config) if runtime_app_config is not None else get_subagent_config(subagent_type)
     if config is None:
         available = ", ".join(available_subagent_names)
         return f"Error: Unknown subagent type '{subagent_type}'. Available: {available}"
-    if subagent_type == "bash" and not is_host_bash_allowed():
-        return f"Error: {LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE}"
+    if subagent_type == "bash":
+        host_bash_allowed = is_host_bash_allowed(runtime_app_config) if runtime_app_config is not None else is_host_bash_allowed()
+        if not host_bash_allowed:
+            return f"Error: {LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE}"
 
     # Build config overrides
     overrides: dict = {}
@@ -129,18 +144,28 @@ async def task_tool(
     parent_tool_groups = metadata.get("tool_groups")
 
     # Subagents should not have subagent tools enabled (prevent recursive nesting)
-    tools = get_available_tools(model_name=parent_model, groups=parent_tool_groups, subagent_enabled=False)
+    available_tools_kwargs = {
+        "model_name": parent_model,
+        "groups": parent_tool_groups,
+        "subagent_enabled": False,
+    }
+    if runtime_app_config is not None:
+        available_tools_kwargs["app_config"] = runtime_app_config
+    tools = get_available_tools(**available_tools_kwargs)
 
     # Create executor
-    executor = SubagentExecutor(
-        config=config,
-        tools=tools,
-        parent_model=parent_model,
-        sandbox_state=sandbox_state,
-        thread_data=thread_data,
-        thread_id=thread_id,
-        trace_id=trace_id,
-    )
+    executor_kwargs = {
+        "config": config,
+        "tools": tools,
+        "parent_model": parent_model,
+        "sandbox_state": sandbox_state,
+        "thread_data": thread_data,
+        "thread_id": thread_id,
+        "trace_id": trace_id,
+    }
+    if runtime_app_config is not None:
+        executor_kwargs["app_config"] = runtime_app_config
+    executor = SubagentExecutor(**executor_kwargs)
 
     # Start background execution (always async to prevent blocking)
     # Use tool_call_id as task_id for better traceability

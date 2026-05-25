@@ -35,6 +35,33 @@ logger = logging.getLogger(__name__)
 _VALID_LG_MODES = {"values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"}
 
 
+def _build_runtime_context(
+    thread_id: str,
+    run_id: str,
+    caller_context: Any | None,
+    app_config: Any | None = None,
+) -> dict[str, Any]:
+    runtime_ctx: dict[str, Any] = {"thread_id": thread_id, "run_id": run_id}
+    if isinstance(caller_context, dict):
+        for key, value in caller_context.items():
+            runtime_ctx.setdefault(key, value)
+    if app_config is not None:
+        runtime_ctx["app_config"] = app_config
+    return runtime_ctx
+
+
+def _install_runtime_context(config: dict, runtime_context: dict[str, Any]) -> None:
+    existing_context = config.get("context")
+    if isinstance(existing_context, dict):
+        existing_context.setdefault("thread_id", runtime_context["thread_id"])
+        existing_context.setdefault("run_id", runtime_context["run_id"])
+        if "app_config" in runtime_context:
+            existing_context["app_config"] = runtime_context["app_config"]
+        return
+
+    config["context"] = dict(runtime_context)
+
+
 async def run_agent(
     bridge: StreamBridge,
     run_manager: RunManager,
@@ -49,6 +76,7 @@ async def run_agent(
     stream_subgraphs: bool = False,
     interrupt_before: list[str] | Literal["*"] | None = None,
     interrupt_after: list[str] | Literal["*"] | None = None,
+    app_config: Any | None = None,
 ) -> None:
     """Execute an agent in the background, publishing events to *bridge*."""
 
@@ -102,14 +130,16 @@ async def run_agent(
         from langchain_core.runnables import RunnableConfig
         from langgraph.runtime import Runtime
 
-        # Inject runtime context so middlewares can access thread_id
-        # (langgraph-cli does this automatically; we must do it manually)
-        runtime = Runtime(context={"thread_id": thread_id}, store=store)
+        # Inject runtime context so middlewares/tools can access thread_id and
+        # the request-resolved AppConfig without ambient singleton lookups.
+        runtime_ctx = _build_runtime_context(thread_id, run_id, config.get("context"), app_config)
+        _install_runtime_context(config, runtime_ctx)
+        runtime = Runtime(context=runtime_ctx, store=store)
         config.setdefault("configurable", {})["__pregel_runtime"] = runtime
 
         # Resolve after runtime context installation so context/configurable reflect
         # the agent name that this run will actually execute.
-        config.setdefault("run_name", resolve_root_run_name(config, record.assistant_id))
+        config.setdefault("run_name", resolve_root_run_name(config, getattr(record, "assistant_id", None)))
         runnable_config = RunnableConfig(**config)
         agent = agent_factory(config=runnable_config)
 

@@ -24,8 +24,11 @@ class FakeSubagentStatus(Enum):
     TIMED_OUT = "timed_out"
 
 
-def _make_runtime() -> SimpleNamespace:
+def _make_runtime(*, app_config=None) -> SimpleNamespace:
     # Minimal ToolRuntime-like object; task_tool only reads these three attributes.
+    context = {"thread_id": "thread-1"}
+    if app_config is not None:
+        context["app_config"] = app_config
     return SimpleNamespace(
         state={
             "sandbox": {"sandbox_id": "local"},
@@ -35,7 +38,7 @@ def _make_runtime() -> SimpleNamespace:
                 "outputs_path": "/tmp/outputs",
             },
         },
-        context={"thread_id": "thread-1"},
+        context=context,
         config={"metadata": {"model_name": "ark-model", "trace_id": "trace-1"}},
     )
 
@@ -110,6 +113,62 @@ def test_task_tool_rejects_bash_subagent_when_host_bash_disabled(monkeypatch):
     )
 
     assert result.startswith("Error: Bash subagent is disabled")
+
+
+def test_task_tool_threads_runtime_app_config_to_subagent_dependencies(monkeypatch):
+    app_config = object()
+    config = _make_subagent_config()
+    runtime = _make_runtime(app_config=app_config)
+    events = []
+    captured = {}
+
+    class DummyExecutor:
+        def __init__(self, **kwargs):
+            captured["executor_kwargs"] = kwargs
+
+        def execute_async(self, prompt, task_id=None):
+            captured["prompt"] = prompt
+            return task_id or "generated-task-id"
+
+    def fake_get_available_subagent_names(*, app_config):
+        captured["names_app_config"] = app_config
+        return ["general-purpose"]
+
+    def fake_get_subagent_config(name, *, app_config):
+        captured["config_lookup"] = (name, app_config)
+        return config
+
+    def fake_get_available_tools(**kwargs):
+        captured["tools_kwargs"] = kwargs
+        return ["tool-a"]
+
+    monkeypatch.setattr(task_tool_module, "SubagentStatus", FakeSubagentStatus)
+    monkeypatch.setattr(task_tool_module, "SubagentExecutor", DummyExecutor)
+    monkeypatch.setattr(task_tool_module, "get_available_subagent_names", fake_get_available_subagent_names)
+    monkeypatch.setattr(task_tool_module, "get_subagent_config", fake_get_subagent_config)
+    monkeypatch.setattr(
+        task_tool_module,
+        "get_background_task_result",
+        lambda _: _make_result(FakeSubagentStatus.COMPLETED, result="done"),
+    )
+    monkeypatch.setattr(task_tool_module, "get_stream_writer", lambda: events.append)
+    monkeypatch.setattr(task_tool_module.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr("deerflow.tools.get_available_tools", fake_get_available_tools)
+
+    output = _run_task_tool(
+        runtime=runtime,
+        description="执行任务",
+        prompt="inspect files",
+        subagent_type="general-purpose",
+        tool_call_id="tc-explicit-config",
+    )
+
+    assert output == "Task Succeeded. Result: done"
+    assert captured["names_app_config"] is app_config
+    assert captured["config_lookup"] == ("general-purpose", app_config)
+    assert captured["tools_kwargs"]["app_config"] is app_config
+    assert captured["executor_kwargs"]["app_config"] is app_config
+    assert captured["executor_kwargs"]["tools"] == ["tool-a"]
 
 
 def test_task_tool_emits_running_and_completed_events(monkeypatch):

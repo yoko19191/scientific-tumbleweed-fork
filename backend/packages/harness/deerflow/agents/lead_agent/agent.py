@@ -42,9 +42,20 @@ def _get_runtime_config(config: RunnableConfig) -> dict:
     return cfg
 
 
-def _resolve_model_name(requested_model_name: str | None = None) -> str:
+def _call_with_optional_app_config(func, *args, app_config: AppConfig | None = None, **kwargs):
+    if app_config is None:
+        return func(*args, **kwargs)
+    try:
+        return func(*args, app_config=app_config, **kwargs)
+    except TypeError as exc:
+        if "app_config" not in str(exc):
+            raise
+        return func(*args, **kwargs)
+
+
+def _resolve_model_name(requested_model_name: str | None = None, *, app_config: AppConfig | None = None) -> str:
     """Resolve a runtime model name safely, falling back to default if invalid. Returns None if no models are configured."""
-    app_config = get_app_config()
+    app_config = app_config or get_app_config()
     default_model_name = app_config.models[0].name if app_config.models else None
     if default_model_name is None:
         raise ValueError("No chat models are configured. Please configure at least one model in config.yaml.")
@@ -57,9 +68,10 @@ def _resolve_model_name(requested_model_name: str | None = None) -> str:
     return default_model_name
 
 
-def _create_summarization_middleware() -> DeerFlowSummarizationMiddleware | None:
+def _create_summarization_middleware(*, app_config: AppConfig | None = None) -> DeerFlowSummarizationMiddleware | None:
     """Create and configure the summarization middleware from config."""
-    config = get_summarization_config()
+    resolved_app_config = app_config
+    config = resolved_app_config.summarization if resolved_app_config is not None else get_summarization_config()
 
     if not config.enabled:
         return None
@@ -77,11 +89,11 @@ def _create_summarization_middleware() -> DeerFlowSummarizationMiddleware | None
 
     # Prepare model parameter
     if config.model_name:
-        model = create_chat_model(name=config.model_name, thinking_enabled=False)
+        model = _call_with_optional_app_config(create_chat_model, name=config.model_name, thinking_enabled=False, app_config=resolved_app_config)
     else:
         # Use a lightweight model for summarization to save costs
         # Falls back to default model if not explicitly specified
-        model = create_chat_model(thinking_enabled=False)
+        model = _call_with_optional_app_config(create_chat_model, thinking_enabled=False, app_config=resolved_app_config)
 
     # Prepare kwargs
     kwargs = {
@@ -97,14 +109,15 @@ def _create_summarization_middleware() -> DeerFlowSummarizationMiddleware | None
         kwargs["summary_prompt"] = config.summary_prompt
 
     hooks: list[BeforeSummarizationHook] = []
-    if get_memory_config().enabled:
+    memory_config = resolved_app_config.memory if resolved_app_config is not None else get_memory_config()
+    if memory_config.enabled:
         hooks.append(memory_flush_hook)
 
     # The logic below relies on two assumptions holding true: this factory is
     # the sole entry point for DeerFlowSummarizationMiddleware, and the runtime
     # config is not expected to change after startup.
     try:
-        skills_container_path = get_app_config().skills.container_path or "/mnt/skills"
+        skills_container_path = (resolved_app_config or get_app_config()).skills.container_path or "/mnt/skills"
     except Exception:
         logger.exception("Failed to resolve skills container path; falling back to default")
         skills_container_path = "/mnt/skills"
@@ -347,7 +360,14 @@ def _create_compaction_middleware() -> AgentMiddleware | None:
 #   [21]   ClarificationMiddleware (always last)
 
 
-def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None, custom_middlewares: list[AgentMiddleware] | None = None):
+def _build_middlewares(
+    config: RunnableConfig,
+    model_name: str | None,
+    agent_name: str | None = None,
+    custom_middlewares: list[AgentMiddleware] | None = None,
+    *,
+    app_config: AppConfig | None = None,
+):
     """Build middleware chain based on runtime configuration.
 
     Args:
@@ -358,6 +378,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     Returns:
         List of middleware instances.
     """
+    resolved_app_config = app_config or get_app_config()
     middlewares = build_lead_runtime_middlewares(lazy_init=True)
 
     # --- Governance layer (NEW) ---
@@ -376,7 +397,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     middlewares.append(DynamicContextMiddleware(agent_name=agent_name))
 
     # Add summarization middleware if enabled
-    summarization_middleware = _create_summarization_middleware()
+    summarization_middleware = _call_with_optional_app_config(_create_summarization_middleware, app_config=resolved_app_config)
     if summarization_middleware is not None:
         middlewares.append(summarization_middleware)
 
@@ -393,24 +414,23 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         middlewares.append(todo_list_middleware)
 
     # Add TokenUsageMiddleware when token_usage tracking is enabled
-    if get_app_config().token_usage.enabled:
+    if resolved_app_config.token_usage.enabled:
         middlewares.append(TokenUsageMiddleware())
 
     # Add TitleMiddleware
-    middlewares.append(TitleMiddleware())
+    middlewares.append(TitleMiddleware(app_config=resolved_app_config))
 
     # Add MemoryMiddleware (after TitleMiddleware)
-    middlewares.append(MemoryMiddleware(agent_name=agent_name))
+    middlewares.append(MemoryMiddleware(agent_name=agent_name, memory_config=resolved_app_config.memory))
 
     # Add ViewImageMiddleware only if the current model supports vision.
     # Use the resolved runtime model_name from make_lead_agent to avoid stale config values.
-    app_config = get_app_config()
-    model_config = app_config.get_model_config(model_name) if model_name else None
+    model_config = resolved_app_config.get_model_config(model_name) if model_name else None
     if model_config is not None and model_config.supports_vision:
         middlewares.append(ViewImageMiddleware())
 
     # Add DeferredToolFilterMiddleware to hide deferred tool schemas from model binding
-    if app_config.tool_search.enabled:
+    if resolved_app_config.tool_search.enabled:
         from deerflow.agents.middlewares.deferred_tool_filter_middleware import DeferredToolFilterMiddleware
 
         middlewares.append(DeferredToolFilterMiddleware())
@@ -422,7 +442,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
 
     # LoopDetectionMiddleware — detect and break repetitive tool call loops
-    loop_detection_config = app_config.loop_detection
+    loop_detection_config = resolved_app_config.loop_detection
     if loop_detection_config.enabled:
         middlewares.append(LoopDetectionMiddleware.from_config(loop_detection_config))
 
@@ -435,7 +455,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     # that LangChain's reverse-order after_model dispatch runs Safety first;
     # cleared tool_calls then flow through Loop/Subagent accounting without
     # firing extra alarms. See safety_finish_reason_middleware.py docstring.
-    safety_config = app_config.safety_finish_reason
+    safety_config = resolved_app_config.safety_finish_reason
     if safety_config.enabled:
         middlewares.append(SafetyFinishReasonMiddleware.from_config(safety_config))
 
@@ -472,6 +492,10 @@ def make_lead_agent(config: RunnableConfig):
     from deerflow.tools.builtins import setup_agent
 
     cfg = _get_runtime_config(config)
+    runtime_app_config = cfg.get("app_config")
+    has_runtime_app_config = runtime_app_config is not None
+    app_config = runtime_app_config or get_app_config()
+    app_config_for_child_calls = app_config if has_runtime_app_config else None
 
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
@@ -494,9 +518,7 @@ def make_lead_agent(config: RunnableConfig):
     agent_model_name = agent_config.model if agent_config and agent_config.model else None
 
     # Final model name resolution: request → agent config → global default, with fallback for unknown names
-    model_name = _resolve_model_name(requested_model_name or agent_model_name)
-
-    app_config = get_app_config()
+    model_name = _call_with_optional_app_config(_resolve_model_name, requested_model_name or agent_model_name, app_config=app_config)
     model_config = app_config.get_model_config(model_name)
 
     if model_config is None:
@@ -537,27 +559,44 @@ def make_lead_agent(config: RunnableConfig):
 
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
-        tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent]
+        available_tools_kwargs = {"model_name": model_name, "subagent_enabled": subagent_enabled}
+        if has_runtime_app_config:
+            available_tools_kwargs["app_config"] = app_config
+        tools = get_available_tools(**available_tools_kwargs) + [setup_agent]
         return create_agent(
-            model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
+            model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, app_config=app_config_for_child_calls),
             tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
-            middleware=_build_middlewares(config, model_name=model_name),
-            system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, user_id=user_id, available_skills=set(["bootstrap"])),
+            middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, app_config=app_config_for_child_calls),
+            system_prompt=apply_prompt_template(
+                subagent_enabled=subagent_enabled,
+                max_concurrent_subagents=max_concurrent_subagents,
+                user_id=user_id,
+                available_skills=set(["bootstrap"]),
+                app_config=app_config_for_child_calls,
+            ),
             state_schema=ThreadState,
         )
 
     # Default lead agent (unchanged behavior)
-    tools = get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled)
+    available_tools_kwargs = {
+        "model_name": model_name,
+        "groups": agent_config.tool_groups if agent_config else None,
+        "subagent_enabled": subagent_enabled,
+    }
+    if has_runtime_app_config:
+        available_tools_kwargs["app_config"] = app_config
+    tools = get_available_tools(**available_tools_kwargs)
     return create_agent(
-        model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
+        model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, app_config=app_config_for_child_calls),
         tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
-        middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
+        middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, agent_name=agent_name, app_config=app_config_for_child_calls),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
             agent_name=agent_name,
             user_id=user_id,
             available_skills=available_skills,
+            app_config=app_config_for_child_calls,
         ),
         state_schema=ThreadState,
     )

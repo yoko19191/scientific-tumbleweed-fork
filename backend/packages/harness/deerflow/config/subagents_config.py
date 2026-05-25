@@ -24,6 +24,26 @@ class SubagentOverrideConfig(BaseModel):
         default=None,
         description="Model name override for this subagent (None = use global or builtin default)",
     )
+    skills: list[str] | None = Field(
+        default=None,
+        description="Skill names whitelist for this subagent (None = inherit all enabled skills, [] = no skills)",
+    )
+
+
+class CustomSubagentConfig(BaseModel):
+    """User-defined subagent type declared in config.yaml."""
+
+    description: str = Field(description="When the lead agent should delegate to this subagent")
+    system_prompt: str = Field(description="System prompt that guides the subagent's behavior")
+    tools: list[str] | None = Field(default=None, description="Tool names whitelist (None = inherit all tools from parent)")
+    disallowed_tools: list[str] | None = Field(
+        default_factory=lambda: ["task", "ask_clarification", "present_files"],
+        description="Tool names to deny",
+    )
+    skills: list[str] | None = Field(default=None, description="Skill names whitelist (None = inherit all enabled skills, [] = no skills)")
+    model: str = Field(default="inherit", description="Model to use - 'inherit' uses parent's model")
+    max_turns: int = Field(default=50, ge=1, description="Maximum number of agent turns before stopping")
+    timeout_seconds: int = Field(default=900, ge=1, description="Maximum execution time in seconds")
 
 
 class SubagentsAppConfig(BaseModel):
@@ -46,6 +66,10 @@ class SubagentsAppConfig(BaseModel):
     agents: dict[str, SubagentOverrideConfig] = Field(
         default_factory=dict,
         description="Per-agent configuration overrides keyed by agent name",
+    )
+    custom_agents: dict[str, CustomSubagentConfig] = Field(
+        default_factory=dict,
+        description="User-defined subagent types keyed by agent name",
     )
 
     def get_timeout_for(self, agent_name: str) -> int:
@@ -83,6 +107,13 @@ class SubagentsAppConfig(BaseModel):
             return self.model
         return builtin_default
 
+    def get_skills_for(self, agent_name: str) -> list[str] | None:
+        """Get the skills override for a specific agent."""
+        override = self.agents.get(agent_name)
+        if override is not None and override.skills is not None:
+            return override.skills
+        return None
+
 
 _subagents_config: SubagentsAppConfig = SubagentsAppConfig()
 
@@ -106,16 +137,20 @@ def load_subagents_config_from_dict(config_dict: dict) -> None:
             parts.append(f"max_turns={override.max_turns}")
         if override.model is not None:
             parts.append(f"model={override.model}")
+        if override.skills is not None:
+            parts.append(f"skills={override.skills}")
         if parts:
             overrides_summary[name] = ", ".join(parts)
+    custom_agent_names = list(_subagents_config.custom_agents.keys())
 
-    if overrides_summary:
+    if overrides_summary or custom_agent_names:
         logger.info(
-            "Subagents config loaded: default timeout=%ss, default max_turns=%s, default model=%s, per-agent overrides=%s",
+            "Subagents config loaded: default timeout=%ss, default max_turns=%s, default model=%s, per-agent overrides=%s, custom_agents=%s",
             _subagents_config.timeout_seconds,
             _subagents_config.max_turns,
             _subagents_config.model,
-            overrides_summary,
+            overrides_summary or "none",
+            custom_agent_names or "none",
         )
     else:
         logger.info(

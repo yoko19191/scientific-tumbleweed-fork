@@ -29,6 +29,7 @@
 - 2026-05-25: 已完成 G DynamicContextMiddleware 合并，将 memory/current_date 从 lead agent system prompt 移入 hidden `<system-reminder>` HumanMessage；保留 fork 的 `SystemPromptBuilder`、平台人格与 skills/soul 结构，未引入 L4 self-update prompt。
 - 2026-05-25: 已完成 J Stability P0 中可独立提取的前端稳定性子项：subtask terminal status parser、chat export 默认过滤 hidden/reasoning/tool/internal marker；`task_tool` callback recorder 修复因当前 fork 尚无 usage recorder 路径记录为不适用，gateway hot reload 继续单独评估。
 - 2026-05-25: 已完成 J Stability P0 backend 子项：移除 gateway `app.state.config` 启动快照，新增 request-time `get_config()` 热重载依赖，并将 `startup_config` 显式传入 restart-required 的 LangGraph runtime bootstrap；J 批次适用项已收束。
+- 2026-05-25: 已完成 L2 app_config 穿透重构手工适配：gateway `start_run()` 解析 request-time config，worker 注入 runtime context，lead/model/tools/title/memory/task/subagent 路径优先使用显式 `app_config`；保留 fork 的 user_id 隔离、DynamicContext、SystemPromptBuilder、skills/soul 和现有 gateway runtime 结构。
 
 ## 前置准备
 
@@ -800,7 +801,7 @@ git cherry-pick 2eeb5979
 
 **决策状态**: ✅ 已决定采用
 
-- [ ] `8ba01dfd` refactor: thread app_config through lead and subagent task path (#2666) — 19 files, 769+ lines
+- [x] `8ba01dfd` refactor: thread app_config through lead and subagent task path (#2666) — 手工适配完成；未整批 cherry-pick
 
 ```bash
 git checkout -b merge/app-config merge/2026-05-22-upstream-sync
@@ -810,25 +811,36 @@ git cherry-pick 8ba01dfd
 
 **冲突解决要点**
 
-- [ ] fork 的 `middleware_builder.py` 需要接收 `app_config` 参数
-- [ ] `agents/lead_agent/agent.py` 大量定制，逐段适配
-- [ ] `agents/factory.py` 适配 `app_config` 传入
+- [x] fork 的 `middleware_builder.py` 需要接收 `app_config` 参数 — 当前 canonical builder 尚未接入 lead/gateway 主路径，本批不改；后续若恢复统一 builder，再按 `TitleMiddleware(app_config=...)` / `MemoryMiddleware(memory_config=...)` 模式补齐
+- [x] `agents/lead_agent/agent.py` 大量定制，逐段适配
+- [x] `agents/factory.py` 适配 `app_config` 传入 — 当前 SDK factory 仍是 config-free 入口，不从 gateway runtime 接收 AppConfig，本批记录为 not applicable
 
 **Trade-off**
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | 当前 lead/subagent/task 路径仍有隐式 `get_app_config()` 依赖；上游改为显式 app_config 穿透，能支撑热重载和多路径一致性。 |
-| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
-| 取舍结论 | 采用，但这是 L 系列优先级最高的底座改造；必须保留 fork 的 `middleware_builder.py` 和 lead agent 定制。 |
-| 补齐动作 | 逐层传入 app_config；更新 lead/subagent/task 创建路径；确认 gateway/J 的 config hot reload 与 F2 singleton reset 不重复或互相覆盖。 |
-| 建议 merge 节奏 | L 系列第一个处理，为 L1/L3/J gateway 热重载提供稳定底座。 |
+| 当前状态 | 已完成主运行路径显式 `app_config` 穿透：gateway request-time config -> worker runtime context -> lead agent -> model/tools/middlewares -> task tool -> subagent registry/executor。 |
+| 分值 | 当前适配度 4/5；目标收益分 5/5；差距 1。 |
+| 取舍结论 | 采用；保留 fork 的 user_id 隔离、DynamicContext、SystemPromptBuilder、skills/soul 和 gateway runtime 结构，不提前引入 L3 RunStore 或 L1 token usage collector。 |
+| 补齐动作 | 已补 worker/context 与 task_tool 显式 app_config 测试；后续 L1/L3 若接入新的 collector/store，再复用该 context 边界。`middleware_builder.py`/SDK factory 目前不是 gateway 主路径，暂不强行改造。 |
+| 建议 merge 节奏 | L2 已完成；下一步按文档进入 L3 RunStore 持久化，再处理 L1 token usage。 |
+
+**执行备注**
+
+- `app.gateway.services.start_run()` 通过 `app.gateway.deps.get_config()` 读取 request-time `AppConfig`，与 J 的 gateway hot reload 边界一致。
+- `runtime/runs/worker.py` 将 `app_config` 写入 `config["context"]` 和 `Runtime.context`，同时保留 `thread_id` / `run_id` 注入与现有 `run_name` 解析。
+- `lead_agent/agent.py` 只在 runtime context 显式带入 `app_config` 时向 child calls 继续传递；直接 LangGraph/测试路径保留旧的 ambient fallback，避免破坏 fork 现有入口。
+- `task_tool.py` 会把 runtime `app_config` 传给 `get_available_subagent_names()`、`get_subagent_config()`、`get_available_tools()` 和 `SubagentExecutor`；无显式 config 时保留旧签名。
+- `subagents_config.py` 补入 `skills` override 与 `custom_agents` schema，但保留 fork 现有全局 `subagents.model` 语义。
 
 **验证**
 
-- [ ] lead/subagent/task 路径不再隐式依赖 `get_app_config()`
-- [ ] agent 创建流程正常工作
-- [ ] config 变更不需要重启即可生效
+- [x] lead/subagent/task 路径不再隐式依赖 `get_app_config()` — gateway 主路径通过 runtime context 显式传递；直接 SDK/测试入口保留 fallback
+- [x] agent 创建流程正常工作
+- [x] config 变更不需要重启即可生效 — 依赖 J 的 `get_config()` hot reload 边界，本批复用该 request-time config
+- [x] 2026-05-25 L2 回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_lead_agent_model_resolution.py tests/test_lead_agent_prompt.py tests/test_lead_agent_skills.py tests/test_title_middleware_core_logic.py tests/test_task_tool_core_logic.py tests/test_subagent_executor.py tests/test_subagent_timeout_config.py tests/test_run_worker_rollback.py tests/test_run_worker_sandbox_capacity.py tests/test_gateway_services.py tests/test_app_config_reload.py tests/test_gateway_config_freshness.py -q` — 228 passed
+- [x] 2026-05-25 L2 扩展 smoke: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_create_deerflow_agent.py tests/test_prompt_builder.py tests/test_lead_agent_model_resolution.py tests/test_lead_agent_prompt.py tests/test_lead_agent_skills.py tests/test_title_middleware_core_logic.py tests/test_task_tool_core_logic.py tests/test_subagent_executor.py tests/test_subagent_timeout_config.py tests/test_run_worker_rollback.py tests/test_run_worker_sandbox_capacity.py tests/test_gateway_services.py tests/test_app_config_reload.py tests/test_gateway_config_freshness.py -q` — 288 passed
+- [x] 2026-05-25 L2 静态检查: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m py_compile ...` — 通过；`rg -n "^(<<<<<<<|=======|>>>>>>>)" ...` 无冲突标记；`git diff --check` — 通过
 
 ### L3: RunStore 持久化 + 中断状态
 

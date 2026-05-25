@@ -188,7 +188,18 @@ Skip simple one-off tasks.
 """
 
 
-def _build_subagent_section(max_concurrent: int) -> str:
+def _call_with_optional_app_config(func, *args, app_config=None, **kwargs):
+    if app_config is None:
+        return func(*args, **kwargs)
+    try:
+        return func(*args, app_config=app_config, **kwargs)
+    except TypeError as exc:
+        if "app_config" not in str(exc):
+            raise
+        return func(*args, **kwargs)
+
+
+def _build_subagent_section(max_concurrent: int, *, app_config=None) -> str:
     """Build the subagent system prompt section with dynamic concurrency limit.
 
     Args:
@@ -198,7 +209,7 @@ def _build_subagent_section(max_concurrent: int) -> str:
         Formatted subagent section string.
     """
     n = max_concurrent
-    bash_available = "bash" in get_available_subagent_names()
+    bash_available = "bash" in get_available_subagent_names(app_config=app_config)
     available_subagents = (
         "- **general-purpose**: For complex multi-step tasks — web research, literature synthesis, data analysis, code implementation, etc.\n"
         "- **explore**: For investigation with optional workspace actions — codebase exploration, literature survey, command execution, file notes/artifacts\n"
@@ -476,7 +487,7 @@ You have access to skills that provide optimized workflows for specific tasks. E
 </skill_system>"""
 
 
-def get_skills_prompt_section(available_skills: set[str] | None = None, user_id: str | None = None) -> str:
+def get_skills_prompt_section(available_skills: set[str] | None = None, user_id: str | None = None, *, app_config=None) -> str:
     """Generate the skills prompt section with available skills list.
 
     Args:
@@ -486,17 +497,27 @@ def get_skills_prompt_section(available_skills: set[str] | None = None, user_id:
     Returns:
         Formatted skills prompt section string.
     """
-    skills = _get_enabled_skills() if user_id is None else _load_enabled_skills_sync(user_id)
+    if user_id is not None:
+        skills = _load_enabled_skills_sync(user_id)
+    elif app_config is not None:
+        skills = get_enabled_skills_for_config(app_config)
+    else:
+        skills = _get_enabled_skills()
 
-    try:
-        from deerflow.config import get_app_config
+    if app_config is None:
+        try:
+            from deerflow.config import get_app_config
 
-        config = get_app_config()
+            config = get_app_config()
+            container_base_path = config.skills.container_path
+            skill_evolution_enabled = config.skill_evolution.enabled
+        except Exception:
+            container_base_path = "/mnt/skills"
+            skill_evolution_enabled = False
+    else:
+        config = app_config
         container_base_path = config.skills.container_path
         skill_evolution_enabled = config.skill_evolution.enabled
-    except Exception:
-        container_base_path = "/mnt/skills"
-        skill_evolution_enabled = False
 
     if not skills and not skill_evolution_enabled:
         return ""
@@ -520,7 +541,7 @@ def get_agent_soul(agent_name: str | None, user_id: str | None = None) -> str:
     return ""
 
 
-def get_deferred_tools_prompt_section() -> str:
+def get_deferred_tools_prompt_section(*, app_config=None) -> str:
     """Generate <available-deferred-tools> block for the system prompt.
 
     Lists only deferred tool names so the agent knows what exists
@@ -529,12 +550,17 @@ def get_deferred_tools_prompt_section() -> str:
     """
     from deerflow.tools.builtins.tool_search import get_deferred_registry
 
-    try:
-        from deerflow.config import get_app_config
+    if app_config is None:
+        try:
+            from deerflow.config import get_app_config
 
-        if not get_app_config().tool_search.enabled:
+            config = get_app_config()
+        except Exception:
             return ""
-    except Exception:
+    else:
+        config = app_config
+
+    if not config.tool_search.enabled:
         return ""
 
     registry = get_deferred_registry()
@@ -545,15 +571,19 @@ def get_deferred_tools_prompt_section() -> str:
     return f"<available-deferred-tools>\n{names}\n</available-deferred-tools>"
 
 
-def _build_acp_section() -> str:
+def _build_acp_section(*, app_config=None) -> str:
     """Build the ACP agent prompt section, only if ACP agents are configured."""
-    try:
-        from deerflow.config.acp_config import get_acp_agents
+    if app_config is None:
+        try:
+            from deerflow.config.acp_config import get_acp_agents
 
-        agents = get_acp_agents()
-        if not agents:
+            agents = get_acp_agents()
+        except Exception:
             return ""
-    except Exception:
+    else:
+        agents = getattr(app_config, "acp_agents", {}) or {}
+
+    if not agents:
         return ""
 
     return (
@@ -565,15 +595,20 @@ def _build_acp_section() -> str:
     )
 
 
-def _build_custom_mounts_section() -> str:
+def _build_custom_mounts_section(*, app_config=None) -> str:
     """Build a prompt section for explicitly configured sandbox mounts."""
-    try:
-        from deerflow.config import get_app_config
+    if app_config is None:
+        try:
+            from deerflow.config import get_app_config
 
-        mounts = get_app_config().sandbox.mounts or []
-    except Exception:
-        logger.exception("Failed to load configured sandbox mounts for the lead-agent prompt")
-        return ""
+            config = get_app_config()
+        except Exception:
+            logger.exception("Failed to load configured sandbox mounts for the lead-agent prompt")
+            return ""
+    else:
+        config = app_config
+
+    mounts = config.sandbox.mounts or []
 
     if not mounts:
         return ""
@@ -595,6 +630,7 @@ def _apply_prompt_via_builder(
     user_id: str | None = None,
     available_skills: set[str] | None = None,
     tone_style: str = "normal",
+    app_config=None,
 ) -> str:
     """Build system prompt using the modular SystemPromptBuilder.
 
@@ -615,19 +651,19 @@ def _apply_prompt_via_builder(
         builder.with_soul(soul)
 
     # Skills
-    skills = get_skills_prompt_section(available_skills, user_id=user_id)
+    skills = _call_with_optional_app_config(get_skills_prompt_section, available_skills, user_id=user_id, app_config=app_config)
     if skills:
         builder.with_skills(skills)
 
     # Deferred tools
-    deferred = get_deferred_tools_prompt_section()
+    deferred = _call_with_optional_app_config(get_deferred_tools_prompt_section, app_config=app_config)
     if deferred:
         builder.with_deferred_tools(deferred)
 
     # Subagent section
     if subagent_enabled:
         n = max_concurrent_subagents
-        subagent_section = _build_subagent_section(n)
+        subagent_section = _call_with_optional_app_config(_build_subagent_section, n, app_config=app_config)
         builder.with_subagent(subagent_section, enabled=True)
         builder.with_specialized_agents(verification=True, explore=True, plan=True)
 
@@ -635,8 +671,8 @@ def _apply_prompt_via_builder(
     builder.with_clarification(_build_clarification_section())
 
     # Working directory
-    acp_section = _build_acp_section()
-    custom_mounts_section = _build_custom_mounts_section()
+    acp_section = _call_with_optional_app_config(_build_acp_section, app_config=app_config)
+    custom_mounts_section = _call_with_optional_app_config(_build_custom_mounts_section, app_config=app_config)
     acp_and_mounts = "\n".join(s for s in (acp_section, custom_mounts_section) if s)
     builder.with_working_directory(_build_working_directory_section(acp_and_mounts))
 
@@ -778,7 +814,16 @@ def _build_citations_section() -> str:
 </citations>"""
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, user_id: str | None = None, available_skills: set[str] | None = None, tone_style: str = "normal") -> str:
+def apply_prompt_template(
+    subagent_enabled: bool = False,
+    max_concurrent_subagents: int = 3,
+    *,
+    agent_name: str | None = None,
+    user_id: str | None = None,
+    available_skills: set[str] | None = None,
+    tone_style: str = "normal",
+    app_config=None,
+) -> str:
     """Build the lead agent system prompt.
 
     Uses SystemPromptBuilder for modular assembly with static/dynamic cache
@@ -792,6 +837,7 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
             user_id=user_id,
             available_skills=available_skills,
             tone_style=tone_style,
+            app_config=app_config,
         )
     except Exception:
         logger.warning("SystemPromptBuilder failed; falling back to legacy template", exc_info=True)
@@ -801,14 +847,23 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
             agent_name=agent_name,
             user_id=user_id,
             available_skills=available_skills,
+            app_config=app_config,
         )
 
 
-def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, user_id: str | None = None, available_skills: set[str] | None = None) -> str:
+def _apply_legacy_prompt_template(
+    subagent_enabled: bool = False,
+    max_concurrent_subagents: int = 3,
+    *,
+    agent_name: str | None = None,
+    user_id: str | None = None,
+    available_skills: set[str] | None = None,
+    app_config=None,
+) -> str:
     """Legacy template-based prompt assembly (kept as fallback)."""
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
-    subagent_section = _build_subagent_section(n) if subagent_enabled else ""
+    subagent_section = _call_with_optional_app_config(_build_subagent_section, n, app_config=app_config) if subagent_enabled else ""
 
     # Add subagent reminder (kept for legacy template compatibility, now unused in template)
     subagent_reminder = ""
@@ -823,14 +878,14 @@ def _apply_legacy_prompt_template(subagent_enabled: bool = False, max_concurrent
     )
 
     # Get skills section
-    skills_section = get_skills_prompt_section(available_skills, user_id=user_id)
+    skills_section = _call_with_optional_app_config(get_skills_prompt_section, available_skills, user_id=user_id, app_config=app_config)
 
     # Get deferred tools section (tool_search)
-    deferred_tools_section = get_deferred_tools_prompt_section()
+    deferred_tools_section = _call_with_optional_app_config(get_deferred_tools_prompt_section, app_config=app_config)
 
     # Build ACP agent section only if ACP agents are configured
-    acp_section = _build_acp_section()
-    custom_mounts_section = _build_custom_mounts_section()
+    acp_section = _call_with_optional_app_config(_build_acp_section, app_config=app_config)
+    custom_mounts_section = _call_with_optional_app_config(_build_custom_mounts_section, app_config=app_config)
     acp_and_mounts_section = "\n".join(section for section in (acp_section, custom_mounts_section) if section)
 
     # Format the prompt with dynamic skills and memory

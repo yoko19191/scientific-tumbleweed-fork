@@ -117,6 +117,46 @@ async def test_run_agent_defaults_root_run_name_from_configurable_agent_name():
 
 
 @pytest.mark.anyio
+async def test_run_agent_threads_app_config_into_runtime_context():
+    run_manager = RunManager()
+    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    bridge = SimpleNamespace(
+        publish=AsyncMock(),
+        publish_end=AsyncMock(),
+        cleanup=AsyncMock(),
+    )
+    app_config = object()
+    captured: dict[str, object] = {}
+
+    class DummyAgent:
+        async def astream(self, graph_input, config=None, stream_mode=None, subgraphs=False):
+            captured["astream_app_config"] = config["context"]["app_config"]
+            captured["thread_id"] = config["context"]["thread_id"]
+            captured["run_id"] = config["context"]["run_id"]
+            yield {"messages": []}
+
+    def factory(*, config):
+        captured["factory_app_config"] = config["context"]["app_config"]
+        return DummyAgent()
+
+    await run_agent(
+        bridge,
+        run_manager,
+        record,
+        checkpointer=None,
+        agent_factory=factory,
+        graph_input={},
+        config={},
+        app_config=app_config,
+    )
+
+    assert captured["factory_app_config"] is app_config
+    assert captured["astream_app_config"] is app_config
+    assert captured["thread_id"] == "thread-1"
+    assert captured["run_id"] == record.run_id
+
+
+@pytest.mark.anyio
 async def test_rollback_restores_snapshot_without_deleting_thread():
     checkpointer = FakeCheckpointer(put_result={"configurable": {"thread_id": "thread-1", "checkpoint_ns": "", "checkpoint_id": "restored-1"}})
 

@@ -19,7 +19,7 @@ from fastapi import HTTPException, Request
 from langchain_core.messages import BaseMessage
 from langchain_core.messages.utils import convert_to_messages
 
-from app.gateway.deps import get_checkpointer, get_run_manager, get_store, get_stream_bridge
+from app.gateway.deps import get_checkpointer, get_config, get_run_manager, get_store, get_stream_bridge
 from deerflow.runtime import (
     END_SENTINEL,
     HEARTBEAT_SENTINEL,
@@ -299,6 +299,7 @@ async def start_run(
     run_mgr = get_run_manager(request)
     checkpointer = get_checkpointer(request)
     store = get_store(request)
+    app_config = get_config()
 
     disconnect = DisconnectMode.cancel if body.on_disconnect == "cancel" else DisconnectMode.continue_
 
@@ -375,6 +376,7 @@ async def start_run(
             stream_subgraphs=body.stream_subgraphs,
             interrupt_before=body.interrupt_before,
             interrupt_after=body.interrupt_after,
+            app_config=app_config,
         )
     )
     record.task = task

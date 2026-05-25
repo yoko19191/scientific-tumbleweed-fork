@@ -25,6 +25,7 @@
 - 2026-05-25: 已完成 K 批次适用小功能合并：Serper 可选 provider、sandbox download、trace run_name、debug presented paths 物理路径解析、RemoteSandboxBackend `list_running` 说明补齐；`eab7ae3d` 因 backend/frontend token usage 冲突转入 L1 统一处理。
 - 2026-05-25: 已完成 I Safety Termination 合并，新增 `SafetyFinishReasonMiddleware`、provider safety detector 注册表和 `safety_finish_reason` 配置；保留当前 fork runtime/context 结构，未引入 L2/L3 的 app_config threading、RunJournal/database/run_events 改造。
 - 2026-05-25: 已完成 H Loop Detection 增强合并，新增 `LoopDetectionConfig`、per-tool frequency overrides 和 `wrap_model_call` 延迟 warning 注入；配置版本从 6 bump 到 7，未采用上游更高版本号中尚未合并的 database/run_events schema。
+- 2026-05-25: 已完成 D Subagent + Memory 合并，吸收 subagent terminal state 原子写入、system prompt 与 skills 单 SystemMessage 合并、memory queue 按 thread/user/agent 隔离；保留 fork 的 subagent executor 执行语义、`skills=None` 默认加载 enabled skills、`max_turns=100` 和当前 runtime/context 边界。
 
 ## 前置准备
 
@@ -71,7 +72,7 @@ git log --oneline upstream/main | head -5
 - [x] A: Phase 1 安全修复
 - [x] B: Phase 2 Middleware 修复
 - [x] C: Phase 5 MCP 修复 + Phase 6 Runtime 修复（适用项）
-- [ ] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
+- [x] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
 - [x] E: Phase 11 前端修复（适用项已合并，不适用项已记录）
 - [x] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
 - [ ] G: Phase 3 DynamicContextMiddleware，单独分支验证
@@ -212,9 +213,9 @@ git cherry-pick 45060a9f
 **策略**: 逐个 cherry-pick，注意 `subagents/executor.py` 冲突
 **预计耗时**: 45min
 
-- [ ] `3acca126` fix(subagents): make subagent timeout terminal state atomic (#2583)
-- [ ] `813d3c94` fix(subagents): consolidate system_prompt and skills into single SystemMessage (#2701)
-- [ ] `722c690f` fix(memory): isolate queued memory updates by agent (#2941) — 按 agent + user 隔离 memory 队列
+- [x] `3acca126` fix(subagents): make subagent timeout terminal state atomic (#2583)
+- [x] `813d3c94` fix(subagents): consolidate system_prompt and skills into single SystemMessage (#2701)
+- [x] `722c690f` fix(memory): isolate queued memory updates by agent (#2941) — 按 agent + user 隔离 memory 队列
 
 ```bash
 git cherry-pick 3acca126
@@ -224,7 +225,7 @@ git cherry-pick 722c690f
 
 **冲突预警**
 
-- [ ] `813d3c94` 修改 `subagents/executor.py`，fork 有定制，需手动解决
+- [x] `813d3c94` 修改 `subagents/executor.py`，fork 有定制，已手工解决
 
 **Trade-off**
 
@@ -232,14 +233,24 @@ git cherry-pick 722c690f
 |------|------|
 | 当前状态 | 缺少上游 subagent timeout 原子终态、SystemMessage 合并和按 agent 隔离的 memory 队列；fork 的 `subagents/executor.py` 已有定制，不能无脑覆盖。 |
 | 分值 | 当前适配度 3/5；目标收益分 4/5；差距 1。 |
-| 取舍结论 | 采用，但 `813d3c94` 必须手工比对 executor 定制；优先保留 fork 的 subagent 执行语义，再叠加上游终态/消息结构修复。 |
-| 补齐动作 | 补 subagent timeout terminal state 测试；验证 SystemMessage 合并后 skills 与 system prompt 不重复、不丢失；补多 agent memory 队列隔离测试。 |
-| 建议 merge 节奏 | 作为中等耦合批次，在 I/H 之前或之后均可；若 executor 冲突扩大，单独提交 D 批次并暂停进入 G/L。 |
+| 取舍结论 | 已采用；`813d3c94` 采用手工适配，优先保留 fork 的 subagent 执行语义，再叠加上游终态/消息结构修复。 |
+| 补齐动作 | 已补 subagent terminal state 原子写入测试；已验证 SystemMessage 合并后 skills 与 system prompt 不重复、不丢失；已补多 agent / 多 user memory 队列隔离测试。 |
+| 建议 merge 节奏 | D 已完成；后续进入 G/L 前仍需注意 L1 token usage 与 subagent result 字段的边界，避免重复引入 collector 逻辑。 |
+
+**执行备注**
+
+- `3acca126` 已合入 `SubagentResult.try_set_terminal()` 和 terminal status guard，避免 timeout/cancel 与执行线程竞态时 late completion 覆盖 `TIMED_OUT` / `CANCELLED`；未引入 L1 token usage collector，相关字段留到 L1 统一处理。
+- `813d3c94` 已按 fork 当前 executor 手工适配：`create_agent(system_prompt=None)`，`_build_initial_state()` 将 `config.system_prompt` 与 skill content 合并为一个首位 `SystemMessage`，任务仍作为 `HumanMessage` 追加；保留 `skills` 配置字段、`skills=None` 加载全部 enabled skills、`skills=[]` 禁用 skills、`max_turns=100`。
+- `722c690f` 已合入 memory queue key `(thread_id, user_id, agent_name)`，防止同一 thread 中不同 custom agent 或不同 user 的 queued memory update 互相覆盖；当前 fork 缺少上游辅助函数时，补充 `resolve_runtime_user_id()` 并保留 `SummarizationEvent.user_id` fallback。
 
 **验证**
 
-- [ ] subagent 超时状态转换测试
-- [ ] memory 隔离测试: 多 agent 并行写入不互相覆盖
+- [x] subagent 超时状态转换测试
+- [x] memory 隔离测试: 多 agent / 多 user 并行写入不互相覆盖
+- [x] `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_subagent_executor.py tests/test_memory_queue.py tests/test_memory_queue_user_isolation.py tests/test_summarization_middleware.py tests/test_memory_updater.py -q` — 131 passed
+- [x] `PYTHONPYCACHEPREFIX=/private/tmp/st-pycache python3 -m py_compile ...` — D 相关 Python 文件通过
+- [x] `rg -n "<<<<<<<|=======|>>>>>>>" ...` — D 相关文件无冲突标记
+- [x] `git diff --cached --check` — 通过
 
 ## E: 前端修复 (Phase 11)
 
@@ -1026,7 +1037,7 @@ cd frontend && pnpm update next@16.2.6 uuid@14.0.0
 | `e93f6584` (Stability P0) | `gateway/app.py`、`gateway/deps.py` | 选择性提取，评估 config 生命周期变化 |
 | `cef42243` (allowed-tools) | `lead_agent/agent.py`、`lead_agent/prompt.py`、`subagents/executor.py` | fork 的 `agent.py` 有大量定制 |
 | `59c4a3f0` (custom-agent) | `agents_config.py`、`paths.py` | fork 已有 `user_id` 路径，需合并两套隔离逻辑 |
-| `813d3c94` (subagent SystemMessage) | `subagents/executor.py` | fork 的 executor 有定制 |
+| `813d3c94` (subagent SystemMessage) | `subagents/executor.py` | 已在 D 组手工适配；保留 fork executor 定制 |
 
 ## 上次延后项状态
 

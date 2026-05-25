@@ -30,3 +30,18 @@ def get_effective_user_id(default: str = DEFAULT_USER_ID) -> str:
     user = get_current_user()
     user_id = getattr(user, "id", None) if user is not None else None
     return str(user_id) if user_id is not None else default
+
+
+def resolve_runtime_user_id(runtime: Any, default: str | None = None) -> str | None:
+    """Resolve a user ID from runtime context, falling back to request context."""
+    context = getattr(runtime, "context", None)
+    if isinstance(context, dict):
+        user_id = context.get("user_id")
+        if user_id is not None:
+            return str(user_id)
+
+    user = get_current_user()
+    user_id = getattr(user, "id", None) if user is not None else None
+    if user_id is not None:
+        return str(user_id)
+    return default

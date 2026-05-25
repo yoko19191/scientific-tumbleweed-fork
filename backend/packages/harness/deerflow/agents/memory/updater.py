@@ -365,6 +365,7 @@ class MemoryUpdater:
         messages: list[Any],
         thread_id: str | None = None,
         user_id: str | None = None,
+        agent_name: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
     ) -> bool:
@@ -380,6 +381,7 @@ class MemoryUpdater:
             self._do_update_memory_sync,
             messages=messages,
             thread_id=thread_id,
+            agent_name=agent_name,
             correction_detected=correction_detected,
             reinforcement_detected=reinforcement_detected,
             user_id=user_id,
@@ -389,6 +391,7 @@ class MemoryUpdater:
         self,
         messages: list[Any],
         thread_id: str | None = None,
+        agent_name: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
         user_id: str | None = None,
@@ -405,6 +408,7 @@ class MemoryUpdater:
             prepared = self._prepare_update_prompt(
                 messages=messages,
                 user_id=user_id,
+                agent_name=agent_name,
                 correction_detected=correction_detected,
                 reinforcement_detected=reinforcement_detected,
             )
@@ -432,6 +436,7 @@ class MemoryUpdater:
         messages: list[Any],
         thread_id: str | None = None,
         user_id: str | None = None,
+        agent_name: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
     ) -> bool:
@@ -450,6 +455,7 @@ class MemoryUpdater:
             messages: List of conversation messages.
             thread_id: Optional thread ID for tracking source.
             user_id: If provided, updates per-user memory. If None, updates global memory.
+            agent_name: Optional custom agent name associated with the memory update.
             correction_detected: Whether recent turns include an explicit correction signal.
             reinforcement_detected: Whether recent turns include a positive reinforcement signal.
 
@@ -468,6 +474,7 @@ class MemoryUpdater:
                     messages=messages,
                     thread_id=thread_id,
                     user_id=user_id,
+                    agent_name=agent_name,
                     correction_detected=correction_detected,
                     reinforcement_detected=reinforcement_detected,
                 )
@@ -480,6 +487,7 @@ class MemoryUpdater:
             messages=messages,
             thread_id=thread_id,
             user_id=user_id,
+            agent_name=agent_name,
             correction_detected=correction_detected,
             reinforcement_detected=reinforcement_detected,
         )
@@ -575,6 +583,7 @@ def update_memory_from_conversation(
     messages: list[Any],
     thread_id: str | None = None,
     user_id: str | None = None,
+    agent_name: str | None = None,
     correction_detected: bool = False,
     reinforcement_detected: bool = False,
 ) -> bool:
@@ -584,6 +593,7 @@ def update_memory_from_conversation(
         messages: List of conversation messages.
         thread_id: Optional thread ID.
         user_id: If provided, updates per-user memory. If None, updates global memory.
+        agent_name: Optional custom agent name associated with the memory update.
         correction_detected: Whether recent turns include an explicit correction signal.
         reinforcement_detected: Whether recent turns include a positive reinforcement signal.
 
@@ -591,4 +601,11 @@ def update_memory_from_conversation(
         True if successful, False otherwise.
     """
     updater = MemoryUpdater()
-    return updater.update_memory(messages, thread_id, user_id, correction_detected, reinforcement_detected)
+    return updater.update_memory(
+        messages=messages,
+        thread_id=thread_id,
+        user_id=user_id,
+        agent_name=agent_name,
+        correction_detected=correction_detected,
+        reinforcement_detected=reinforcement_detected,
+    )

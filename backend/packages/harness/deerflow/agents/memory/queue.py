@@ -40,11 +40,21 @@ class MemoryUpdateQueue:
         self._timer: threading.Timer | None = None
         self._processing = False
 
+    @staticmethod
+    def _queue_key(
+        thread_id: str,
+        user_id: str | None,
+        agent_name: str | None,
+    ) -> tuple[str, str | None, str | None]:
+        """Return the debounce identity for a memory update target."""
+        return (thread_id, user_id, agent_name)
+
     def add(
         self,
         thread_id: str,
         messages: list[Any],
         user_id: str | None = None,
+        agent_name: str | None = None,
         correction_detected: bool = False,
         reinforcement_detected: bool = False,
     ) -> None:
@@ -54,6 +64,7 @@ class MemoryUpdateQueue:
             thread_id: The thread ID.
             messages: The conversation messages.
             user_id: If provided, memory is stored per-user. If None, uses global memory.
+            agent_name: If provided, keeps custom-agent memory updates isolated.
             correction_detected: Whether recent turns include an explicit correction signal.
             reinforcement_detected: Whether recent turns include a positive reinforcement signal.
         """
@@ -66,6 +77,7 @@ class MemoryUpdateQueue:
                 thread_id=thread_id,
                 messages=messages,
                 user_id=user_id,
+                agent_name=agent_name,
                 correction_detected=correction_detected,
                 reinforcement_detected=reinforcement_detected,
             )
@@ -110,8 +122,9 @@ class MemoryUpdateQueue:
         correction_detected: bool,
         reinforcement_detected: bool,
     ) -> None:
+        queue_key = self._queue_key(thread_id, user_id, agent_name)
         existing_context = next(
-            (context for context in self._queue if context.thread_id == thread_id),
+            (context for context in self._queue if self._queue_key(context.thread_id, context.user_id, context.agent_name) == queue_key),
             None,
         )
         merged_correction_detected = correction_detected or (existing_context.correction_detected if existing_context is not None else False)
@@ -125,7 +138,7 @@ class MemoryUpdateQueue:
             reinforcement_detected=merged_reinforcement_detected,
         )
 
-        self._queue = [c for c in self._queue if c.thread_id != thread_id]
+        self._queue = [context for context in self._queue if self._queue_key(context.thread_id, context.user_id, context.agent_name) != queue_key]
         self._queue.append(context)
 
     def _reset_timer(self) -> None:
@@ -175,13 +188,16 @@ class MemoryUpdateQueue:
             for context in contexts_to_process:
                 try:
                     logger.info("Updating memory for thread %s", context.thread_id)
-                    success = updater.update_memory(
-                        messages=context.messages,
-                        thread_id=context.thread_id,
-                        user_id=context.user_id,
-                        correction_detected=context.correction_detected,
-                        reinforcement_detected=context.reinforcement_detected,
-                    )
+                    update_kwargs: dict[str, Any] = {
+                        "messages": context.messages,
+                        "thread_id": context.thread_id,
+                        "user_id": context.user_id,
+                        "correction_detected": context.correction_detected,
+                        "reinforcement_detected": context.reinforcement_detected,
+                    }
+                    if context.agent_name is not None:
+                        update_kwargs["agent_name"] = context.agent_name
+                    success = updater.update_memory(**update_kwargs)
                     if success:
                         logger.info("Memory updated successfully for thread %s", context.thread_id)
                     else:

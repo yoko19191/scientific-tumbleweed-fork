@@ -21,7 +21,7 @@ class SubagentConfig:
 
     name: str
     description: str
-    system_prompt: str
+    system_prompt: str | None = None
     skills: list[str] | None = None
     tools: list[str] | None = None
     disallowed_tools: list[str] | None = field(default_factory=lambda: ["task"])

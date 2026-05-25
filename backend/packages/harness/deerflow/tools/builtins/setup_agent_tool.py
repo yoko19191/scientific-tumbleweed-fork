@@ -3,20 +3,20 @@ import logging
 import yaml
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
-from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
 
 from deerflow.config.agents_config import validate_agent_name
 from deerflow.config.paths import get_paths
+from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
 
 
-@tool
+@tool(parse_docstring=True)
 def setup_agent(
     soul: str,
     description: str,
-    runtime: ToolRuntime,
+    runtime: Runtime,
 ) -> Command:
     """Setup the custom Scientific Tumbleweed agent.
 

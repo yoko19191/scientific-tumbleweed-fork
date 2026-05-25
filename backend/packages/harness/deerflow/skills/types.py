@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+SKILL_MD_FILE = "SKILL.md"
+
 
 @dataclass
 class Skill:
@@ -13,6 +15,7 @@ class Skill:
     skill_file: Path
     relative_path: Path  # Relative path from category root to skill directory
     category: str  # 'public' or 'custom'
+    allowed_tools: list[str] | None = None
     enabled: bool = False  # Whether this skill is enabled
 
     @property

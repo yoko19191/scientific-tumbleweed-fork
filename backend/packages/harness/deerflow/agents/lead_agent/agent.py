@@ -19,10 +19,12 @@ from deerflow.agents.middlewares.tool_error_handling_middleware import build_lea
 from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config, validate_agent_name
-from deerflow.config.app_config import get_app_config
+from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.config.memory_config import get_memory_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
+from deerflow.skills.tool_policy import filter_tools_by_skill_allowed_tools
+from deerflow.skills.types import Skill
 
 if TYPE_CHECKING:
     pass
@@ -423,6 +425,28 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
     return middlewares
 
 
+def _available_skill_names(agent_config, is_bootstrap: bool) -> set[str] | None:
+    if is_bootstrap:
+        return {"bootstrap"}
+    if agent_config and agent_config.skills is not None:
+        return set(agent_config.skills)
+    return None
+
+
+def _load_enabled_skills_for_tool_policy(available_skills: set[str] | None, *, app_config: AppConfig) -> list[Skill]:
+    try:
+        from deerflow.agents.lead_agent.prompt import get_enabled_skills_for_config
+
+        skills = get_enabled_skills_for_config(app_config)
+    except Exception:
+        logger.exception("Failed to load skills for allowed-tools policy")
+        raise
+
+    if available_skills is None:
+        return skills
+    return [skill for skill in skills if skill.name in available_skills]
+
+
 def make_lead_agent(config: RunnableConfig):
     # Lazy import to avoid circular dependency
     from deerflow.tools import get_available_tools
@@ -440,10 +464,15 @@ def make_lead_agent(config: RunnableConfig):
     agent_name = validate_agent_name(cfg.get("agent_name"))
     user_id = config.get("metadata", {}).get("user_id")
 
-    agent_config = load_agent_config(agent_name, user_id=user_id) if not is_bootstrap else None
+    if is_bootstrap:
+        agent_config = None
+    elif user_id is None:
+        agent_config = load_agent_config(agent_name)
+    else:
+        agent_config = load_agent_config(agent_name, user_id=user_id)
+    available_skills = _available_skill_names(agent_config, is_bootstrap)
     # Custom agent model from agent config (if any), or None to let _resolve_model_name pick the default
     agent_model_name = agent_config.model if agent_config and agent_config.model else None
-    available_skills = set(agent_config.skills) if agent_config and agent_config.skills is not None else None
 
     # Final model name resolution: request → agent config → global default, with fallback for unknown names
     model_name = _resolve_model_name(requested_model_name or agent_model_name)
@@ -481,24 +510,28 @@ def make_lead_agent(config: RunnableConfig):
             "is_plan_mode": is_plan_mode,
             "subagent_enabled": subagent_enabled,
             "tool_groups": agent_config.tool_groups if agent_config else None,
-            "available_skills": ["bootstrap"] if is_bootstrap else (agent_config.skills if agent_config and agent_config.skills is not None else None),
+            "available_skills": sorted(available_skills) if available_skills is not None else None,
         }
     )
 
+    skills_for_tool_policy = _load_enabled_skills_for_tool_policy(available_skills, app_config=app_config)
+
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
+        tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent]
         return create_agent(
             model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
-            tools=get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled) + [setup_agent],
+            tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
             middleware=_build_middlewares(config, model_name=model_name),
             system_prompt=apply_prompt_template(subagent_enabled=subagent_enabled, max_concurrent_subagents=max_concurrent_subagents, user_id=user_id, available_skills=set(["bootstrap"])),
             state_schema=ThreadState,
         )
 
     # Default lead agent (unchanged behavior)
+    tools = get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled)
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort),
-        tools=get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled),
+        tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
         middleware=_build_middlewares(config, model_name=model_name, agent_name=agent_name),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled,

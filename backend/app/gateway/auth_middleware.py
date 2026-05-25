@@ -12,6 +12,9 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
 from app.gateway.auth.errors import AuthErrorCode
+from app.gateway.authz import _ALL_PERMISSIONS, AuthContext
+from app.gateway.internal_auth import INTERNAL_AUTH_HEADER_NAME, get_internal_user, is_valid_internal_auth_token
+from deerflow.runtime.user_context import reset_current_user, set_current_user
 
 # Paths that never require authentication.
 _PUBLIC_PATH_PREFIXES: tuple[str, ...] = (
@@ -56,8 +59,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if _is_public(request.url.path):
             return await call_next(request)
 
+        internal_user = None
+        if is_valid_internal_auth_token(request.headers.get(INTERNAL_AUTH_HEADER_NAME)):
+            internal_user = get_internal_user()
+
         # Non-public path: require session cookie
-        if not request.cookies.get("access_token"):
+        if internal_user is None and not request.cookies.get("access_token"):
             return JSONResponse(
                 status_code=401,
                 content={
@@ -67,5 +74,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     }
                 },
             )
+
+        if internal_user is not None:
+            request.state.user = internal_user
+            request.state.auth = AuthContext(user=internal_user, permissions=_ALL_PERMISSIONS)
+            token = set_current_user(internal_user)
+            try:
+                return await call_next(request)
+            finally:
+                reset_current_user(token)
 
         return await call_next(request)

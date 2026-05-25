@@ -55,6 +55,36 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
     sandbox.update_file.assert_not_called()
 
 
+def test_upload_files_auto_renames_duplicate_form_filenames(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        _patch_require_owner(),
+        patch.object(uploads, "get_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        result = asyncio.run(
+            uploads.upload_files(
+                "thread-local",
+                _mock_request(),
+                files=[
+                    UploadFile(filename="data.txt", file=BytesIO(b"first")),
+                    UploadFile(filename="data.txt", file=BytesIO(b"second")),
+                ],
+            )
+        )
+
+    assert result.success is True
+    assert [file_info["filename"] for file_info in result.files] == ["data.txt", "data_1.txt"]
+    assert "original_filename" not in result.files[0]
+    assert result.files[1]["original_filename"] == "data.txt"
+    assert (thread_uploads_dir / "data.txt").read_bytes() == b"first"
+    assert (thread_uploads_dir / "data_1.txt").read_bytes() == b"second"
 
 
 def test_upload_files_skips_acquire_when_thread_data_is_mounted(tmp_path):

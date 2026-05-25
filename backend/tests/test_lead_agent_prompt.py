@@ -9,6 +9,16 @@ from deerflow.prompts.sections import SYSTEM_PROMPT_DYNAMIC_BOUNDARY
 from deerflow.skills.types import Skill
 
 
+def _set_skills_cache_state(*, skills=None, active=False, version=0):
+    prompt_module._get_cached_skills_prompt_section.cache_clear()
+    with prompt_module._enabled_skills_lock:
+        prompt_module._enabled_skills_cache = skills
+        prompt_module._enabled_skills_by_config_cache.clear()
+        prompt_module._enabled_skills_refresh_active = active
+        prompt_module._enabled_skills_refresh_version = version
+        prompt_module._enabled_skills_refresh_event.clear()
+
+
 def test_build_custom_mounts_section_returns_empty_when_no_mounts(monkeypatch):
     config = SimpleNamespace(sandbox=SimpleNamespace(mounts=[]))
     monkeypatch.setattr("deerflow.config.get_app_config", lambda: config)
@@ -106,7 +116,7 @@ def test_apply_prompt_template_includes_collaboration_mechanics(monkeypatch):
     assert "上下文连续" in prompt
     assert "技能路由" in prompt
     assert "文件交付" in prompt
-    assert "研究证据" in prompt
+    assert "学术论断" in prompt
     assert "关系边界" in prompt
     assert "当前用户明确指令优先于旧记忆" in prompt
 

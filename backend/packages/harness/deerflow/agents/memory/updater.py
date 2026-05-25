@@ -287,8 +287,8 @@ class MemoryUpdater:
 
     def _build_correction_hint(
         self,
-        correction_detected: bool,
-        reinforcement_detected: bool,
+        correction_detected: bool = False,
+        reinforcement_detected: bool = False,
     ) -> str:
         """Build optional prompt hints for correction and reinforcement signals."""
         correction_hint = ""
@@ -313,9 +313,10 @@ class MemoryUpdater:
     def _prepare_update_prompt(
         self,
         messages: list[Any],
-        user_id: str | None,
-        correction_detected: bool,
-        reinforcement_detected: bool,
+        user_id: str | None = None,
+        correction_detected: bool = False,
+        reinforcement_detected: bool = False,
+        agent_name: str | None = None,
     ) -> tuple[dict[str, Any], str] | None:
         """Load memory and build the update prompt for a conversation."""
         config = get_memory_config()
@@ -332,7 +333,7 @@ class MemoryUpdater:
             reinforcement_detected=reinforcement_detected,
         )
         prompt = MEMORY_UPDATE_PROMPT.format(
-            current_memory=json.dumps(current_memory, indent=2),
+            current_memory=json.dumps(current_memory, indent=2, ensure_ascii=False),
             conversation=conversation_text,
             correction_hint=correction_hint,
         )

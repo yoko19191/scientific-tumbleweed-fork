@@ -70,7 +70,7 @@ git log --oneline upstream/main | head -5
 - [x] C: Phase 5 MCP 修复 + Phase 6 Runtime 修复（适用项）
 - [ ] D: Phase 9 Subagent 修复 + Phase 10 Memory 修复
 - [x] E: Phase 11 前端修复（适用项已合并，不适用项已记录）
-- [ ] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
+- [x] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
 - [ ] G: Phase 3 DynamicContextMiddleware，单独分支验证
 - [ ] H: Phase 4 Loop Detection 增强，单独分支验证
 - [ ] I: Phase 7 Safety Termination，单独分支验证
@@ -328,30 +328,30 @@ git cherry-pick e74e126e
 
 ### F2: 通用修复
 
-- [ ] `4ead2c6b` fix(config): reset config-backed singletons on hot reload (#2588)
-- [ ] `ca3332f8` fix(gateway): return ISO 8601 timestamps from threads endpoints (#2599)
-- [ ] `f80ac961` fix(harness): restore legacy skills path fallback (#2694) (#2696)
-- [ ] `a814ab50` fix(skills): make security scanner JSON parsing robust for LLM output variations (#2987)
-- [ ] `7a2670ea` fix(gateway): cap skill artifact preview size (#2963)
-- [ ] `cef42243` fix(skills): enforce allowed-tools metadata (#2626) — skill 允许工具白名单
-- [ ] `f1a0ab69` fix(tools): preserve tool_search promotions across re-entrant get_available_tools (#2885)
-- [ ] `30a58462` fix(tools): make write_file append discoverable in model-facing schema (#2843)
-- [ ] `7de9b582` fix(tools): introduce Runtime type alias to eliminate Pydantic serialization warning (#2774)
-- [ ] `3599b570` fix(harness): wrap all async-only tools for sync clients (#2935)
-- [ ] `bedbf229` fix(harness): wrap async-only config tools for sync client execution (#2878)
-- [ ] `b6b3650e` fix(trace): memory 中文 in trace info is unicode escape sequence (#3104)
-- [ ] `9c03a71a` fix(gateway): preserve message additional_kwargs in normalize_input (#3132) (#3136)
-- [ ] `31513c2c` fix(persistence): emit tz-aware timestamps from SQLite-backed stores (#3130)
-- [ ] `37db6893` fix(events): serialize structured db event content (#2762)
-- [ ] `7a3c58a7` Fix duplicate gateway upload filenames (#2789)
-- [ ] `70737af7` fix(nginx): resolve CSRF auth failure on non-standard ports (#2796)
-- [ ] `c3bc6c7c` fix(nginx): defer CORS to gateway allowlist (#2861)
-- [ ] `028493bf` fix(docker): force nginx to resolve upstream names at request time (#2717)
-- [ ] `82e7936d` fix(docker): set UTF-8 locale to prevent ASCII encoding errors in minimal containers (#2707)
-- [ ] `8cd4710b` fix(deploy): fall back to python/openssl when python3 is absent for secret generation (#3074)
-- [ ] `9abe5a18` fix: clean up local nginx on stop (#3005)
-- [ ] `1336872b` fix(channels): authenticate gateway command requests (#2742)
-- [ ] `8e48b7e8` fix(channels): preserve clarification conversation history across follow-up turns (#2444)
+- [x] `4ead2c6b` fix(config): reset config-backed singletons on hot reload (#2588)
+- [x] `ca3332f8` fix(gateway): return ISO 8601 timestamps from threads endpoints (#2599)
+- [x] `f80ac961` fix(harness): restore legacy skills path fallback (#2694) (#2696)
+- [x] `a814ab50` fix(skills): make security scanner JSON parsing robust for LLM output variations (#2987)
+- [x] `7a2670ea` fix(gateway): cap skill artifact preview size (#2963)
+- [x] `cef42243` fix(skills): enforce allowed-tools metadata (#2626) — skill 允许工具白名单
+- [x] `f1a0ab69` fix(tools): preserve tool_search promotions across re-entrant get_available_tools (#2885)
+- [x] `30a58462` fix(tools): make write_file append discoverable in model-facing schema (#2843)
+- [x] `7de9b582` fix(tools): introduce Runtime type alias to eliminate Pydantic serialization warning (#2774)
+- [x] `3599b570` fix(harness): wrap all async-only tools for sync clients (#2935)
+- [x] `bedbf229` fix(harness): wrap async-only config tools for sync client execution (#2878)
+- [x] `b6b3650e` fix(trace): memory 中文 in trace info is unicode escape sequence (#3104)
+- [x] `9c03a71a` fix(gateway): preserve message additional_kwargs in normalize_input (#3132) (#3136)
+- [x] `31513c2c` fix(persistence): emit tz-aware timestamps from SQLite-backed stores (#3130) — skipped/not applicable: fork 已移除上游旧 SQLite persistence store 路径
+- [x] `37db6893` fix(events): serialize structured db event content (#2762) — skipped/not applicable: fork 已移除上游旧 DB event store 路径
+- [x] `7a3c58a7` Fix duplicate gateway upload filenames (#2789)
+- [x] `70737af7` fix(nginx): resolve CSRF auth failure on non-standard ports (#2796)
+- [x] `c3bc6c7c` fix(nginx): defer CORS to gateway allowlist (#2861)
+- [x] `028493bf` fix(docker): force nginx to resolve upstream names at request time (#2717)
+- [x] `82e7936d` fix(docker): set UTF-8 locale to prevent ASCII encoding errors in minimal containers (#2707)
+- [x] `8cd4710b` fix(deploy): fall back to python/openssl when python3 is absent for secret generation (#3074)
+- [x] `9abe5a18` fix: clean up local nginx on stop (#3005)
+- [x] `1336872b` fix(channels): authenticate gateway command requests (#2742)
+- [x] `8e48b7e8` fix(channels): preserve clarification conversation history across follow-up turns (#2444)
 
 ```bash
 git cherry-pick 4ead2c6b
@@ -380,6 +380,18 @@ git cherry-pick 1336872b
 git cherry-pick 8e48b7e8
 ```
 
+**F2 执行结果**
+
+- 采用 `git cherry-pick -n` 批量合并 F2，并按 gateway/config、skills/tools、nginx/docker/deploy、channels、memory 分组手工解析冲突。
+- `4ead2c6b` 只吸收 config-backed singleton reset；保留 fork 当前 `AppConfig` 字段边界，未提前引入 L2 `app_config` 全链路 threading。
+- `ca3332f8` 适配到 fork 的 user-scoped thread Store，新增 legacy Unix timestamp 到 ISO 8601 的兼容转换；旧 `thread_meta` memory 模块未恢复。
+- `f80ac961` 使用当前 `skills_config` 路径模型实现 legacy fallback；上游 `runtime_paths.py` / `test_runtime_paths.py` 不适用于当前仓库结构，未恢复。
+- `cef42243` 合入 `allowed-tools` 解析、校验和 tool policy；subagent 的显式 `skills=[]` 继续表示禁用，`skills=None` 保持 legacy 行为。
+- `30a58462` / `7de9b582` / `3599b570` / `bedbf229` 合入 `write_file append` schema、`Runtime` alias 和 async-only sync wrapper；`update_agent_tool.py` 仍属于 L4 自更新批次，未在 F2 恢复。
+- `31513c2c` 与 `37db6893` 命中 modify/delete：上游旧 SQLite persistence/event store 在 fork 中已不存在，保留删除并记录为 skipped/not applicable。
+- `c3bc6c7c` / `028493bf` 仅吸收 CORS 下沉到 Gateway allowlist、官方 `/api/langgraph/` 经 Gateway、Docker DNS request-time resolution；保留 fork 的本地 direct/debug 能力和现有 launcher 结构。
+- `1336872b` 手工补齐当前 fork 缺失的 `internal_auth`、channel command registry 和 `user_context` 轻量上下文，以支持 channel 内部 Gateway 调用通过 auth/CSRF 边界。
+
 **Trade-off**
 
 | 项目 | 说明 |
@@ -396,8 +408,10 @@ git cherry-pick 8e48b7e8
 - [x] 2026-05-24 F1 sandbox 回归: `PYTHONPATH=. uv run python -m pytest tests/test_aio_sandbox_provider.py tests/test_aio_sandbox_readiness.py tests/test_remote_sandbox_backend.py tests/test_sandbox_middleware.py tests/test_local_sandbox_provider_mounts.py tests/test_local_sandbox_virtual_path_contract.py tests/test_provisioner_pvc_volumes.py -q`，结果 `134 passed, 1 warning`。
 - [x] 2026-05-24 F1 静态检查: `rg -n "<<<<<<<|>>>>>>>" backend docker docs` 无残留冲突标记；`PYTHONPYCACHEPREFIX=/private/tmp/st-pycache python3 -m py_compile ...` 通过。
 - [ ] sandbox 启动/停止/数据隔离测试（F1 已覆盖 provider/mount/API 边界；真实 Docker/K8S 启停留到 F2 或最终 smoke）
-- [ ] gateway API 基本功能测试
-- [ ] nginx 配置测试: CORS、CSRF、端口
+- [x] 2026-05-25 F2 静态检查: `rg -n "<<<<<<<|>>>>>>>" . backend docker scripts README.md CONTRIBUTING.md` 无残留冲突标记；`bash -n scripts/deploy.sh scripts/serve.sh` 通过；相关 Python 文件 `py_compile` 通过。
+- [x] 2026-05-25 F2 后端回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_app_config_reload.py tests/test_threads_router.py tests/test_utils_time.py tests/test_skills_loader.py tests/test_security_scanner.py tests/test_artifacts_router.py tests/test_lead_agent_prompt.py tests/test_subagent_executor.py tests/test_lead_agent_skills.py tests/test_skills_parser.py tests/test_skills_validation.py tests/test_tool_deduplication.py tests/test_mcp_sync_wrapper.py tests/test_tool_args_schema_no_pydantic_warning.py tests/test_gateway_services.py tests/test_uploads_router.py tests/test_gateway_runtime_cleanup.py tests/test_gateway_docs_toggle.py tests/test_channels.py tests/test_memory_updater.py tests/test_deferred_tool_registry_promotion.py tests/test_deferred_tool_promotion_real_llm.py -q`，结果 `410 passed, 1 skipped, 6 warnings`。
+- [x] gateway API 基本功能测试（覆盖 threads、uploads、normalize_input、docs toggle、channels internal gateway fetch）
+- [x] nginx 配置测试: CORS 下沉 Gateway allowlist、CSRF Host 端口保留、Docker upstream request-time resolution
 
 ## G: DynamicContextMiddleware (Phase 3)
 

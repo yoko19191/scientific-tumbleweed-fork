@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.gateway.config import get_gateway_config
+from app.gateway.csrf_middleware import get_configured_cors_origins
 from app.gateway.deps import langgraph_runtime
 from app.gateway.routers import (
     agents,
@@ -239,7 +240,9 @@ def create_app() -> FastAPI:
         Configured FastAPI application instance.
     """
     config = get_gateway_config()
-    docs_kwargs = {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"} if config.enable_docs else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    docs_url = "/docs" if config.enable_docs else None
+    redoc_url = "/redoc" if config.enable_docs else None
+    openapi_url = "/openapi.json" if config.enable_docs else None
 
     app = FastAPI(
         title="Scientific Tumbleweed API Gateway",
@@ -259,12 +262,14 @@ API Gateway for Scientific Tumbleweed - A LangGraph-based AI agent backend with 
 
 ### Architecture
 
-LangGraph requests are handled by nginx reverse proxy.
-This gateway provides custom endpoints for models, MCP configuration, skills, and artifacts.
+LangGraph-compatible requests are routed through nginx to this gateway.
+This gateway provides runtime endpoints for agent runs plus custom endpoints for models, MCP configuration, skills, and artifacts.
         """,
         version="0.1.0",
         lifespan=lifespan,
-        **docs_kwargs,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
         openapi_tags=[
             {
                 "name": "models",
@@ -321,22 +326,20 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
         ],
     )
 
-    # CORS — allow localhost origins for local dev (nginx handles this in production)
+    # CORS: the unified nginx endpoint is same-origin by default. Split-origin
+    # browser clients must opt in with this explicit Gateway allowlist so CORS
+    # and CSRF origin checks share the same source of truth.
     from fastapi.middleware.cors import CORSMiddleware
 
-    dev_origins = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:2026",
-        "http://127.0.0.1:2026",
-    ]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=dev_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    cors_origins = sorted(get_configured_cors_origins())
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # Auth & CSRF middleware (order matters: CSRF runs after auth)
     from app.gateway.auth_middleware import AuthMiddleware
@@ -344,7 +347,6 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
 
     app.add_middleware(CSRFMiddleware)
     app.add_middleware(AuthMiddleware)
-
     # Include routers
     # Auth API is mounted at /api/v1/auth
     app.include_router(auth.router)
@@ -392,7 +394,7 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
     app.include_router(runs.router)
 
     @app.get("/health", tags=["health"])
-    async def health_check() -> dict:
+    async def health_check() -> dict[str, str]:
         """Health check endpoint.
 
         Returns:

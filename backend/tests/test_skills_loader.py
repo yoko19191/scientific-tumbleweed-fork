@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from deerflow.config import skills_config as skills_config_module
+from deerflow.config.skills_config import SkillsConfig
 from deerflow.skills.loader import get_skills_root_path, load_skills
 
 
@@ -17,6 +19,38 @@ def test_get_skills_root_path_points_to_project_root_skills():
     path = get_skills_root_path()
     assert path.name == "skills", f"Expected 'skills', got '{path.name}'"
     assert (path.parent / "backend").is_dir(), f"Expected skills path's parent to be project root containing 'backend/', but got {path}"
+
+
+def test_skills_config_points_to_current_project_skills(tmp_path: Path, monkeypatch):
+    """SkillsConfig should prefer the caller project's skills directory."""
+    monkeypatch.delenv("DEER_FLOW_SKILLS_PATH", raising=False)
+    monkeypatch.delenv("DEER_FLOW_PROJECT_ROOT", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "skills").mkdir()
+
+    assert SkillsConfig().get_skills_path() == tmp_path / "skills"
+
+
+def test_skills_config_honors_env_override(tmp_path: Path, monkeypatch):
+    """DEER_FLOW_SKILLS_PATH should override the caller project skills directory."""
+    skills_root = tmp_path / "team-skills"
+    monkeypatch.setenv("DEER_FLOW_SKILLS_PATH", str(skills_root))
+
+    assert SkillsConfig().get_skills_path() == skills_root
+
+
+def test_skills_config_falls_back_to_legacy_repo_skills(tmp_path: Path, monkeypatch):
+    """When cwd lacks skills, preserve the monorepo repo-root fallback."""
+    monkeypatch.delenv("DEER_FLOW_SKILLS_PATH", raising=False)
+    monkeypatch.delenv("DEER_FLOW_PROJECT_ROOT", raising=False)
+    cwd = tmp_path / "cwd"
+    cwd.mkdir()
+    legacy_skills = tmp_path / "legacy-repo" / "skills"
+    legacy_skills.mkdir(parents=True)
+    monkeypatch.chdir(cwd)
+    monkeypatch.setattr(skills_config_module, "_legacy_skills_candidates", lambda: (legacy_skills,))
+
+    assert SkillsConfig().get_skills_path() == legacy_skills
 
 
 def test_load_skills_discovers_nested_skills_and_sets_container_paths(tmp_path: Path):

@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 from starlette.responses import FileResponse
@@ -140,3 +140,17 @@ def test_get_artifact_skill_archive_returns_401_when_unauthenticated() -> None:
     with TestClient(app, raise_server_exceptions=False) as client:
         resp = client.get("/api/threads/thread-1/artifacts/mnt/user-data/outputs/sample.skill/SKILL.md")
     assert resp.status_code == 401
+
+
+def test_skill_archive_preview_rejects_oversized_member_before_decompression(tmp_path) -> None:
+    skill_path = tmp_path / "sample.skill"
+    payload = b"A" * (artifacts_router.MAX_SKILL_ARCHIVE_MEMBER_BYTES + 1)
+    with zipfile.ZipFile(skill_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zip_ref:
+        zip_ref.writestr("SKILL.md", payload)
+
+    assert skill_path.stat().st_size < artifacts_router.MAX_SKILL_ARCHIVE_MEMBER_BYTES
+
+    with pytest.raises(HTTPException) as exc_info:
+        artifacts_router._extract_file_from_skill_archive(skill_path, "SKILL.md")
+
+    assert exc_info.value.status_code == 413

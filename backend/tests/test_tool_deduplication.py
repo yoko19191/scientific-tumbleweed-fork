@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from langchain_core.tools import BaseTool, tool
+from langchain_core.tools import BaseTool, StructuredTool, tool
+from pydantic import BaseModel
 
 from deerflow.tools.tools import get_available_tools
 
@@ -41,6 +42,10 @@ def _tool_beta(x: str) -> str:
     return x
 
 
+class AsyncToolArgs(BaseModel):
+    x: int
+
+
 # ---------------------------------------------------------------------------
 # Deduplication behaviour
 # ---------------------------------------------------------------------------
@@ -52,14 +57,105 @@ def _make_minimal_config(tools):
     config.tools = tools
     config.models = []
     config.tool_search.enabled = False
+    config.skill_evolution.enabled = False
     config.sandbox = MagicMock()
+    config.acp_agents = {}
     return config
 
 
 @patch("deerflow.tools.tools.get_app_config")
 @patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
-@patch("deerflow.tools.tools.reset_deferred_registry")
-def test_no_duplicates_returned(mock_reset, mock_bash, mock_cfg):
+def test_config_loaded_async_only_tool_gets_sync_wrapper(mock_bash, mock_cfg):
+    """Config-loaded async-only tools can still be invoked by sync clients."""
+
+    async def async_tool_impl(x: int) -> str:
+        return f"result: {x}"
+
+    async_tool = StructuredTool(
+        name="async_tool",
+        description="Async-only test tool.",
+        args_schema=AsyncToolArgs,
+        func=None,
+        coroutine=async_tool_impl,
+    )
+    tool_cfg = MagicMock()
+    tool_cfg.name = "async_tool"
+    tool_cfg.group = "test"
+    tool_cfg.use = "tests.fake:async_tool"
+    mock_cfg.return_value = _make_minimal_config([tool_cfg])
+
+    with (
+        patch("deerflow.tools.tools.resolve_variable", return_value=async_tool),
+        patch("deerflow.tools.tools.BUILTIN_TOOLS", []),
+    ):
+        result = get_available_tools(include_mcp=False)
+
+    assert async_tool in result
+    assert async_tool.func is not None
+    assert async_tool.invoke({"x": 42}) == "result: 42"
+
+
+@patch("deerflow.tools.tools.get_app_config")
+@patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
+def test_subagent_async_only_tool_gets_sync_wrapper(mock_bash, mock_cfg):
+    """Async-only tools added through the subagent path can be invoked by sync clients."""
+
+    async def async_tool_impl(x: int) -> str:
+        return f"subagent: {x}"
+
+    async_tool = StructuredTool(
+        name="async_subagent_tool",
+        description="Async-only subagent test tool.",
+        args_schema=AsyncToolArgs,
+        func=None,
+        coroutine=async_tool_impl,
+    )
+    mock_cfg.return_value = _make_minimal_config([])
+
+    with (
+        patch("deerflow.tools.tools.BUILTIN_TOOLS", []),
+        patch("deerflow.tools.tools.SUBAGENT_TOOLS", [async_tool]),
+    ):
+        result = get_available_tools(include_mcp=False, subagent_enabled=True)
+
+    assert async_tool in result
+    assert async_tool.func is not None
+    assert async_tool.invoke({"x": 7}) == "subagent: 7"
+
+
+@patch("deerflow.tools.tools.get_app_config")
+@patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
+def test_acp_async_only_tool_gets_sync_wrapper(mock_bash, mock_cfg):
+    """Async-only ACP tools can be invoked by sync clients."""
+
+    async def async_tool_impl(x: int) -> str:
+        return f"acp: {x}"
+
+    async_tool = StructuredTool(
+        name="invoke_acp_agent",
+        description="Async-only ACP test tool.",
+        args_schema=AsyncToolArgs,
+        func=None,
+        coroutine=async_tool_impl,
+    )
+    config = _make_minimal_config([])
+    mock_cfg.return_value = config
+
+    with (
+        patch("deerflow.tools.tools.BUILTIN_TOOLS", []),
+        patch("deerflow.config.acp_config.get_acp_agents", return_value={"codex": object()}),
+        patch("deerflow.tools.builtins.invoke_acp_agent_tool.build_invoke_acp_agent_tool", return_value=async_tool),
+    ):
+        result = get_available_tools(include_mcp=False)
+
+    assert async_tool in result
+    assert async_tool.func is not None
+    assert async_tool.invoke({"x": 9}) == "acp: 9"
+
+
+@patch("deerflow.tools.tools.get_app_config")
+@patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
+def test_no_duplicates_returned(mock_bash, mock_cfg):
     """get_available_tools() never returns two tools with the same name."""
     mock_cfg.return_value = _make_minimal_config([])
 
@@ -73,8 +169,7 @@ def test_no_duplicates_returned(mock_reset, mock_bash, mock_cfg):
 
 @patch("deerflow.tools.tools.get_app_config")
 @patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
-@patch("deerflow.tools.tools.reset_deferred_registry")
-def test_first_occurrence_wins(mock_reset, mock_bash, mock_cfg):
+def test_first_occurrence_wins(mock_bash, mock_cfg):
     """When duplicates exist, the first occurrence is kept."""
     mock_cfg.return_value = _make_minimal_config([])
 
@@ -92,8 +187,7 @@ def test_first_occurrence_wins(mock_reset, mock_bash, mock_cfg):
 
 @patch("deerflow.tools.tools.get_app_config")
 @patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
-@patch("deerflow.tools.tools.reset_deferred_registry")
-def test_duplicate_triggers_warning(mock_reset, mock_bash, mock_cfg, caplog):
+def test_duplicate_triggers_warning(mock_bash, mock_cfg, caplog):
     """A warning is logged for every skipped duplicate."""
     import logging
 
@@ -104,3 +198,36 @@ def test_duplicate_triggers_warning(mock_reset, mock_bash, mock_cfg, caplog):
             get_available_tools(include_mcp=False)
 
     assert any("Duplicate tool name" in r.message for r in caplog.records), "Expected a duplicate-tool warning in log output"
+
+
+@patch("deerflow.tools.tools.get_app_config")
+@patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
+def test_tool_search_registry_preserves_promotions(mock_bash, mock_cfg):
+    """Re-entrant tool loading should not re-hide already promoted MCP tools."""
+    from deerflow.tools.builtins.tool_search import DeferredToolRegistry, get_deferred_registry, reset_deferred_registry, set_deferred_registry
+
+    config = _make_minimal_config([])
+    config.tool_search.enabled = True
+    mock_cfg.return_value = config
+
+    registry = DeferredToolRegistry()
+    registry.register(_tool_alpha)
+    registry.register(_tool_beta)
+    registry.promote({_tool_alpha.name})
+    set_deferred_registry(registry)
+
+    extensions = MagicMock()
+    extensions.get_enabled_mcp_servers.return_value = {"server": object()}
+
+    try:
+        with (
+            patch("deerflow.config.extensions_config.ExtensionsConfig.from_file", return_value=extensions),
+            patch("deerflow.mcp.cache.get_cached_mcp_tools", return_value=[_tool_alpha, _tool_beta]),
+        ):
+            get_available_tools(include_mcp=True)
+
+        assert get_deferred_registry() is registry
+        assert _tool_alpha.name not in registry.deferred_names
+        assert _tool_beta.name in registry.deferred_names
+    finally:
+        reset_deferred_registry()

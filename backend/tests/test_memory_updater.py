@@ -78,6 +78,41 @@ def test_apply_updates_skips_existing_duplicate_and_preserves_removals() -> None
     assert all(fact["id"] != "fact_remove" for fact in result["facts"])
 
 
+def test_prepare_update_prompt_preserves_non_ascii_memory_text() -> None:
+    updater = MemoryUpdater()
+    current_memory = _make_memory(
+        facts=[
+            {
+                "id": "fact_cn",
+                "content": "Deer-flow是一个非常好的框架。",
+                "category": "context",
+                "confidence": 0.9,
+                "createdAt": "2026-05-20T00:00:00Z",
+                "source": "thread-cn",
+            },
+        ]
+    )
+
+    with (
+        patch("deerflow.agents.memory.updater.get_memory_config", return_value=_memory_config(enabled=True)),
+        patch("deerflow.agents.memory.updater.get_memory_data", return_value=current_memory),
+    ):
+        msg = MagicMock()
+        msg.type = "human"
+        msg.content = "你好"
+        prepared = updater._prepare_update_prompt(
+            [msg],
+            agent_name=None,
+            correction_detected=False,
+            reinforcement_detected=False,
+        )
+
+    assert prepared is not None
+    _, prompt = prepared
+    assert "Deer-flow是一个非常好的框架。" in prompt
+    assert "\\u" not in prompt
+
+
 def test_apply_updates_skips_same_batch_duplicates_and_keeps_source_metadata() -> None:
     updater = MemoryUpdater()
     current_memory = _make_memory()
@@ -302,8 +337,8 @@ def test_import_memory_data_saves_and_returns_imported_memory() -> None:
     with patch("deerflow.agents.memory.updater.get_memory_storage", return_value=mock_storage):
         result = import_memory_data(imported_memory)
 
-    mock_storage.save.assert_called_once_with(imported_memory, None, user_id=None)
-    mock_storage.load.assert_called_once_with(None, user_id=None)
+    mock_storage.save.assert_called_once_with(imported_memory, None)
+    mock_storage.load.assert_called_once_with(None)
     assert result == imported_memory
 
 
@@ -1014,10 +1049,10 @@ class TestUserIdForwarding:
             result = updater.update_memory([msg, ai_msg], user_id="user-42")
 
         assert result is True
-        mock_load.assert_called_once_with(None, user_id="user-42")
+        mock_load.assert_called_once_with("user-42")
         mock_storage.save.assert_called_once()
         save_call = mock_storage.save.call_args
-        assert save_call.kwargs.get("user_id") == "user-42" or (len(save_call.args) > 2 and save_call.args[2] == "user-42")
+        assert len(save_call.args) > 1 and save_call.args[1] == "user-42"
 
     def test_async_update_forwards_user_id_to_load_and_save(self):
         """aupdate_memory must pass user_id through to the sync delegate."""
@@ -1043,6 +1078,6 @@ class TestUserIdForwarding:
             result = asyncio.run(updater.aupdate_memory([msg, ai_msg], user_id="user-99"))
 
         assert result is True
-        mock_load.assert_called_once_with(None, user_id="user-99")
+        mock_load.assert_called_once_with("user-99")
         save_call = mock_storage.save.call_args
-        assert save_call.kwargs.get("user_id") == "user-99" or (len(save_call.args) > 2 and save_call.args[2] == "user-99")
+        assert len(save_call.args) > 1 and save_call.args[1] == "user-99"

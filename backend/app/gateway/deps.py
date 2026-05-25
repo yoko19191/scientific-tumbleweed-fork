@@ -155,6 +155,11 @@ async def get_optional_user_from_request(request: Request):
     This is the full JWT → User pipeline used by ``authz.py``.
     Returns ``None`` when no cookie is present or the token is invalid.
     """
+    auth = getattr(request.state, "auth", None)
+    user = getattr(auth, "user", None) if auth is not None else None
+    if user is not None:
+        return user
+
     from app.gateway.auth.errors import TokenError
     from app.gateway.auth.jwt import decode_token
 

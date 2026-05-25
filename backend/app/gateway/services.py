@@ -16,7 +16,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from fastapi import HTTPException, Request
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage
+from langchain_core.messages.utils import convert_to_messages
 
 from app.gateway.deps import get_checkpointer, get_run_manager, get_store, get_stream_bridge
 from deerflow.runtime import (
@@ -74,30 +75,35 @@ def normalize_stream_modes(raw: list[str] | str | None) -> list[str]:
 
 
 def normalize_input(raw_input: dict[str, Any] | None) -> dict[str, Any]:
-    """Convert LangGraph Platform input format to LangChain state dict."""
+    """Convert LangGraph Platform input format to LangChain state dict.
+
+    Delegates dict→message coercion to ``langchain_core.messages.utils.convert_to_messages``
+    so that ``additional_kwargs`` (e.g. uploaded-file metadata — gh #3132), ``id``,
+    ``name``, and non-human roles (ai/system/tool) survive unchanged.  An earlier
+    hand-rolled version only forwarded ``content`` and collapsed every role to
+    ``HumanMessage``, which silently stripped frontend-supplied attachments.
+
+    Malformed message dicts (missing ``role``/``type``/``content``, unsupported
+    role, etc.) raise ``HTTPException(400)`` with the offending index, instead
+    of bubbling up as a 500.  The gateway is a system boundary, so per-entry
+    validation errors are the right shape for clients to retry against.
+    """
     if raw_input is None:
         return {}
     messages = raw_input.get("messages")
     if messages and isinstance(messages, list):
-        converted = []
-        for msg in messages:
-            if isinstance(msg, dict):
-                role = msg.get("role", msg.get("type", "user"))
-                content = msg.get("content", "")
-                if role in ("user", "human"):
-                    converted.append(HumanMessage(content=content))
-                elif role in ("system",):
-                    from langchain_core.messages import SystemMessage
-                    converted.append(SystemMessage(content=content))
-                elif role in ("ai", "assistant"):
-                    from langchain_core.messages import AIMessage
-                    converted.append(AIMessage(content=content))
-                elif role in ("tool",):
-                    from langchain_core.messages import ToolMessage
-                    tool_call_id = msg.get("tool_call_id", "")
-                    converted.append(ToolMessage(content=content, tool_call_id=tool_call_id))
-                else:
-                    converted.append(HumanMessage(content=content))
+        converted: list[Any] = []
+        for index, msg in enumerate(messages):
+            if isinstance(msg, BaseMessage):
+                converted.append(msg)
+            elif isinstance(msg, dict):
+                try:
+                    converted.extend(convert_to_messages([msg]))
+                except (ValueError, TypeError, NotImplementedError) as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid message at input.messages[{index}]: {exc}",
+                    ) from exc
             else:
                 converted.append(msg)
         return {**raw_input, "messages": converted}
@@ -163,6 +169,7 @@ def build_run_config(
                 context = dict(context_value)
             else:
                 raise ValueError("request config 'context' must be a mapping or null.")
+            config.pop("configurable", None)
             config["context"] = context
         else:
             configurable = {"thread_id": thread_id}

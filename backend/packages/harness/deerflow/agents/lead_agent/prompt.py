@@ -21,12 +21,15 @@ logger = logging.getLogger(__name__)
 _ENABLED_SKILLS_REFRESH_WAIT_TIMEOUT_SECONDS = 5.0
 _enabled_skills_lock = threading.Lock()
 _enabled_skills_cache: list[Skill] | None = None
+_enabled_skills_by_config_cache: dict[int, tuple[object, list[Skill]]] = {}
 _enabled_skills_refresh_active = False
 _enabled_skills_refresh_version = 0
 _enabled_skills_refresh_event = threading.Event()
 
 
 def _load_enabled_skills_sync(user_id: str | None = None) -> list[Skill]:
+    if user_id is None:
+        return list(load_skills(enabled_only=True))
     return list(load_skills(enabled_only=True, user_id=user_id))
 
 
@@ -85,6 +88,7 @@ def _invalidate_enabled_skills_cache() -> threading.Event:
     _get_cached_skills_prompt_section.cache_clear()
     with _enabled_skills_lock:
         _enabled_skills_cache = None
+        _enabled_skills_by_config_cache.clear()
         _enabled_skills_refresh_version += 1
         _enabled_skills_refresh_event.clear()
         if _enabled_skills_refresh_active:
@@ -108,6 +112,15 @@ def warm_enabled_skills_cache(timeout_seconds: float = _ENABLED_SKILLS_REFRESH_W
 
 
 def _get_enabled_skills():
+    return get_cached_enabled_skills()
+
+
+def get_cached_enabled_skills() -> list[Skill]:
+    """Return the cached enabled-skills list, kicking off a background refresh on miss.
+
+    Safe to call from request paths: never blocks on disk I/O. Returns an empty
+    list on cache miss; the next call will see the warmed result.
+    """
     with _enabled_skills_lock:
         cached = _enabled_skills_cache
 
@@ -120,6 +133,11 @@ def _get_enabled_skills():
 
 def _skill_mutability_label(category: str) -> str:
     return "[custom, editable]" if category == "custom" else "[built-in]"
+
+
+def get_enabled_skills_for_config(app_config: object | None = None) -> list[Skill]:
+    """Return enabled skills for callers that need the parsed metadata."""
+    return _get_enabled_skills()
 
 
 def clear_skills_system_prompt_cache() -> None:
@@ -470,7 +488,7 @@ def get_skills_prompt_section(available_skills: set[str] | None = None, user_id:
     Returns:
         Formatted skills prompt section string.
     """
-    skills = list(load_skills(enabled_only=True, user_id=user_id))
+    skills = _get_enabled_skills() if user_id is None else _load_enabled_skills_sync(user_id)
 
     try:
         from deerflow.config import get_app_config

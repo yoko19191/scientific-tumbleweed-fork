@@ -414,6 +414,68 @@ def _make_async_iterator(items):
 
 
 class TestChannelManager:
+    def test_get_client_includes_csrf_header_and_cookie(self):
+        from app.channels.manager import ChannelManager
+
+        bus = MessageBus()
+        store = ChannelStore(path=Path(tempfile.mkdtemp()) / "store.json")
+        manager = ChannelManager(bus=bus, store=store, langgraph_url="http://localhost:8001")
+
+        with patch("langgraph_sdk.get_client") as get_client:
+            get_client.return_value = object()
+
+            manager._get_client()
+
+        get_client.assert_called_once()
+        kwargs = get_client.call_args.kwargs
+        assert kwargs["url"] == "http://localhost:8001"
+        headers = kwargs["headers"]
+        csrf_token = headers["X-CSRF-Token"]
+        assert csrf_token
+        assert headers["Cookie"] == f"csrf_token={csrf_token}"
+        assert headers["X-DeerFlow-Internal-Token"]
+
+    def test_fetch_gateway_includes_internal_auth_headers(self, monkeypatch):
+        from app.channels.manager import ChannelManager
+
+        class MockResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"models": [{"name": "default"}]}
+
+        class MockAsyncClient:
+            def __init__(self, *args, **kwargs):
+                return None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def get(self, url, **kwargs):
+                calls.append({"url": url, **kwargs})
+                return MockResponse()
+
+        calls = []
+        monkeypatch.setattr("app.channels.manager.httpx.AsyncClient", MockAsyncClient)
+
+        async def go():
+            bus = MessageBus()
+            store = ChannelStore(path=Path(tempfile.mkdtemp()) / "store.json")
+            manager = ChannelManager(bus=bus, store=store, gateway_url="http://gateway:8001")
+
+            reply = await manager._fetch_gateway("/api/models", "models")
+
+            assert reply == "Available models:\n• default"
+            assert calls[0]["url"] == "http://gateway:8001/api/models"
+            assert calls[0]["timeout"] == 10
+            assert calls[0]["headers"]["X-DeerFlow-Internal-Token"]
+
+        _run(go())
+
     def test_handle_chat_calls_channel_receive_file_for_inbound_files(self, monkeypatch):
         from app.channels.manager import ChannelManager
 
@@ -508,6 +570,8 @@ class TestChannelManager:
             assert call_args[0][0] == "test-thread-123"  # thread_id
             assert call_args[0][1] == "lead_agent"  # assistant_id
             assert call_args[1]["input"]["messages"][0]["content"] == "hi"
+            assert call_args[1]["config"]["configurable"]["checkpoint_ns"] == ""
+            assert call_args[1]["config"]["configurable"]["thread_id"] == "test-thread-123"
 
             assert len(outbound_received) == 1
             assert outbound_received[0].text == "Hello from agent!"
@@ -556,9 +620,132 @@ class TestChannelManager:
             call_args = mock_client.runs.wait.call_args
             assert call_args[0][1] == "lead_agent"
             assert call_args[1]["config"]["recursion_limit"] == 55
+            assert call_args[1]["config"]["configurable"]["checkpoint_ns"] == ""
+            assert call_args[1]["config"]["configurable"]["thread_id"] == "test-thread-123"
             assert call_args[1]["context"]["thinking_enabled"] is False
             assert call_args[1]["context"]["subagent_enabled"] is True
             assert call_args[1]["context"]["agent_name"] == "mobile-agent"
+
+        _run(go())
+
+    def test_clarification_follow_up_preserves_history(self):
+        """Conversation should continue after ask_clarification instead of resetting history."""
+        from app.channels.manager import ChannelManager
+
+        async def go():
+            bus = MessageBus()
+            store = ChannelStore(path=Path(tempfile.mkdtemp()) / "store.json")
+            manager = ChannelManager(bus=bus, store=store)
+
+            outbound_received = []
+
+            async def capture_outbound(msg):
+                outbound_received.append(msg)
+
+            bus.subscribe_outbound(capture_outbound)
+
+            history_by_checkpoint: dict[tuple[str, str], list[str]] = {}
+
+            async def _runs_wait(thread_id, assistant_id, *, input, config, context):
+                del assistant_id, context  # unused in this test, kept for signature parity
+
+                checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns")
+                key = (thread_id, str(checkpoint_ns))
+                history = history_by_checkpoint.setdefault(key, [])
+
+                human_text = input["messages"][0]["content"]
+                history.append(human_text)
+
+                if len(history) == 1:
+                    return {
+                        "messages": [
+                            {"type": "human", "content": history[0]},
+                            {
+                                "type": "ai",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "name": "ask_clarification",
+                                        "args": {"question": "Which environment should I use?"},
+                                    }
+                                ],
+                            },
+                            {
+                                "type": "tool",
+                                "name": "ask_clarification",
+                                "content": "Which environment should I use?",
+                            },
+                        ]
+                    }
+
+                if len(history) == 2 and history[0] == "Deploy my app" and history[1] == "prod":
+                    return {
+                        "messages": [
+                            {"type": "human", "content": history[0]},
+                            {
+                                "type": "ai",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "name": "ask_clarification",
+                                        "args": {"question": "Which environment should I use?"},
+                                    }
+                                ],
+                            },
+                            {
+                                "type": "tool",
+                                "name": "ask_clarification",
+                                "content": "Which environment should I use?",
+                            },
+                            {"type": "human", "content": history[1]},
+                            {"type": "ai", "content": "Got it. I will deploy to prod."},
+                        ]
+                    }
+
+                return {
+                    "messages": [
+                        {"type": "human", "content": history[-1]},
+                        {"type": "ai", "content": "History missing; clarification repeated."},
+                    ]
+                }
+
+            mock_client = MagicMock()
+            mock_client.threads.create = AsyncMock(return_value={"thread_id": "clarify-thread-1"})
+            mock_client.threads.get = AsyncMock(return_value={"thread_id": "clarify-thread-1"})
+            mock_client.runs.wait = AsyncMock(side_effect=_runs_wait)
+            manager._client = mock_client
+
+            await manager.start()
+
+            await bus.publish_inbound(
+                InboundMessage(
+                    channel_name="test",
+                    chat_id="chat1",
+                    user_id="user1",
+                    text="Deploy my app",
+                )
+            )
+            await _wait_for(lambda: len(outbound_received) >= 1)
+
+            await bus.publish_inbound(
+                InboundMessage(
+                    channel_name="test",
+                    chat_id="chat1",
+                    user_id="user1",
+                    text="prod",
+                )
+            )
+            await _wait_for(lambda: len(outbound_received) >= 2)
+            await manager.stop()
+
+            assert outbound_received[0].text == "Which environment should I use?"
+            assert outbound_received[1].text == "Got it. I will deploy to prod."
+
+            assert mock_client.runs.wait.call_count == 2
+            first_call = mock_client.runs.wait.call_args_list[0]
+            second_call = mock_client.runs.wait.call_args_list[1]
+            assert first_call.kwargs["config"]["configurable"]["checkpoint_ns"] == ""
+            assert second_call.kwargs["config"]["configurable"]["checkpoint_ns"] == ""
 
         _run(go())
 
@@ -1238,6 +1425,8 @@ class TestChannelManager:
             call_args = mock_client.runs.stream.call_args
 
             assert call_args[1]["input"]["messages"][0]["content"] == "hello"
+            assert call_args[1]["config"]["configurable"]["checkpoint_ns"] == ""
+            assert call_args[1]["config"]["configurable"]["thread_id"] == "test-thread-123"
             assert call_args[1]["context"]["is_bootstrap"] is True
 
             # Final message should be published

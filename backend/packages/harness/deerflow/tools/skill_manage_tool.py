@@ -8,12 +8,9 @@ import shutil
 from typing import Any
 from weakref import WeakValueDictionary
 
-from langchain.tools import ToolRuntime, tool
-from langgraph.typing import ContextT
+from langchain.tools import tool
 
 from deerflow.agents.lead_agent.prompt import refresh_skills_system_prompt_cache_async
-from deerflow.agents.thread_state import ThreadState
-from deerflow.mcp.tools import _make_sync_tool_wrapper
 from deerflow.skills.manager import (
     append_history,
     atomic_write,
@@ -28,6 +25,8 @@ from deerflow.skills.manager import (
     validate_skill_name,
 )
 from deerflow.skills.security_scanner import scan_skill_content
+from deerflow.tools.sync import make_sync_tool_wrapper
+from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,7 @@ def _get_lock(name: str) -> asyncio.Lock:
     return lock
 
 
-def _get_thread_id(runtime: ToolRuntime[ContextT, ThreadState] | None) -> str | None:
+def _get_thread_id(runtime: Runtime | None) -> str | None:
     if runtime is None:
         return None
     if runtime.context and runtime.context.get("thread_id"):
@@ -76,7 +75,7 @@ async def _to_thread(func, /, *args, **kwargs):
 
 
 async def _skill_manage_impl(
-    runtime: ToolRuntime[ContextT, ThreadState],
+    runtime: Runtime,
     action: str,
     name: str,
     content: str | None = None,
@@ -212,7 +211,7 @@ async def _skill_manage_impl(
 
 @tool("skill_manage", parse_docstring=True)
 async def skill_manage_tool(
-    runtime: ToolRuntime[ContextT, ThreadState],
+    runtime: Runtime,
     action: str,
     name: str,
     content: str | None = None,
@@ -244,4 +243,4 @@ async def skill_manage_tool(
     )
 
 
-skill_manage_tool.func = _make_sync_tool_wrapper(_skill_manage_impl, "skill_manage")
+skill_manage_tool.func = make_sync_tool_wrapper(_skill_manage_impl, "skill_manage")

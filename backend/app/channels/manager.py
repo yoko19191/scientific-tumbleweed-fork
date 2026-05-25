@@ -144,7 +144,6 @@ def _extract_response_text(result: dict | list) -> str:
     Handles special cases:
     - Regular AI text responses
     - Clarification interrupts (``ask_clarification`` tool messages)
-    - AI messages with tool_calls but no text content
     """
     if isinstance(result, list):
         messages = result

@@ -176,9 +176,13 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
 
     # --- [18] LoopDetectionMiddleware ---
     if features.loop_detection:
-        from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
+        from deerflow.config.app_config import get_app_config
 
-        chain.append(LoopDetectionMiddleware())
+        loop_detection_config = get_app_config().loop_detection
+        if loop_detection_config.enabled:
+            from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
+
+            chain.append(LoopDetectionMiddleware.from_config(loop_detection_config))
 
     # --- [19] Custom middlewares ---
     for mw in features.custom_middlewares:

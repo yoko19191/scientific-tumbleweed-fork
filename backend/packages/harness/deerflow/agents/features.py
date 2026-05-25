@@ -34,6 +34,7 @@ class RuntimeFeatures:
     permissions: bool | AgentMiddleware = False
     hooks: bool | AgentMiddleware = False
     compaction: bool | AgentMiddleware = False
+    loop_detection: bool | AgentMiddleware = True
 
 
 # ---------------------------------------------------------------------------

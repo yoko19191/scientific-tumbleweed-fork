@@ -24,6 +24,7 @@
 - 2026-05-24: 已完成 F1 Sandbox 修复合并，吸收 async readiness、provider lifecycle reset、`/mnt/user-data` API 边界和 provisioner PVC user scope；保留 fork 的 `user_id` 显式传递、硬容量限制、`scientific-tumbleweed` 命名和用户目录布局。
 - 2026-05-25: 已完成 K 批次适用小功能合并：Serper 可选 provider、sandbox download、trace run_name、debug presented paths 物理路径解析、RemoteSandboxBackend `list_running` 说明补齐；`eab7ae3d` 因 backend/frontend token usage 冲突转入 L1 统一处理。
 - 2026-05-25: 已完成 I Safety Termination 合并，新增 `SafetyFinishReasonMiddleware`、provider safety detector 注册表和 `safety_finish_reason` 配置；保留当前 fork runtime/context 结构，未引入 L2/L3 的 app_config threading、RunJournal/database/run_events 改造。
+- 2026-05-25: 已完成 H Loop Detection 增强合并，新增 `LoopDetectionConfig`、per-tool frequency overrides 和 `wrap_model_call` 延迟 warning 注入；配置版本从 6 bump 到 7，未采用上游更高版本号中尚未合并的 database/run_events schema。
 
 ## 前置准备
 
@@ -74,7 +75,7 @@ git log --oneline upstream/main | head -5
 - [x] E: Phase 11 前端修复（适用项已合并，不适用项已记录）
 - [x] F: Phase 12 Sandbox 修复 + Phase 13 其他通用修复
 - [ ] G: Phase 3 DynamicContextMiddleware，单独分支验证
-- [ ] H: Phase 4 Loop Detection 增强，单独分支验证
+- [x] H: Phase 4 Loop Detection 增强，单独分支验证
 - [x] I: Phase 7 Safety Termination，单独分支验证
 - [ ] J: Phase 8 Stability P0，选择性提取
 - [x] K: Phase 14 新功能直接 cherry-pick（适用项已合并，`eab7ae3d` 转 L1）
@@ -478,9 +479,9 @@ git branch -d merge/dynamic-context
 
 > 循环检测的三个独立改进：可配置化 + 延迟注入，修复 OpenAI/Moonshot 的 tool_calls 配对错误 + 注入时保持配对。
 
-- [ ] `daa3ffc2` feat(loop-detection): make loop detection configurable with per-tool frequency overrides (#2711) — 新增 `LoopDetectionConfig`，支持 config.yaml 配置 + 每工具覆盖
-- [ ] `e8675f26` fix(loop-detection): keep tool-call pairing on warn injection (#2724) (#2725)
-- [ ] `dcc6f1e6` feat(loop-detection): defer warning injection (#2752) — 修复 warn 注入导致 OpenAI 拒绝的问题，将注入延迟到 wrap_model_call
+- [x] `daa3ffc2` feat(loop-detection): make loop detection configurable with per-tool frequency overrides (#2711) — 新增 `LoopDetectionConfig`，支持 config.yaml 配置 + 每工具覆盖
+- [x] `e8675f26` fix(loop-detection): keep tool-call pairing on warn injection (#2724) (#2725)
+- [x] `dcc6f1e6` feat(loop-detection): defer warning injection (#2752) — 修复 warn 注入导致 OpenAI 拒绝的问题，将注入延迟到 wrap_model_call
 
 ```bash
 git checkout -b merge/loop-detection merge/2026-05-22-upstream-sync
@@ -492,9 +493,9 @@ git cherry-pick dcc6f1e6
 
 **冲突解决要点**
 
-- [ ] `daa3ffc2` 触及 `agents/factory.py` 和 `agents/lead_agent/agent.py`，需与 fork 的 `middleware_builder.py` 协调
-- [ ] fork 使用 `middleware_builder`，需在 builder 中注册 `LoopDetectionConfig.from_config()`
-- [ ] 新增 `config.yaml` 中的 `loop_detection` 配置节
+- [x] `daa3ffc2` 触及 `agents/factory.py` 和 `agents/lead_agent/agent.py`，需与 fork 的 `middleware_builder.py` 协调
+- [x] fork 使用 `middleware_builder`，需在 builder 中注册 `LoopDetectionConfig.from_config()`
+- [x] 新增 `config.yaml` 中的 `loop_detection` 配置节
 
 **Trade-off**
 
@@ -502,15 +503,26 @@ git cherry-pick dcc6f1e6
 |------|------|
 | 当前状态 | 已有 loop detection 能力，但缺少 per-tool 配置、延迟注入和更严格的 tool-call 配对保护。 |
 | 分值 | 当前适配度 3/5；目标收益分 4/5；差距 1。 |
-| 取舍结论 | 采用，优先解决 provider 兼容与循环提醒误伤；配置入口必须落在 fork 的 `middleware_builder` 路径，而不是恢复上游 factory 注册方式。 |
-| 补齐动作 | 新增/适配 `loop_detection` config；在 builder 中注册 `LoopDetectionConfig.from_config()`；验证 warn 注入不破坏 OpenAI/Moonshot tool_calls pairing。 |
-| 建议 merge 节奏 | 建议在 I 之后处理，和 D 一样作为中等耦合稳定性批次；若与 G 的 dynamic context 注入顺序冲突，以不破坏 tool pairing 为最高优先级。 |
+| 取舍结论 | 已采用；以当前 fork 的 `lead_agent` 和 `middleware_builder` 为实际注册入口，同时保留 `create_deerflow_agent` 的 feature flag 能力。 |
+| 补齐动作 | 已新增/适配 `loop_detection` config；已在 builder 中注册 `LoopDetectionMiddleware.from_config()`；warning 改为在 `after_model` 入队、下一轮 `wrap_model_call` 注入，避免打断 OpenAI/Moonshot tool-call pairing。 |
+| 建议 merge 节奏 | H 已完成；后续可继续 D Subagent/Memory，或进入 G DynamicContextMiddleware 前先确认 middleware 顺序文档与实际链路一致。 |
+
+**执行备注**
+
+- `config.example.yaml` 新增 `loop_detection` 配置块，并将 `config_version` 从 6 bump 到 7；未采用上游 `config_version: 9`，因为其中包含尚未合并的后续 schema 语义。
+- `LoopDetectionMiddleware` 保留当前 fork 已有的 hard stop metadata 清理逻辑，并新增 pending warning 队列；warning 不再在 `after_model` 直接插入消息，而是在下一次 `wrap_model_call` 作为 `HumanMessage(name="loop_warning")` 附加到请求末尾。
+- `backend/docs/middleware-execution-flow.md` 已同步更新 loop detection 的 `before_agent` / `after_model` / `after_agent` / `wrap_model_call` 流程。
+- 上游修改的 `frontend/src/content/*/harness/middlewares.mdx` 在当前仓库中已删除，按 not applicable 处理，不恢复 docs-site 文件。
 
 **验证**
 
-- [ ] `config.yaml` 中 `loop_detection` 配置生效
-- [ ] 循环检测 warn 注入不破坏 OpenAI tool_calls 配对
-- [ ] 延迟注入在 `wrap_model_call` 阶段正确执行
+- [x] `config.yaml` 中 `loop_detection` 配置生效
+- [x] 循环检测 warn 注入不破坏 OpenAI tool_calls 配对
+- [x] 延迟注入在 `wrap_model_call` 阶段正确执行
+- [x] `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_loop_detection_config.py tests/test_loop_detection_middleware.py tests/test_lead_agent_model_resolution.py tests/test_create_deerflow_agent.py tests/test_credential_loader.py -q` — 140 passed
+- [x] `PYTHONPYCACHEPREFIX=/private/tmp/st-pycache python3 -m py_compile ...` — H 相关 Python 文件通过
+- [x] `rg -n "<<<<<<<|>>>>>>>|^=======$" ...` — H 相关文件无冲突标记
+- [x] `git diff --cached --check` — 通过
 
 ```bash
 git checkout merge/2026-05-22-upstream-sync

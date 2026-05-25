@@ -5,16 +5,24 @@ import {
   extractReasoningContentFromMessage,
   hasContent,
   hasToolCalls,
-  stripUploadedFilesTag,
+  isHiddenFromUIMessage,
+  stripInternalMarkers,
 } from "../messages/utils";
 
 import type { AgentThread } from "./types";
 import { titleOfThread } from "./utils";
 
+export interface ExportOptions {
+  includeHidden?: boolean;
+  includeReasoning?: boolean;
+  includeToolCalls?: boolean;
+  includeToolMessages?: boolean;
+}
+
 function formatMessageContent(message: Message): string {
   const text = extractContentFromMessage(message);
   if (!text) return "";
-  return stripUploadedFilesTag(text);
+  return stripInternalMarkers(text);
 }
 
 function formatToolCalls(message: Message): string {
@@ -26,6 +34,7 @@ function formatToolCalls(message: Message): string {
 export function formatThreadAsMarkdown(
   thread: AgentThread,
   messages: Message[],
+  options: ExportOptions = {},
 ): string {
   const title = titleOfThread(thread);
   const createdAt = thread.created_at
@@ -42,15 +51,20 @@ export function formatThreadAsMarkdown(
   ];
 
   for (const message of messages) {
+    if (!options.includeHidden && isHiddenFromUIMessage(message)) continue;
+    if (message.type === "tool" && !options.includeToolMessages) continue;
+
     if (message.type === "human") {
       const content = formatMessageContent(message);
       if (content) {
         lines.push(`## 🧑 User`, "", content, "", "---", "");
       }
     } else if (message.type === "ai") {
-      const reasoning = extractReasoningContentFromMessage(message);
+      const reasoning = options.includeReasoning
+        ? extractReasoningContentFromMessage(message)
+        : "";
       const content = formatMessageContent(message);
-      const toolCalls = formatToolCalls(message);
+      const toolCalls = options.includeToolCalls ? formatToolCalls(message) : "";
 
       if (!content && !toolCalls && !reasoning) continue;
 
@@ -86,20 +100,41 @@ export function formatThreadAsMarkdown(
 export function formatThreadAsJSON(
   thread: AgentThread,
   messages: Message[],
+  options: ExportOptions = {},
 ): string {
+  const exportedMessages = messages.flatMap((msg) => {
+    if (!options.includeHidden && isHiddenFromUIMessage(msg)) return [];
+    if (msg.type === "tool" && !options.includeToolMessages) return [];
+
+    const content = formatMessageContent(msg);
+    const reasoning =
+      msg.type === "ai" && options.includeReasoning
+        ? extractReasoningContentFromMessage(msg)
+        : "";
+    const toolCalls =
+      msg.type === "ai" && options.includeToolCalls && msg.tool_calls?.length
+        ? msg.tool_calls
+        : undefined;
+
+    if (!content && !reasoning && !toolCalls) return [];
+
+    return [
+      {
+        type: msg.type,
+        id: msg.id,
+        content,
+        ...(reasoning ? { reasoning } : {}),
+        ...(toolCalls ? { tool_calls: toolCalls } : {}),
+      },
+    ];
+  });
+
   const exportData = {
     title: titleOfThread(thread),
     thread_id: thread.thread_id,
     created_at: thread.created_at,
     exported_at: new Date().toISOString(),
-    messages: messages.map((msg) => ({
-      type: msg.type,
-      id: msg.id,
-      content: typeof msg.content === "string" ? msg.content : msg.content,
-      ...(msg.type === "ai" && msg.tool_calls?.length
-        ? { tool_calls: msg.tool_calls }
-        : {}),
-    })),
+    messages: exportedMessages,
   };
   return JSON.stringify(exportData, null, 2);
 }

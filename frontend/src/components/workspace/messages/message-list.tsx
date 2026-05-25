@@ -23,7 +23,7 @@ import {
   hasSubagent,
 } from "@/core/messages/utils";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
-import type { Subtask } from "@/core/tasks";
+import { parseSubtaskResult, type Subtask } from "@/core/tasks";
 import { useSubtaskContext } from "@/core/tasks/context";
 import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
@@ -84,16 +84,7 @@ export function MessageList({
         const existing = next[message.tool_call_id];
         if (existing) {
           const result = extractTextFromMessage(message);
-          if (result.startsWith("Task Succeeded. Result:")) {
-            existing.status = "completed";
-            existing.result = result.split("Task Succeeded. Result:")[1]?.trim();
-          } else if (result.startsWith("Task failed.")) {
-            existing.status = "failed";
-            existing.error = result.split("Task failed.")[1]?.trim();
-          } else if (result.startsWith("Task timed out")) {
-            existing.status = "failed";
-            existing.error = result;
-          }
+          Object.assign(existing, parseSubtaskResult(result));
         }
       }
     }

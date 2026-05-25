@@ -15,6 +15,7 @@ export {
   isHiddenFromUIMessage,
   parseUploadedFiles,
   removeReasoningContentFromMessage,
+  stripInternalMarkers,
   stripUploadedFilesTag,
   type FileInMessage,
 } from "./extraction";

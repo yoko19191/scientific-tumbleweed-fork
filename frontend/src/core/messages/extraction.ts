@@ -232,6 +232,22 @@ export function stripUploadedFilesTag(content: string): string {
     .trim();
 }
 
+export const INTERNAL_MARKER_TAGS = [
+  "uploaded_files",
+  "system-reminder",
+  "memory",
+  "current_date",
+] as const;
+
+const INTERNAL_MARKER_RE = new RegExp(
+  `<(${INTERNAL_MARKER_TAGS.join("|")})>[\\s\\S]*?</\\1>`,
+  "g",
+);
+
+export function stripInternalMarkers(content: string): string {
+  return content.replace(INTERNAL_MARKER_RE, "").trim();
+}
+
 export function parseUploadedFiles(content: string): FileInMessage[] {
   const uploadedFilesRegex = /<uploaded_files>([\s\S]*?)<\/uploaded_files>/;
   // eslint-disable-next-line @typescript-eslint/prefer-regexp-exec

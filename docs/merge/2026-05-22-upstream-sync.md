@@ -847,8 +847,8 @@ git cherry-pick 8ba01dfd
 **决策状态**: ✅ 已决定采用
 **说明**: 上游 breaking change，`RunManager` 改为从 `RunStore` 混合读取，支持 gateway 重启后恢复历史 run。
 
-- [ ] `c810e9f8` fix(harness)!: hydrate runs from RunStore and persist interrupted status (#2932)
-- [ ] `39f901d3` fix(runs): restore historical runs from persistent store after gateway restart (#2989)
+- [x] `c810e9f8` fix(harness)!: hydrate runs from RunStore and persist interrupted status (#2932) — 手工适配完成；未整批 cherry-pick
+- [x] `39f901d3` fix(runs): restore historical runs from persistent store after gateway restart (#2989) — 手工适配完成；未整批 cherry-pick
 
 ```bash
 git checkout -b merge/run-store merge/2026-05-22-upstream-sync
@@ -861,17 +861,28 @@ git cherry-pick 39f901d3
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | 当前运行态恢复能力不足；上游 RunStore hydration 可让 gateway 重启后恢复历史 run，并持久化 interrupted 状态。 |
-| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
-| 取舍结论 | 采用 breaking change，但必须围绕 `RunManager.get()` async 调用链和持久化状态做专项验证。 |
-| 补齐动作 | 适配 RunManager 从内存 + RunStore 混合读取；补 interrupted status 持久化；验证 gateway restart 后历史 run、active run、cancelled/interrupted run 的恢复语义。 |
-| 建议 merge 节奏 | 紧跟 L2 后处理；L1 header totals 和 J gateway 热重载都可能依赖更稳定的 run 状态来源。 |
+| 当前状态 | 已完成适配：`RunManager` 支持内存 + store 混合读取，`get()` 改为 async，gateway run 详情/list/cancel/join/stream 调用链已更新，interrupted 状态会写回 store。 |
+| 分值 | 当前适配度 4/5；目标收益分 5/5；差距 1。 |
+| 取舍结论 | 采用核心语义，但不直接引入上游当前仓库不存在的 `persistence/run` SQLAlchemy 体系；改用 fork 已有 LangGraph Store 做 `RunStore` backing，保留现有 checkpointer/store 配置和用户隔离。 |
+| 补齐动作 | 已补 `MemoryRunStore`/`LangGraphRunStore`、store-only hydration、用户过滤、historical run 409 防挂起、interrupted status 持久化和专项测试；后续 L1/L5 若需要 token/model 展示，可复用 `model_name` 字段与 `update_model_name()` 边界继续补。 |
+| 建议 merge 节奏 | L3 已完成；后续继续 L1/L5 时只在现有 RunStore 接口上增量扩展，不再重复迁移 run 持久化底座。 |
+
+**执行备注**
+
+- 上游 `runtime/runs/store/*` 与 `persistence/run/*` 在当前 fork 中不存在，直接 cherry-pick 会拉入一整套不同的 persistence 架构；本批选择在现有 `langgraph.store` 上建立轻量 `RunStore` 适配层。
+- `app.gateway.deps.langgraph_runtime()` 现在创建 `app.state.run_store`，并以 `RunManager(store=...)` 启动；当 Store 后端是 sqlite/postgres 时，run 元数据可随 Store 持久化。
+- `app.gateway.services.start_run()` 在创建 run 前解析 authenticated user，把 `user_id` 写入 run metadata/store row；`thread_runs` 路由在读取 store fallback 时传入该 `user_id`，避免跨用户恢复历史 run。
+- store-only 历史 run 允许 `GET /runs/{run_id}` 和 list 展示，但 cancel/join/stream 返回 409，避免 gateway 重启后对没有本地 task/stream 的 run 挂起。
+- 本批预留 `model_name` 字段与 `update_model_name()`，但 L5 的完整 model_name persistence 行为仍按后续功能组单独验证。
 
 **验证**
 
-- [ ] gateway 重启后历史 run 可恢复
-- [ ] 中断的 run 状态正确持久化
-- [ ] `RunManager.get()` async 调用链正确
+- [x] gateway 重启后历史 run 可恢复 — `tests/test_run_manager.py::test_get_hydrates_store_only_record`
+- [x] 中断的 run 状态正确持久化 — `tests/test_run_manager.py::test_cancel_persists_interrupted_status_for_restarted_manager`
+- [x] `RunManager.get()` async 调用链正确 — `tests/test_runs_router_ownership.py` / `tests/test_langgraph_routing_isolation.py`
+- [x] 2026-05-25 L3 专项回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_run_manager.py tests/test_cancel_run_idempotent.py tests/test_runs_router_ownership.py tests/test_langgraph_routing_isolation.py -q` — 45 passed
+- [x] 2026-05-25 L3 扩展回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_gateway_services.py tests/test_run_worker_rollback.py tests/test_run_worker_sandbox_capacity.py -q` — 46 passed
+- [x] 2026-05-25 L3 静态检查: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m py_compile ...` — 通过；`rg -n "^(<<<<<<<|=======|>>>>>>>)" ...` 无冲突标记；`git diff --check` — 通过
 
 ### L4: Custom Agent 自更新
 

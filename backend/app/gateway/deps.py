@@ -49,12 +49,14 @@ async def langgraph_runtime(app: FastAPI, startup_config: AppConfig) -> AsyncGen
     """
     from deerflow.agents.checkpointer.async_provider import make_checkpointer
     from deerflow.runtime import make_store, make_stream_bridge
+    from deerflow.runtime.runs.store import LangGraphRunStore, MemoryRunStore
 
     async with AsyncExitStack() as stack:
         app.state.stream_bridge = await stack.enter_async_context(make_stream_bridge(startup_config.stream_bridge))
         app.state.checkpointer = await stack.enter_async_context(make_checkpointer(startup_config))
         app.state.store = await stack.enter_async_context(make_store(startup_config))
-        app.state.run_manager = RunManager()
+        app.state.run_store = LangGraphRunStore(app.state.store) if app.state.store is not None else MemoryRunStore()
+        app.state.run_manager = RunManager(store=app.state.run_store)
         yield
 
 

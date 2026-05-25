@@ -5,6 +5,7 @@ import re
 import pytest
 
 from deerflow.runtime import RunManager, RunStatus
+from deerflow.runtime.runs.store import MemoryRunStore
 
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
@@ -33,7 +34,7 @@ async def test_create_and_get(manager: RunManager):
     assert ISO_RE.match(record.created_at)
     assert ISO_RE.match(record.updated_at)
 
-    fetched = manager.get(record.run_id)
+    fetched = await manager.get(record.run_id)
     assert fetched is record
 
 
@@ -115,7 +116,7 @@ async def test_cleanup(manager: RunManager):
     run_id = record.run_id
 
     await manager.cleanup(run_id, delay=0)
-    assert manager.get(run_id) is None
+    assert await manager.get(run_id) is None
 
 
 @pytest.mark.anyio
@@ -130,7 +131,7 @@ async def test_set_status_with_error(manager: RunManager):
 @pytest.mark.anyio
 async def test_get_nonexistent(manager: RunManager):
     """Getting a nonexistent run should return None."""
-    assert manager.get("does-not-exist") is None
+    assert await manager.get("does-not-exist") is None
 
 
 @pytest.mark.anyio
@@ -141,3 +142,62 @@ async def test_create_defaults(manager: RunManager):
     assert record.kwargs == {}
     assert record.multitask_strategy == "reject"
     assert record.assistant_id is None
+
+
+@pytest.mark.anyio
+async def test_get_hydrates_store_only_record():
+    """A fresh manager should restore historical runs from the persistent store."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+    record = await manager.create_or_reject(
+        "thread-1",
+        "lead_agent",
+        metadata={"user_id": "user-1"},
+        kwargs={"input": {"messages": []}},
+    )
+
+    restarted = RunManager(store=store)
+    hydrated = await restarted.get(record.run_id, user_id="user-1")
+
+    assert hydrated is not None
+    assert hydrated.store_only is True
+    assert hydrated.run_id == record.run_id
+    assert hydrated.thread_id == "thread-1"
+    assert hydrated.status == RunStatus.pending
+    assert await restarted.get(record.run_id, user_id="other-user") is None
+
+
+@pytest.mark.anyio
+async def test_list_by_thread_merges_memory_and_store_records_newest_first(monkeypatch: pytest.MonkeyPatch):
+    """Historical rows should appear beside live in-memory runs without duplicates."""
+    store = MemoryRunStore()
+    first_manager = RunManager(store=store)
+    monkeypatch.setattr("deerflow.runtime.runs.manager._now_iso", lambda: "2026-01-01T00:00:00+00:00")
+    historical = await first_manager.create_or_reject("thread-1", metadata={"user_id": "user-1"})
+
+    second_manager = RunManager(store=store)
+    monkeypatch.setattr("deerflow.runtime.runs.manager._now_iso", lambda: "2026-01-01T00:00:01+00:00")
+    live = await second_manager.create_or_reject("thread-1", metadata={"user_id": "user-1"})
+
+    runs = await second_manager.list_by_thread("thread-1", user_id="user-1")
+
+    assert [run.run_id for run in runs] == [live.run_id, historical.run_id]
+    assert runs[0].store_only is False
+    assert runs[1].store_only is True
+
+
+@pytest.mark.anyio
+async def test_cancel_persists_interrupted_status_for_restarted_manager():
+    """Interrupted status should survive a RunManager restart."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+    record = await manager.create_or_reject("thread-1", metadata={"user_id": "user-1"})
+    await manager.set_status(record.run_id, RunStatus.running)
+
+    assert await manager.cancel(record.run_id) is True
+
+    restarted = RunManager(store=store)
+    hydrated = await restarted.get(record.run_id, user_id="user-1")
+    assert hydrated is not None
+    assert hydrated.status == RunStatus.interrupted
+    assert hydrated.store_only is True

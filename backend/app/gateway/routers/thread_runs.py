@@ -149,18 +149,18 @@ async def wait_run(thread_id: str, body: RunCreateRequest, request: Request) -> 
 @router.get("/{thread_id}/runs", response_model=list[RunResponse])
 async def list_runs(thread_id: str, request: Request) -> list[RunResponse]:
     """List all runs for a thread."""
-    await require_thread_owner(request, thread_id)
+    user_id = await require_thread_owner(request, thread_id)
     run_mgr = get_run_manager(request)
-    records = await run_mgr.list_by_thread(thread_id)
+    records = await run_mgr.list_by_thread(thread_id, user_id=user_id)
     return [_record_to_response(r) for r in records]
 
 
 @router.get("/{thread_id}/runs/{run_id}", response_model=RunResponse)
 async def get_run(thread_id: str, run_id: str, request: Request) -> RunResponse:
     """Get details of a specific run."""
-    await require_thread_owner(request, thread_id)
+    user_id = await require_thread_owner(request, thread_id)
     run_mgr = get_run_manager(request)
-    record = run_mgr.get(run_id)
+    record = await run_mgr.get(run_id, user_id=user_id)
     if record is None or record.thread_id != thread_id:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
     return _record_to_response(record)
@@ -175,11 +175,13 @@ async def cancel_run(
     action: Literal["interrupt", "rollback"] = Query(default="interrupt", description="Cancel action"),
 ) -> Response:
     """Cancel a running or pending run."""
-    await require_thread_owner(request, thread_id)
+    user_id = await require_thread_owner(request, thread_id)
     run_mgr = get_run_manager(request)
-    record = run_mgr.get(run_id)
+    record = await run_mgr.get(run_id, user_id=user_id)
     if record is None or record.thread_id != thread_id:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    if record.store_only:
+        raise HTTPException(status_code=409, detail=f"Run {run_id} is historical and cannot be cancelled on this worker")
 
     cancelled = await run_mgr.cancel(run_id, action=action)
     if not cancelled:
@@ -201,12 +203,14 @@ async def cancel_run(
 @router.get("/{thread_id}/runs/{run_id}/join")
 async def join_run(thread_id: str, run_id: str, request: Request) -> StreamingResponse:
     """Join an existing run's SSE stream."""
-    await require_thread_owner(request, thread_id)
+    user_id = await require_thread_owner(request, thread_id)
     bridge = get_stream_bridge(request)
     run_mgr = get_run_manager(request)
-    record = run_mgr.get(run_id)
+    record = await run_mgr.get(run_id, user_id=user_id)
     if record is None or record.thread_id != thread_id:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    if record.store_only:
+        raise HTTPException(status_code=409, detail=f"Run {run_id} is historical and has no live stream on this worker")
 
     return StreamingResponse(
         sse_consumer(bridge, record, request, run_mgr),
@@ -228,11 +232,13 @@ async def stream_existing_run(
     wait: int = Query(default=0, description="Block until cancelled (1) or return immediately (0)"),
 ):
     """Join an existing run's SSE stream (GET), or cancel-then-stream (POST)."""
-    await require_thread_owner(request, thread_id)
+    user_id = await require_thread_owner(request, thread_id)
     run_mgr = get_run_manager(request)
-    record = run_mgr.get(run_id)
+    record = await run_mgr.get(run_id, user_id=user_id)
     if record is None or record.thread_id != thread_id:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    if record.store_only:
+        raise HTTPException(status_code=409, detail=f"Run {run_id} is historical and has no live stream on this worker")
 
     if action is not None:
         cancelled = await run_mgr.cancel(run_id, action=action)

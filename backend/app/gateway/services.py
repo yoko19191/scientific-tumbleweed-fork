@@ -303,14 +303,39 @@ async def start_run(
 
     disconnect = DisconnectMode.cancel if body.on_disconnect == "cancel" else DisconnectMode.continue_
 
+    # Resolve authenticated user before creating the run so persisted run rows
+    # carry the same ownership boundary as thread records.
+    from app.gateway.deps import get_optional_user_from_request
+
+    user = await get_optional_user_from_request(request)
+    user_id = str(user.id) if user else None
+    if user_id:
+        run_metadata = dict(body.metadata) if body.metadata else {}
+        run_metadata["user_id"] = user_id
+    else:
+        run_metadata = body.metadata or {}
+
+    model_name = None
+    body_context = getattr(body, "context", None)
+    if isinstance(body_context, Mapping):
+        model_name = body_context.get("model_name")
+    if model_name is None and isinstance(body.config, Mapping):
+        config_context = body.config.get("context")
+        config_configurable = body.config.get("configurable")
+        if isinstance(config_context, Mapping):
+            model_name = config_context.get("model_name")
+        if model_name is None and isinstance(config_configurable, Mapping):
+            model_name = config_configurable.get("model_name")
+
     try:
         record = await run_mgr.create_or_reject(
             thread_id,
             body.assistant_id,
             on_disconnect=disconnect,
-            metadata=body.metadata or {},
+            metadata=run_metadata,
             kwargs={"input": body.input, "config": body.config},
             multitask_strategy=body.multitask_strategy,
+            model_name=model_name,
         )
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -320,22 +345,11 @@ async def start_run(
     agent_factory = resolve_agent_factory(body.assistant_id)
     graph_input = normalize_input(body.input)
 
-    # Inject authenticated user_id into metadata for per-user isolation.
-    # Memory middleware and agent factory read user_id from config["metadata"].
-    from app.gateway.deps import get_optional_user_from_request
-    user = await get_optional_user_from_request(request)
-    user_id = str(user.id) if user else None
-
     # Ensure the thread is visible in /threads/search, even for threads that
     # were never explicitly created via POST /threads (e.g. stateless runs).
     store = get_store(request)
     if store is not None:
         await _upsert_thread_in_store(store, thread_id, body.metadata, user_id)
-    if user_id:
-        run_metadata = dict(body.metadata) if body.metadata else {}
-        run_metadata["user_id"] = user_id
-    else:
-        run_metadata = body.metadata
 
     config = build_run_config(thread_id, body.config, run_metadata, assistant_id=body.assistant_id)
 

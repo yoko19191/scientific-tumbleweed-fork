@@ -64,7 +64,7 @@ def _make_checkpointer():
 def _make_run_manager():
     mgr = MagicMock()
     mgr.list_by_thread = AsyncMock(return_value=[])
-    mgr.get = MagicMock(return_value=None)
+    mgr.get = AsyncMock(return_value=None)
     mgr.cancel = AsyncMock(return_value=False)
     return mgr
 

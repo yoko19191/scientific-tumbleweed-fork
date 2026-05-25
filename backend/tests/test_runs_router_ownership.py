@@ -68,6 +68,7 @@ def _make_run_record(thread_id: str = THREAD_1, run_id: str = RUN_1):
     record.task = None
     record.error = None
     record.on_disconnect = MagicMock()
+    record.store_only = False
     return record
 
 
@@ -75,7 +76,7 @@ def _make_run_manager(*, run_record=None):
     mgr = MagicMock()
     mgr.create_or_reject = AsyncMock(return_value=run_record or _make_run_record())
     mgr.list_by_thread = AsyncMock(return_value=[])
-    mgr.get = MagicMock(return_value=run_record or _make_run_record())
+    mgr.get = AsyncMock(return_value=run_record or _make_run_record())
     mgr.cancel = AsyncMock(return_value=True)
     return mgr
 

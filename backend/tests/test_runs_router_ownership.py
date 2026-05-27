@@ -69,6 +69,14 @@ def _make_run_record(thread_id: str = THREAD_1, run_id: str = RUN_1):
     record.error = None
     record.on_disconnect = MagicMock()
     record.store_only = False
+    record.total_input_tokens = 0
+    record.total_output_tokens = 0
+    record.total_tokens = 0
+    record.llm_call_count = 0
+    record.lead_agent_tokens = 0
+    record.subagent_tokens = 0
+    record.middleware_tokens = 0
+    record.message_count = 0
     return record
 
 
@@ -78,6 +86,16 @@ def _make_run_manager(*, run_record=None):
     mgr.list_by_thread = AsyncMock(return_value=[])
     mgr.get = AsyncMock(return_value=run_record or _make_run_record())
     mgr.cancel = AsyncMock(return_value=True)
+    mgr.aggregate_tokens_by_thread = AsyncMock(
+        return_value={
+            "total_tokens": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_runs": 0,
+            "by_model": {},
+            "by_caller": {"lead_agent": 0, "subagent": 0, "middleware": 0},
+        }
+    )
     return mgr
 
 
@@ -205,6 +223,47 @@ class TestListRuns:
         with _patch_auth(USER_A):
             with TestClient(app, raise_server_exceptions=False) as client:
                 resp = client.get(f"/api/threads/{THREAD_1}/runs")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /api/threads/{thread_id}/token-usage
+# ---------------------------------------------------------------------------
+
+
+class TestThreadTokenUsage:
+    def test_unauthenticated_returns_401(self):
+        app = _make_app_thread_runs(owner=USER_A)
+        with _patch_auth(None):
+            with TestClient(app, raise_server_exceptions=False) as client:
+                resp = client.get(f"/api/threads/{THREAD_1}/token-usage")
+        assert resp.status_code == 401
+
+    def test_owner_match_returns_thread_aggregate(self):
+        app = _make_app_thread_runs(owner=USER_A)
+        app.state.run_manager.aggregate_tokens_by_thread.return_value = {
+            "total_tokens": 42,
+            "total_input_tokens": 30,
+            "total_output_tokens": 12,
+            "total_runs": 2,
+            "by_model": {"gpt-4o": {"tokens": 42, "runs": 2}},
+            "by_caller": {"lead_agent": 32, "subagent": 10, "middleware": 0},
+        }
+        with _patch_auth(USER_A):
+            with TestClient(app, raise_server_exceptions=False) as client:
+                resp = client.get(f"/api/threads/{THREAD_1}/token-usage?include_active=true")
+        assert resp.status_code == 200
+        assert resp.json()["total_tokens"] == 42
+        app.state.run_manager.aggregate_tokens_by_thread.assert_awaited_once_with(
+            THREAD_1,
+            include_active=True,
+        )
+
+    def test_owner_mismatch_returns_404(self):
+        app = _make_app_thread_runs(owner=USER_B)
+        with _patch_auth(USER_A):
+            with TestClient(app, raise_server_exceptions=False) as client:
+                resp = client.get(f"/api/threads/{THREAD_1}/token-usage")
         assert resp.status_code == 404
 
 

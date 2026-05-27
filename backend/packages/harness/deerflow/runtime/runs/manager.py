@@ -18,6 +18,35 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _aggregate_token_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_model: dict[str, dict[str, int]] = {}
+    by_caller = {"lead_agent": 0, "subagent": 0, "middleware": 0}
+    total_input = total_output = total = total_runs = 0
+    for row in rows:
+        row_total = row.get("total_tokens", 0) or 0
+        if row_total <= 0:
+            continue
+        total_runs += 1
+        total_input += row.get("total_input_tokens", 0) or 0
+        total_output += row.get("total_output_tokens", 0) or 0
+        total += row_total
+        model = row.get("model_name") or "unknown"
+        model_bucket = by_model.setdefault(model, {"tokens": 0, "runs": 0})
+        model_bucket["tokens"] += row_total
+        model_bucket["runs"] += 1
+        by_caller["lead_agent"] += row.get("lead_agent_tokens", 0) or 0
+        by_caller["subagent"] += row.get("subagent_tokens", 0) or 0
+        by_caller["middleware"] += row.get("middleware_tokens", 0) or 0
+    return {
+        "total_tokens": total,
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
+        "total_runs": total_runs,
+        "by_model": by_model,
+        "by_caller": by_caller,
+    }
+
+
 @dataclass
 class RunRecord:
     """Mutable record for a single run."""
@@ -38,6 +67,16 @@ class RunRecord:
     error: str | None = None
     model_name: str | None = None
     store_only: bool = False
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
+    llm_call_count: int = 0
+    lead_agent_tokens: int = 0
+    subagent_tokens: int = 0
+    middleware_tokens: int = 0
+    message_count: int = 0
+    last_ai_message: str | None = None
+    first_human_message: str | None = None
 
 
 class RunManager:
@@ -66,6 +105,16 @@ class RunManager:
                 error=record.error,
                 model_name=record.model_name,
                 created_at=record.created_at,
+                total_input_tokens=record.total_input_tokens,
+                total_output_tokens=record.total_output_tokens,
+                total_tokens=record.total_tokens,
+                llm_call_count=record.llm_call_count,
+                lead_agent_tokens=record.lead_agent_tokens,
+                subagent_tokens=record.subagent_tokens,
+                middleware_tokens=record.middleware_tokens,
+                message_count=record.message_count,
+                last_ai_message=record.last_ai_message,
+                first_human_message=record.first_human_message,
             )
         except Exception:
             logger.warning("Failed to persist run %s to store", record.run_id, exc_info=True)
@@ -105,7 +154,50 @@ class RunManager:
             error=row.get("error"),
             model_name=row.get("model_name"),
             store_only=True,
+            total_input_tokens=row.get("total_input_tokens") or 0,
+            total_output_tokens=row.get("total_output_tokens") or 0,
+            total_tokens=row.get("total_tokens") or 0,
+            llm_call_count=row.get("llm_call_count") or 0,
+            lead_agent_tokens=row.get("lead_agent_tokens") or 0,
+            subagent_tokens=row.get("subagent_tokens") or 0,
+            middleware_tokens=row.get("middleware_tokens") or 0,
+            message_count=row.get("message_count") or 0,
+            last_ai_message=row.get("last_ai_message"),
+            first_human_message=row.get("first_human_message"),
         )
+
+    async def update_run_completion(self, run_id: str, **kwargs: Any) -> None:
+        """Persist token usage and completion summary to memory and store."""
+        async with self._lock:
+            record = self._runs.get(run_id)
+            if record is not None:
+                for key, value in kwargs.items():
+                    if hasattr(record, key) and value is not None:
+                        setattr(record, key, value)
+                record.updated_at = _now_iso()
+        if self._store is not None:
+            try:
+                await self._store.update_run_completion(run_id, **kwargs)
+            except Exception:
+                logger.warning("Failed to persist run completion for %s", run_id, exc_info=True)
+
+    async def update_run_progress(self, run_id: str, **kwargs: Any) -> None:
+        """Persist a running token/message snapshot without changing status."""
+        should_persist = True
+        async with self._lock:
+            record = self._runs.get(run_id)
+            if record is not None:
+                should_persist = record.status == RunStatus.running
+                if should_persist:
+                    for key, value in kwargs.items():
+                        if hasattr(record, key) and value is not None:
+                            setattr(record, key, value)
+                    record.updated_at = _now_iso()
+        if should_persist and self._store is not None:
+            try:
+                await self._store.update_run_progress(run_id, **kwargs)
+            except Exception:
+                logger.warning("Failed to persist run progress for %s", run_id, exc_info=True)
 
     async def create(
         self,
@@ -194,6 +286,32 @@ class RunManager:
                 except Exception:
                     logger.warning("Failed to map store row for run %s", run_id, exc_info=True)
         return sorted(records_by_id.values(), key=lambda record: record.created_at, reverse=True)[:limit]
+
+    async def aggregate_tokens_by_thread(self, thread_id: str, *, include_active: bool = False) -> dict[str, Any]:
+        """Aggregate token usage for a thread from the backing store when available."""
+        if self._store is not None:
+            try:
+                return await self._store.aggregate_tokens_by_thread(thread_id, include_active=include_active)
+            except Exception:
+                logger.warning("Failed to aggregate token usage for thread %s from store", thread_id, exc_info=True)
+
+        async with self._lock:
+            rows = [
+                {
+                    "thread_id": record.thread_id,
+                    "status": record.status.value,
+                    "model_name": record.model_name,
+                    "total_input_tokens": record.total_input_tokens,
+                    "total_output_tokens": record.total_output_tokens,
+                    "total_tokens": record.total_tokens,
+                    "lead_agent_tokens": record.lead_agent_tokens,
+                    "subagent_tokens": record.subagent_tokens,
+                    "middleware_tokens": record.middleware_tokens,
+                }
+                for record in self._runs.values()
+                if record.thread_id == thread_id and (include_active or record.status not in {RunStatus.pending, RunStatus.running})
+            ]
+        return _aggregate_token_rows(rows)
 
     async def set_status(self, run_id: str, status: RunStatus, *, error: str | None = None) -> None:
         """Transition a run to a new status."""

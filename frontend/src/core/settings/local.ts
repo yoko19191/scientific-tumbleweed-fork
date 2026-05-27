@@ -1,8 +1,12 @@
+import type { TokenUsagePreset } from "../messages/usage-model";
 import type { AgentThreadContext } from "../threads";
 
 export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   notification: {
     enabled: true,
+  },
+  tokenUsage: {
+    preset: "per_turn",
   },
   context: {
     model_name: undefined,
@@ -19,9 +23,24 @@ function isBrowser(): boolean {
   return typeof window !== "undefined";
 }
 
+function normalizeTokenUsagePreset(value: unknown): TokenUsagePreset {
+  if (
+    value === "off" ||
+    value === "per_run" ||
+    value === "per_turn" ||
+    value === "step_debug"
+  ) {
+    return value;
+  }
+  return DEFAULT_LOCAL_SETTINGS.tokenUsage.preset;
+}
+
 export interface LocalSettings {
   notification: {
     enabled: boolean;
+  };
+  tokenUsage: {
+    preset: TokenUsagePreset;
   };
   context: Omit<
     AgentThreadContext,
@@ -44,6 +63,11 @@ function mergeLocalSettings(settings?: Partial<LocalSettings>): LocalSettings {
     context: {
       ...DEFAULT_LOCAL_SETTINGS.context,
       ...settings?.context,
+    },
+    tokenUsage: {
+      ...DEFAULT_LOCAL_SETTINGS.tokenUsage,
+      ...settings?.tokenUsage,
+      preset: normalizeTokenUsagePreset(settings?.tokenUsage?.preset),
     },
     notification: {
       ...DEFAULT_LOCAL_SETTINGS.notification,

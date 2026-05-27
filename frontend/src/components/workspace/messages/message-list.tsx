@@ -1,5 +1,5 @@
 import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { Fragment, useCallback, useEffect, useMemo } from "react";
+import { Fragment, useEffect } from "react";
 
 import {
   Conversation,
@@ -12,6 +12,10 @@ import {
   splitTurns,
   type TokenUsage,
 } from "@/core/messages/usage";
+import {
+  buildTokenDebugSteps,
+  type TokenUsagePreset,
+} from "@/core/messages/usage-model";
 import {
   extractContentFromMessage,
   extractPresentFilesFromMessage,
@@ -38,7 +42,10 @@ import {
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
-import { MessageTokenUsage } from "./message-token-usage";
+import {
+  MessageTokenUsage,
+  MessageTokenUsageDebugList,
+} from "./message-token-usage";
 import { MessageListSkeleton } from "./skeleton";
 import { SubtaskCard } from "./subtask-card";
 
@@ -49,20 +56,22 @@ export function MessageList({
   threadId,
   thread,
   paddingBottom = MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
-  tokenUsageEnabled = false,
+  tokenUsagePreset = "off",
   onClarificationSubmit,
 }: {
   className?: string;
   threadId: string;
   thread: BaseStream<AgentThreadState>;
   paddingBottom?: number;
-  tokenUsageEnabled?: boolean;
+  tokenUsagePreset?: TokenUsagePreset;
   onClarificationSubmit?: (response: ClarificationResponse) => void;
 }) {
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
   const { setTasks: setSubtasks } = useSubtaskContext();
   const messages = thread.messages;
+  const showTurnUsage = tokenUsagePreset === "per_turn";
+  const showStepDebug = tokenUsagePreset === "step_debug";
 
   // Sync subtask state from messages in an effect, not during render.
   useEffect(() => {
@@ -108,9 +117,21 @@ export function MessageList({
   // first human, if any) is keyed by `null`. Computed every render: cheap,
   // and ensures live streaming numbers track `messages` exactly.
   const turnUsageByHumanId = new Map<string | null, TokenUsage | null>();
-  if (tokenUsageEnabled) {
+  const debugStepsByHumanId = new Map<
+    string | null,
+    ReturnType<typeof buildTokenDebugSteps>
+  >();
+  if (showTurnUsage || showStepDebug) {
     for (const turn of splitTurns(messages)) {
-      turnUsageByHumanId.set(turn.humanId, accumulateUsage(turn.messages));
+      if (showTurnUsage) {
+        turnUsageByHumanId.set(turn.humanId, accumulateUsage(turn.messages));
+      }
+      if (showStepDebug) {
+        debugStepsByHumanId.set(
+          turn.humanId,
+          buildTokenDebugSteps(turn.messages, t),
+        );
+      }
     }
   }
 
@@ -136,9 +157,11 @@ export function MessageList({
     } else if (group.type === "assistant:clarification") {
       const message = group.messages[0];
       if (message && hasContent(message)) {
-        const uiSchema = (message as any).additional_kwargs?.ui_schema as
-          | string
-          | undefined;
+        const rawUiSchema = (
+          message as { additional_kwargs?: { ui_schema?: unknown } }
+        ).additional_kwargs?.ui_schema;
+        const uiSchema =
+          typeof rawUiSchema === "string" ? rawUiSchema : undefined;
         const msgIndex = messages.findIndex((m) => m.id === message.id);
         const isAnswered = messages
           .slice(msgIndex + 1)
@@ -267,10 +290,14 @@ export function MessageList({
   const flushTurn = () => {
     if (buffer.length === 0) return;
     const usage = turnUsageByHumanId.get(currentHumanId) ?? null;
+    const debugSteps = debugStepsByHumanId.get(currentHumanId) ?? [];
     turnNodes.push(
       <Fragment key={`turn-${currentHumanId ?? "prelude"}-${turnIndex}`}>
         {buffer}
-        {tokenUsageEnabled && usage && <MessageTokenUsage enabled usage={usage} />}
+        {showTurnUsage && usage && <MessageTokenUsage enabled usage={usage} />}
+        {showStepDebug && (
+          <MessageTokenUsageDebugList enabled steps={debugSteps} />
+        )}
       </Fragment>,
     );
     buffer = [];

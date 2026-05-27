@@ -24,6 +24,7 @@ from deerflow.models import create_chat_model
 from deerflow.skills.tool_policy import filter_tools_by_skill_allowed_tools
 from deerflow.skills.types import Skill
 from deerflow.subagents.config import SubagentConfig
+from deerflow.subagents.token_collector import SubagentTokenCollector
 
 if TYPE_CHECKING:
     from deerflow.config.app_config import AppConfig
@@ -80,6 +81,7 @@ class SubagentResult:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     ai_messages: list[dict[str, Any]] | None = None
+    token_usage_records: list[dict[str, int | str]] | None = None
     cancel_event: threading.Event = field(default_factory=threading.Event, repr=False)
     _state_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
@@ -506,6 +508,8 @@ class SubagentExecutor:
             # Use stream instead of invoke to get real-time updates
             # This allows us to collect AI messages as they are generated
             final_state = None
+            token_collector = SubagentTokenCollector(caller=self.config.name)
+            run_config["callbacks"] = [token_collector]
 
             # Pre-check: bail out immediately if already cancelled before streaming starts
             if result.cancel_event.is_set():
@@ -631,6 +635,7 @@ class SubagentExecutor:
             result.try_set_terminal(
                 SubagentStatus.COMPLETED,
                 result=final_result,
+                token_usage_records=token_collector.snapshot_records(),
             )
 
         except Exception as e:
@@ -638,6 +643,7 @@ class SubagentExecutor:
             result.try_set_terminal(
                 SubagentStatus.FAILED,
                 error=str(e),
+                token_usage_records=locals().get("token_collector").snapshot_records() if "token_collector" in locals() else None,
             )
 
         return result

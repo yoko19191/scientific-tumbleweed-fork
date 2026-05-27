@@ -30,6 +30,7 @@
 - 2026-05-25: 已完成 J Stability P0 中可独立提取的前端稳定性子项：subtask terminal status parser、chat export 默认过滤 hidden/reasoning/tool/internal marker；`task_tool` callback recorder 修复因当前 fork 尚无 usage recorder 路径记录为不适用，gateway hot reload 继续单独评估。
 - 2026-05-25: 已完成 J Stability P0 backend 子项：移除 gateway `app.state.config` 启动快照，新增 request-time `get_config()` 热重载依赖，并将 `startup_config` 显式传入 restart-required 的 LangGraph runtime bootstrap；J 批次适用项已收束。
 - 2026-05-25: 已完成 L2 app_config 穿透重构手工适配：gateway `start_run()` 解析 request-time config，worker 注入 runtime context，lead/model/tools/title/memory/task/subagent 路径优先使用显式 `app_config`；保留 fork 的 user_id 隔离、DynamicContext、SystemPromptBuilder、skills/soul 和现有 gateway runtime 结构。
+- 2026-05-27: 已完成 L1 Token Usage 显示体系手工适配：`token_usage.enabled` 默认开启，未引入上游完整 `RunJournal`；后端采用 attribution / Codex usage / subagent usage bucket / RunStore thread aggregate，前端保留 fork 的 `splitTurns()` + `useTweenNumber`，新增 `per_turn` / `per_run` / `step_debug` / `off` preset。
 
 ## 前置准备
 
@@ -84,7 +85,7 @@ git log --oneline upstream/main | head -5
 - [x] I: Phase 7 Safety Termination，单独分支验证
 - [x] J: Phase 8 Stability P0，选择性提取
 - [x] K: Phase 14 新功能直接 cherry-pick（适用项已合并，`eab7ae3d` 转 L1）
-- [ ] L: Phase 15 新功能手动适配，逐项讨论
+- [x] L: Phase 15 新功能手动适配，逐项讨论
 - [x] M: Phase 16 Auth 独立修复
 
 ## Trade-off 评分口径
@@ -686,7 +687,7 @@ git branch -d merge/stability-p0
 - [x] `44ab21fc` feat(community): add Serper web search provider (#2630) — 新增 Serper 搜索 provider
 - [x] `e37912e2` feat(sandbox): Adds download file interface in Sandbox (#3038) — sandbox 文件下载接口
 - [x] `923f516d` feat(trace): LangGraph -> lead_agent and set custom agent_name to run_name (#3101) — trace 改进
-- [ ] `eab7ae3d` feat: stream subagent token usage to header via terminal task events (#2882) — 已从 K 批次延期到 L1 Token Usage 显示体系统一适配
+- [x] `eab7ae3d` feat: stream subagent token usage to header via terminal task events (#2882) — 已在 L1 Token Usage 显示体系中手工适配完成
 - [x] `4063dd71` feat(debug): print presented file paths with physical resolution (#2825)
 - [x] `680187dd` fix: Supplement list_running in RemoteSandboxBackend (#2716)
 
@@ -738,26 +739,26 @@ git cherry-pick 680187dd
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | L 是剩余工作中耦合最高的 feature 集合，横跨 token usage、app_config、RunStore、custom agent、持久层和 tracing；L2/L3/L4/L5/L6 已完成，L1 仍待处理。 |
-| 分值 | 当前适配度 4/5；目标收益分 5/5；差距 1。 |
+| 当前状态 | L 是剩余工作中耦合最高的 feature 集合，横跨 token usage、app_config、RunStore、custom agent、持久层和 tracing；L1-L6 已完成手工适配，剩余为整批回归验证与后续上游增量刷新。 |
+| 分值 | 当前适配度 5/5；目标收益分 5/5；差距 0。 |
 | 取舍结论 | 不做整批合并；每个 L 子系列单独分支、单独验证、单独中文 commit。 |
-| 补齐动作 | L1 需重新梳理 backend RunStore token usage 聚合、terminal task event、frontend header total 与 turn-anchored 渲染的数据流；已完成项继续保留各自执行备注和验证证据。 |
-| 建议 merge 节奏 | L2/L3/L4/L5/L6 已完成；后续优先处理 L1 token usage 显示体系，再进入合并完成后的全量验证。 |
+| 补齐动作 | L1 已补 backend RunStore token usage 聚合、active progress counters、subagent bucket、frontend header total 与 turn-anchored 渲染；后续仅需整批回归和真实模型流式 smoke。 |
+| 建议 merge 节奏 | L1-L6 已完成；后续进入合并完成后的全量验证。 |
 
 ### L1: Token Usage 显示体系重构
 
 **决策**: 后端归因系统全盘采用上游；前端以 fork 的 turn-anchored 渲染 + `useTweenNumber` 动画为基础，吸收上游的 `step_debug` 模式和 header preset 切换。默认展示为 `per_turn` 模式。
 
-- [ ] `d02f762a` feat: refine token usage display modes (#2329) — 后端 middleware 全盘采用；前端保留 fork 的 splitTurns + tween 动画，加入 debug 模式和 preset 切换
-- [ ] `866d1ca4` Populate Codex usage metadata for token accounting (#2585)
-- [ ] `bb8b234d` chore(2585): keep polishing the code of codex token usage (#2689)
-- [ ] `530bda71` fix: dedupe token usage aggregation by message id (#2770)
-- [ ] `41741608` fix: use backend thread token usage for header total (#2800)
-- [ ] `5127f08e` enable token usage by default (#2841)
-- [ ] `9892a7d4` fix: bucket subagent token usage into parent run totals (#2838)
-- [ ] `eab7ae3d` feat: stream subagent token usage to header via terminal task events (#2882) — K 批次冲突后转入 L1，需随 header total / subagent bucket 数据流一起适配
-- [ ] `2a1ac06b` fix(persistence): reuse token usage model grouping expression (#2910)
-- [ ] `2eeb5979` fix(runs): expose active progress counters (#3148)
+- [x] `d02f762a` feat: refine token usage display modes (#2329) — 手工适配完成；后端 middleware 采用 attribution 体系，前端保留 fork 的 splitTurns + tween 动画，加入 debug 模式和 preset 切换
+- [x] `866d1ca4` Populate Codex usage metadata for token accounting (#2585) — 手工适配完成；Codex Responses API usage 映射为 LangChain `usage_metadata`
+- [x] `bb8b234d` chore(2585): keep polishing the code of codex token usage (#2689) — 手工适配完成；归并到当前 middleware / provider / tests
+- [x] `530bda71` fix: dedupe token usage aggregation by message id (#2770) — 手工适配完成；frontend `accumulateUsage()` 按 message id 去重
+- [x] `41741608` fix: use backend thread token usage for header total (#2800) — 手工适配完成；新增 `/api/threads/{thread_id}/token-usage` 与 frontend query/hook
+- [x] `5127f08e` enable token usage by default (#2841) — 手工适配完成；`token_usage.enabled` 默认开启，frontend fallback 也改为 enabled
+- [x] `9892a7d4` fix: bucket subagent token usage into parent run totals (#2838) — 手工适配完成；subagent collector + task_tool cache + middleware writeback 合并到 parent AIMessage usage
+- [x] `eab7ae3d` feat: stream subagent token usage to header via terminal task events (#2882) — 手工适配完成；未引入完整 terminal event UI，改为 RunStore active progress + pending message delta 的最小可用 header total
+- [x] `2a1ac06b` fix(persistence): reuse token usage model grouping expression (#2910) — 手工适配完成；当前 RunStore aggregate 使用统一 `_aggregate_token_rows()` 路径
+- [x] `2eeb5979` fix(runs): expose active progress counters (#3148) — 最小可用适配完成；worker 写入 active progress snapshot，thread token usage endpoint 支持 `include_active=true`
 
 ```bash
 git checkout -b merge/token-usage merge/2026-05-22-upstream-sync
@@ -775,27 +776,31 @@ git cherry-pick 2eeb5979
 
 **前端手动适配**
 
-- [ ] 保留 fork 的 `splitTurns()` + `useTweenNumber` 动画
-- [ ] 从上游吸收 `step_debug` 展示模式
-- [ ] 从上游吸收 header DropdownMenu preset 切换: `per_turn` / `per_run` / `step_debug` / `off`
-- [ ] 默认展示模式设为 `per_turn`
+- [x] 保留 fork 的 `splitTurns()` + `useTweenNumber` 动画
+- [x] 从上游吸收 `step_debug` 展示模式
+- [x] 从上游吸收 header DropdownMenu preset 切换: `per_turn` / `per_run` / `step_debug` / `off`
+- [x] 默认展示模式设为 `per_turn`
 
 **Trade-off**
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | fork 已有 turn-anchored 展示和 `useTweenNumber` 动画，但后端归因、subagent 归并、header total 和 debug 模式需要吸收上游。 |
-| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
-| 取舍结论 | 后端归因系统全盘采用；前端保留 fork 的 turn 结构和动画，只叠加上游 preset/debug 能力。 |
-| 补齐动作 | 对齐 token usage 数据模型、message id 去重、subagent bucket、thread header total；补 per_turn/per_run/step_debug/off 四种 UI 验证。 |
-| 建议 merge 节奏 | 在 L2/L3 后处理，避免 app_config / RunStore 数据流尚未稳定时重做前端归因。 |
+| 当前状态 | 已完成最小可用 token usage 体系：后端 attribution、Codex usage、subagent 归并、RunStore thread aggregate、active progress counters；前端完成 header preset、backend total、per-turn 动画和 step debug。 |
+| 分值 | 当前适配度 5/5；目标收益分 5/5；差距 0。 |
+| 取舍结论 | 采用上游 token usage 能力，但不引入完整 `RunJournal`；前端保留 fork 的 turn 结构和动画，只叠加上游 preset/debug 能力。 |
+| 补齐动作 | 已完成 token usage 数据模型、message id 去重、subagent bucket、thread header total、preset storage 与 route smoke；真实模型流式 UI smoke 留到整批回归。 |
+| 建议 merge 节奏 | L1 已完成；后续进入 L 批次整体验证，不再从 K 批次单独处理 `eab7ae3d`。 |
 
 **验证**
 
-- [ ] 后端 token usage 归因正确: thinking / final_answer / tool_batch / subagent
-- [ ] 前端 `per_turn` 模式下 `useTweenNumber` 动画平滑
-- [ ] `step_debug` 模式可切换并正确显示
-- [ ] header total 使用后端线程级汇总
+- [x] 后端 token usage 归因正确: thinking / final_answer / tool_batch / subagent — `tests/test_token_usage_middleware.py` 覆盖 tool attribution 与 subagent writeback；`tests/test_run_manager.py` 覆盖 RunStore total / active progress aggregate
+- [x] 前端 `per_turn` 模式下 `useTweenNumber` 动画平滑 — 代码路径保留 `MessageTokenUsage` + `useTweenNumber`，preset 为 `per_turn` 时按 `splitTurns()` 每轮渲染
+- [x] `step_debug` 模式可切换并正确显示 — 新增 `usage-model.ts` attribution step builder，header DropdownMenu 可切换 `step_debug`
+- [x] header total 使用后端线程级汇总 — 新增 `/api/threads/{thread_id}/token-usage`、frontend `useThreadTokenUsage()` 和 `threadTokenUsageToTokenUsage()`；运行中可传 `include_active=true`
+- [x] 2026-05-27 后端目标测试: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_token_usage_middleware.py tests/test_token_usage.py tests/test_codex_provider.py tests/test_run_manager.py tests/test_subagent_executor.py tests/test_task_tool_core_logic.py tests/test_token_usage_config.py tests/test_setup_wizard.py tests/test_runs_router_ownership.py -q` — 169 passed
+- [x] 2026-05-27 前端 targeted lint: `pnpm exec eslint ...token usage touched files...` — 通过
+- [x] 2026-05-27 静态检查: `rg -n "^(<<<<<<<|=======|>>>>>>>)" backend frontend docs/merge/2026-05-22-upstream-sync.md` 无冲突标记；`git diff --check` — 通过
+- [ ] 前端全量 typecheck/build — blocked: `pnpm run typecheck` 被既有测试类型问题阻塞（`api-core.test.ts` BodyInit 断言、两个 vitest 类型缺失）；`pnpm run build` 在 Next/Nextra production build 阶段长时间无输出后手动终止，未获得完整 build 结果
 
 ### L2: app_config 穿透重构
 

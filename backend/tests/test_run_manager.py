@@ -231,3 +231,52 @@ async def test_update_model_name_normalizes_and_persists():
     stored = await store.get(record.run_id)
     assert stored is not None
     assert stored["model_name"] == "x" * 128
+
+
+@pytest.mark.anyio
+async def test_update_run_completion_persists_token_totals_and_aggregates():
+    """RunStore should expose thread-level token usage totals."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+    record = await manager.create_or_reject("thread-1", model_name="model-a")
+    await manager.set_status(record.run_id, RunStatus.running)
+
+    await manager.update_run_completion(
+        record.run_id,
+        total_input_tokens=10,
+        total_output_tokens=5,
+        total_tokens=15,
+        llm_call_count=1,
+        lead_agent_tokens=9,
+        subagent_tokens=6,
+        middleware_tokens=0,
+        message_count=3,
+    )
+    await manager.set_status(record.run_id, RunStatus.success)
+
+    stored = await store.get(record.run_id)
+    assert stored is not None
+    assert stored["total_tokens"] == 15
+    assert stored["subagent_tokens"] == 6
+
+    aggregate = await manager.aggregate_tokens_by_thread("thread-1")
+    assert aggregate["total_tokens"] == 15
+    assert aggregate["total_input_tokens"] == 10
+    assert aggregate["total_output_tokens"] == 5
+    assert aggregate["total_runs"] == 1
+    assert aggregate["by_model"] == {"model-a": {"tokens": 15, "runs": 1}}
+    assert aggregate["by_caller"] == {"lead_agent": 9, "subagent": 6, "middleware": 0}
+
+
+@pytest.mark.anyio
+async def test_update_run_progress_is_only_included_when_requested():
+    """Running snapshots should not affect default historical totals."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+    record = await manager.create_or_reject("thread-1", model_name="model-a")
+    await manager.set_status(record.run_id, RunStatus.running)
+
+    await manager.update_run_progress(record.run_id, total_tokens=7, total_input_tokens=4, total_output_tokens=3)
+
+    assert (await manager.aggregate_tokens_by_thread("thread-1"))["total_tokens"] == 0
+    assert (await manager.aggregate_tokens_by_thread("thread-1", include_active=True))["total_tokens"] == 7

@@ -29,6 +29,7 @@ from deerflow.sandbox.exceptions import SandboxCapacityExceededError
 from .manager import RunManager, RunRecord
 from .naming import resolve_root_run_name
 from .schemas import RunStatus
+from .token_usage import summarize_messages_token_usage
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,16 @@ async def run_agent(
     pre_run_checkpoint_id: str | None = None
     pre_run_snapshot: dict[str, Any] | None = None
     snapshot_capture_failed = False
+    latest_values: dict[str, Any] | None = None
+
+    async def _capture_progress(chunk: Any) -> None:
+        nonlocal latest_values
+        if not isinstance(chunk, dict):
+            return
+        latest_values = chunk
+        summary = summarize_messages_token_usage(chunk.get("messages"))
+        if summary["total_tokens"] > 0 or summary["message_count"] > 0:
+            await run_manager.update_run_progress(run_id, **summary)
 
     # Track whether "events" was requested but skipped
     if "events" in requested_modes:
@@ -209,6 +220,8 @@ async def run_agent(
                     logger.info("Run %s abort requested — stopping", run_id)
                     break
                 sse_event = _lg_mode_to_sse_event(single_mode)
+                if single_mode == "values":
+                    await _capture_progress(chunk)
                 await bridge.publish(run_id, sse_event, serialize(chunk, mode=single_mode))
         else:
             # Multiple modes or subgraphs: astream yields tuples
@@ -227,6 +240,8 @@ async def run_agent(
                     continue
 
                 sse_event = _lg_mode_to_sse_event(mode)
+                if mode == "values":
+                    await _capture_progress(chunk)
                 await bridge.publish(run_id, sse_event, serialize(chunk, mode=mode))
 
         # 8. Final status
@@ -249,6 +264,8 @@ async def run_agent(
             else:
                 await run_manager.set_status(run_id, RunStatus.interrupted)
         else:
+            if latest_values is not None:
+                await run_manager.update_run_completion(run_id, **summarize_messages_token_usage(latest_values.get("messages")))
             await run_manager.set_status(run_id, RunStatus.success)
 
     except asyncio.CancelledError:

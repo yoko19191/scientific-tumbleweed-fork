@@ -2,7 +2,7 @@
 
 import { BotIcon, PlusSquare } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
@@ -28,10 +28,12 @@ import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicato
 import { Tooltip } from "@/components/workspace/tooltip";
 import { useAgent } from "@/core/agents";
 import { useI18n } from "@/core/i18n/hooks";
+import { selectHeaderTokenUsage } from "@/core/messages/usage";
 import { useModels } from "@/core/models/hooks";
 import { useNotification } from "@/core/notification/hooks";
 import { useThreadSettings } from "@/core/settings";
-import { useThreadStream } from "@/core/threads/hooks";
+import { useThreadStream, useThreadTokenUsage } from "@/core/threads/hooks";
+import { threadTokenUsageToTokenUsage } from "@/core/threads/token-usage";
 import { textOfMessage } from "@/core/threads/utils";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -58,7 +60,7 @@ export default function AgentChatPage() {
     setIsWelcomeMode(isNewThread);
   }, [isNewThread]);
 
-  const [thread, sendMessage] = useThreadStream({
+  const [thread, sendMessage, , pendingUsageMessages] = useThreadStream({
     threadId: isNewThread ? undefined : threadId,
     context: { ...settings.context, agent_name: agent_name },
     onSend: () => {
@@ -91,6 +93,24 @@ export default function AgentChatPage() {
       }
     },
   });
+  const tokenUsagePreset = settings.tokenUsage.preset;
+  const threadTokenUsage = useThreadTokenUsage(threadId, {
+    enabled: tokenUsageEnabled && !isNewThread && tokenUsagePreset !== "off",
+    includeActive: thread.isLoading,
+  });
+  const backendTokenUsage = useMemo(
+    () => threadTokenUsageToTokenUsage(threadTokenUsage.data),
+    [threadTokenUsage.data],
+  );
+  const headerTokenUsage = useMemo(
+    () =>
+      selectHeaderTokenUsage({
+        backendUsage: backendTokenUsage,
+        messages: thread.messages,
+        pendingMessages: backendTokenUsage ? [] : pendingUsageMessages,
+      }),
+    [backendTokenUsage, pendingUsageMessages, thread.messages],
+  );
 
   const handleSubmit = useCallback(
     (message: PromptInputMessage) => {
@@ -188,7 +208,11 @@ export default function AgentChatPage() {
               </Tooltip>
               <TokenUsageIndicator
                 enabled={tokenUsageEnabled}
-                messages={thread.messages}
+                usage={headerTokenUsage}
+                preset={tokenUsagePreset}
+                onPresetChange={(preset) =>
+                  setSettings("tokenUsage", { preset })
+                }
               />
               <SandboxTrigger />
               <ExportTrigger threadId={threadId} />
@@ -203,7 +227,7 @@ export default function AgentChatPage() {
                 threadId={threadId}
                 thread={thread}
                 paddingBottom={MESSAGE_LIST_DEFAULT_PADDING_BOTTOM}
-                tokenUsageEnabled={tokenUsageEnabled}
+                tokenUsagePreset={tokenUsageEnabled ? tokenUsagePreset : "off"}
                 onClarificationSubmit={handleClarificationSubmit}
               />
             </div>

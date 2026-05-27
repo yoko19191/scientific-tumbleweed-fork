@@ -365,6 +365,28 @@ export interface Translations {
     input: string;
     output: string;
     total: string;
+    view: string;
+    note: string;
+    finalAnswer: string;
+    stepTotal: string;
+    sharedAttribution: string;
+    startTodo: (content: string) => string;
+    completeTodo: (content: string) => string;
+    updateTodo: (content: string) => string;
+    removeTodo: (content: string) => string;
+    subagent: (description: string) => string;
+    presets: {
+      off: string;
+      per_run: string;
+      per_turn: string;
+      step_debug: string;
+    };
+    presetDescriptions: {
+      off: string;
+      per_run: string;
+      per_turn: string;
+      step_debug: string;
+    };
     unavailable: string;
     unavailableShort: string;
   };

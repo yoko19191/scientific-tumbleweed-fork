@@ -25,6 +25,16 @@ class RunStore(abc.ABC):
         error: str | None = None,
         model_name: str | None = None,
         created_at: str | None = None,
+        total_input_tokens: int = 0,
+        total_output_tokens: int = 0,
+        total_tokens: int = 0,
+        llm_call_count: int = 0,
+        lead_agent_tokens: int = 0,
+        subagent_tokens: int = 0,
+        middleware_tokens: int = 0,
+        message_count: int = 0,
+        last_ai_message: str | None = None,
+        first_human_message: str | None = None,
     ) -> None:
         """Persist a run row."""
 
@@ -49,6 +59,25 @@ class RunStore(abc.ABC):
     @abc.abstractmethod
     async def update_model_name(self, run_id: str, model_name: str | None) -> None:
         """Update the model name captured for a run."""
+
+    async def update_run_completion(self, run_id: str, **kwargs: Any) -> None:
+        """Persist final run token/message summary."""
+        return None
+
+    async def update_run_progress(self, run_id: str, **kwargs: Any) -> None:
+        """Persist a best-effort running token/message snapshot."""
+        return None
+
+    async def aggregate_tokens_by_thread(self, thread_id: str, *, include_active: bool = False) -> dict[str, Any]:
+        """Aggregate token usage for runs in a thread."""
+        return {
+            "total_tokens": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_runs": 0,
+            "by_model": {},
+            "by_caller": {"lead_agent": 0, "subagent": 0, "middleware": 0},
+        }
 
     @abc.abstractmethod
     async def delete(self, run_id: str) -> None:

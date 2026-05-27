@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { type PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
@@ -30,10 +30,12 @@ import { TokenUsageIndicator } from "@/components/workspace/token-usage-indicato
 import { Welcome } from "@/components/workspace/welcome";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { useI18n } from "@/core/i18n/hooks";
+import { selectHeaderTokenUsage } from "@/core/messages/usage";
 import { useModels } from "@/core/models/hooks";
 import { useNotification } from "@/core/notification/hooks";
 import { useThreadSettings } from "@/core/settings";
-import { useThreadStream } from "@/core/threads/hooks";
+import { useThreadStream, useThreadTokenUsage } from "@/core/threads/hooks";
+import { threadTokenUsageToTokenUsage } from "@/core/threads/token-usage";
 import { textOfMessage } from "@/core/threads/utils";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -75,40 +77,63 @@ export default function ChatPage() {
 
   const { showNotification } = useNotification();
 
-  const [thread, sendMessage, isUploading] = useThreadStream({
-    threadId: isNewThread ? undefined : threadId,
-    context: settings.context,
-    isMock,
-    userId: user?.id,
-    // onSend only animates the UI; do NOT flip `isNewThread` here - the
-    // LangGraph SDK eagerly fetches /history the moment it receives a
-    // thread id and assumes the thread exists on the backend (issue #2746).
-    onSend: () => {
-      setIsWelcomeMode(false);
-    },
-    onStart: (createdThreadId) => {
-      setThreadId(createdThreadId);
-      setIsNewThread(false);
-      // ! Important: Never use next.js router for navigation in this case, otherwise it will cause the thread to re-mount and lose all states. Use native history API instead.
-      history.replaceState(null, "", `/workspace/chats/${createdThreadId}`);
-    },
-    onFinish: (state) => {
-      if (document.hidden || !document.hasFocus()) {
-        let body = "Conversation finished";
-        const lastMessage = state.messages.at(-1);
-        if (lastMessage) {
-          const textContent = textOfMessage(lastMessage);
-          if (textContent) {
-            body =
-              textContent.length > 200
-                ? textContent.substring(0, 200) + "..."
-                : textContent;
+  const [thread, sendMessage, isUploading, pendingUsageMessages] =
+    useThreadStream({
+      threadId: isNewThread ? undefined : threadId,
+      context: settings.context,
+      isMock,
+      userId: user?.id,
+      // onSend only animates the UI; do NOT flip `isNewThread` here - the
+      // LangGraph SDK eagerly fetches /history the moment it receives a
+      // thread id and assumes the thread exists on the backend (issue #2746).
+      onSend: () => {
+        setIsWelcomeMode(false);
+      },
+      onStart: (createdThreadId) => {
+        setThreadId(createdThreadId);
+        setIsNewThread(false);
+        // ! Important: Never use next.js router for navigation in this case, otherwise it will cause the thread to re-mount and lose all states. Use native history API instead.
+        history.replaceState(null, "", `/workspace/chats/${createdThreadId}`);
+      },
+      onFinish: (state) => {
+        if (document.hidden || !document.hasFocus()) {
+          let body = "Conversation finished";
+          const lastMessage = state.messages.at(-1);
+          if (lastMessage) {
+            const textContent = textOfMessage(lastMessage);
+            if (textContent) {
+              body =
+                textContent.length > 200
+                  ? textContent.substring(0, 200) + "..."
+                  : textContent;
+            }
           }
+          showNotification(state.title, { body });
         }
-        showNotification(state.title, { body });
-      }
-    },
+      },
+    });
+  const tokenUsagePreset = settings.tokenUsage.preset;
+  const threadTokenUsage = useThreadTokenUsage(threadId, {
+    enabled:
+      tokenUsageEnabled &&
+      !isNewThread &&
+      !isMock &&
+      tokenUsagePreset !== "off",
+    includeActive: thread.isLoading,
   });
+  const backendTokenUsage = useMemo(
+    () => threadTokenUsageToTokenUsage(threadTokenUsage.data),
+    [threadTokenUsage.data],
+  );
+  const headerTokenUsage = useMemo(
+    () =>
+      selectHeaderTokenUsage({
+        backendUsage: backendTokenUsage,
+        messages: thread.messages,
+        pendingMessages: backendTokenUsage ? [] : pendingUsageMessages,
+      }),
+    [backendTokenUsage, pendingUsageMessages, thread.messages],
+  );
 
   // Detect 401/403/404 errors from the stream - thread is not accessible to this user
   useEffect(() => {
@@ -226,7 +251,11 @@ export default function ChatPage() {
                 <>
                   <TokenUsageIndicator
                     enabled={tokenUsageEnabled}
-                    messages={thread.messages}
+                    usage={headerTokenUsage}
+                    preset={tokenUsagePreset}
+                    onPresetChange={(preset) =>
+                      setSettings("tokenUsage", { preset })
+                    }
                   />
                   <SandboxTrigger />
                 </>
@@ -243,7 +272,7 @@ export default function ChatPage() {
                 threadId={threadId}
                 thread={thread}
                 paddingBottom={MESSAGE_LIST_DEFAULT_PADDING_BOTTOM}
-                tokenUsageEnabled={tokenUsageEnabled}
+                tokenUsagePreset={tokenUsageEnabled ? tokenUsagePreset : "off"}
                 onClarificationSubmit={handleClarificationSubmit}
               />
             </div>

@@ -19,6 +19,7 @@ import { promptInputFilePartToFile, uploadFiles } from "../uploads";
 
 import { createThread } from "./api";
 import { getRunMetadataStorage, getStreamErrorMessage } from "./stream-utils";
+import { threadTokenUsageQueryKey } from "./token-usage";
 import type { AgentThread, AgentThreadState } from "./types";
 
 export type ToolEndEvent = {
@@ -41,6 +42,23 @@ type SendMessageOptions = {
   additionalKwargs?: Record<string, unknown>;
 };
 
+function messageIdentity(message: Message): string | undefined {
+  if ("tool_call_id" in message) {
+    return message.tool_call_id;
+  }
+  return message.id;
+}
+
+function getMessagesAfterBaseline(
+  messages: Message[],
+  baselineMessageIds: ReadonlySet<string>,
+): Message[] {
+  return messages.filter((message) => {
+    const id = messageIdentity(message);
+    return !id || !baselineMessageIds.has(id);
+  });
+}
+
 export function useThreadStream({
   threadId,
   context,
@@ -58,6 +76,7 @@ export function useThreadStream({
   // and to allow access to the current thread id in onUpdateEvent
   const threadIdRef = useRef<string | null>(threadId ?? null);
   const startedRef = useRef(false);
+  const pendingUsageBaselineMessageIdsRef = useRef<Set<string>>(new Set());
 
   const listeners = useRef({
     onSend,
@@ -224,11 +243,23 @@ export function useThreadStream({
     onError(error) {
       setOptimisticMessages([]);
       toast.error(getStreamErrorMessage(error));
+      pendingUsageBaselineMessageIdsRef.current = new Set();
+      if (threadIdRef.current && !isMock) {
+        void queryClient.invalidateQueries({
+          queryKey: threadTokenUsageQueryKey(threadIdRef.current),
+        });
+      }
       void queryClient.invalidateQueries({ queryKey: sandboxCapacityQueryKey });
     },
     onFinish(state) {
       listeners.current.onFinish?.(state.values);
+      pendingUsageBaselineMessageIdsRef.current = new Set();
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      if (threadIdRef.current && !isMock) {
+        void queryClient.invalidateQueries({
+          queryKey: threadTokenUsageQueryKey(threadIdRef.current),
+        });
+      }
       void queryClient.invalidateQueries({ queryKey: sandboxCapacityQueryKey });
     },
   });
@@ -236,14 +267,17 @@ export function useThreadStream({
   // Optimistic messages shown before the server stream responds
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const humanMessageCount = thread.messages.filter(
+    (m) => m.type === "human",
+  ).length;
+  const optimisticMessageCount = optimisticMessages.length;
+  const hasHumanOptimistic = optimisticMessages.some((m) => m.type === "human");
   const sendInFlightRef = useRef(false);
   // Track message count before sending so we know when server has responded
   const prevMsgCountRef = useRef(thread.messages.length);
   // Track human message count before sending so optimistic human messages are
   // not cleared by earlier AI stream chunks.
-  const prevHumanMsgCountRef = useRef(
-    thread.messages.filter((m) => m.type === "human").length,
-  );
+  const prevHumanMsgCountRef = useRef(humanMessageCount);
 
   // Reset thread-local pending UI state when switching between threads so
   // optimistic messages and in-flight guards do not leak across chat views.
@@ -252,25 +286,36 @@ export function useThreadStream({
     sendInFlightRef.current = false;
     prevMsgCountRef.current = 0;
     prevHumanMsgCountRef.current = 0;
+    pendingUsageBaselineMessageIdsRef.current = new Set();
     setOptimisticMessages([]);
     setIsUploading(false);
   }, [threadId]);
 
+  // If we reconnect into an already-running stream, snapshot existing messages
+  // so only newly arriving messages are treated as pending header usage.
+  useEffect(() => {
+    if (
+      thread.isLoading &&
+      pendingUsageBaselineMessageIdsRef.current.size === 0
+    ) {
+      pendingUsageBaselineMessageIdsRef.current = new Set(
+        thread.messages
+          .map(messageIdentity)
+          .filter((id): id is string => Boolean(id)),
+      );
+    }
+  }, [thread.isLoading, thread.messages]);
+
   // Clear optimistic when the server has caught up with the optimistic item.
   useEffect(() => {
-    if (optimisticMessages.length === 0) return;
+    if (optimisticMessageCount === 0) return;
 
-    const hasHumanOptimistic = optimisticMessages.some(
-      (m) => m.type === "human",
-    );
-    const newHumanMsgArrived =
-      thread.messages.filter((m) => m.type === "human").length >
-      prevHumanMsgCountRef.current;
+    const newHumanMsgArrived = humanMessageCount > prevHumanMsgCountRef.current;
 
     if (!hasHumanOptimistic || newHumanMsgArrived) {
       setOptimisticMessages([]);
     }
-  }, [thread.messages.length, optimisticMessages.length]);
+  }, [hasHumanOptimistic, humanMessageCount, optimisticMessageCount]);
 
   const sendMessage = useCallback(
     async (
@@ -292,9 +337,12 @@ export function useThreadStream({
 
       // Capture current count before showing optimistic messages
       prevMsgCountRef.current = thread.messages.length;
-      prevHumanMsgCountRef.current = thread.messages.filter(
-        (m) => m.type === "human",
-      ).length;
+      prevHumanMsgCountRef.current = humanMessageCount;
+      pendingUsageBaselineMessageIdsRef.current = new Set(
+        thread.messages
+          .map(messageIdentity)
+          .filter((id): id is string => Boolean(id)),
+      );
 
       // Build optimistic files list with uploading status
       const optimisticFiles: FileInMessage[] = (message.files ?? []).map(
@@ -487,7 +535,14 @@ export function useThreadStream({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [thread, _handleOnStart, t.uploads.uploadingFiles, stableContext, queryClient],
+    [
+      thread,
+      _handleOnStart,
+      t.uploads.uploadingFiles,
+      stableContext,
+      queryClient,
+      humanMessageCount,
+    ],
   );
 
   // Merge thread with optimistic messages for display
@@ -498,6 +553,17 @@ export function useThreadStream({
           messages: [...thread.messages, ...optimisticMessages],
         } as typeof thread)
       : thread;
+  const pendingUsageMessages = thread.isLoading
+    ? getMessagesAfterBaseline(
+        thread.messages,
+        pendingUsageBaselineMessageIdsRef.current,
+      )
+    : [];
 
-  return [mergedThread, sendMessage, isUploading] as const;
+  return [
+    mergedThread,
+    sendMessage,
+    isUploading,
+    pendingUsageMessages,
+  ] as const;
 }

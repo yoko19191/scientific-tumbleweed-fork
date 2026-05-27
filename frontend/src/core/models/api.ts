@@ -9,6 +9,6 @@ export async function loadModels(): Promise<ModelsResponse> {
   const data = (await res.json()) as Partial<ModelsResponse>;
   return {
     models: data.models ?? [],
-    token_usage: data.token_usage ?? { enabled: false },
+    token_usage: data.token_usage ?? { enabled: true },
   };
 }

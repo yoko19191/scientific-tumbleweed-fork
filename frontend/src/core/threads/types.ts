@@ -24,3 +24,24 @@ export interface AgentThreadContext extends Record<string, unknown> {
 export interface AgentThread extends Thread<AgentThreadState> {
   context?: AgentThreadContext;
 }
+
+export interface ThreadTokenUsageModelBreakdown {
+  tokens: number;
+  runs: number;
+}
+
+export interface ThreadTokenUsageCallerBreakdown {
+  lead_agent: number;
+  subagent: number;
+  middleware: number;
+}
+
+export interface ThreadTokenUsageResponse {
+  thread_id: string;
+  total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_runs: number;
+  by_model: Record<string, ThreadTokenUsageModelBreakdown>;
+  by_caller: ThreadTokenUsageCallerBreakdown;
+}

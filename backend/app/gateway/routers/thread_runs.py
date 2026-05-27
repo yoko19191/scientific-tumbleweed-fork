@@ -66,6 +66,35 @@ class RunResponse(BaseModel):
     multitask_strategy: str = "reject"
     created_at: str = ""
     updated_at: str = ""
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_tokens: int = 0
+    llm_call_count: int = 0
+    lead_agent_tokens: int = 0
+    subagent_tokens: int = 0
+    middleware_tokens: int = 0
+    message_count: int = 0
+
+
+class ThreadTokenUsageModelBreakdown(BaseModel):
+    tokens: int = 0
+    runs: int = 0
+
+
+class ThreadTokenUsageCallerBreakdown(BaseModel):
+    lead_agent: int = 0
+    subagent: int = 0
+    middleware: int = 0
+
+
+class ThreadTokenUsageResponse(BaseModel):
+    thread_id: str
+    total_tokens: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_runs: int = 0
+    by_model: dict[str, ThreadTokenUsageModelBreakdown] = Field(default_factory=dict)
+    by_caller: ThreadTokenUsageCallerBreakdown = Field(default_factory=ThreadTokenUsageCallerBreakdown)
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +113,14 @@ def _record_to_response(record: RunRecord) -> RunResponse:
         multitask_strategy=record.multitask_strategy,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        total_input_tokens=record.total_input_tokens,
+        total_output_tokens=record.total_output_tokens,
+        total_tokens=record.total_tokens,
+        llm_call_count=record.llm_call_count,
+        lead_agent_tokens=record.lead_agent_tokens,
+        subagent_tokens=record.subagent_tokens,
+        middleware_tokens=record.middleware_tokens,
+        message_count=record.message_count,
     )
 
 
@@ -164,6 +201,19 @@ async def get_run(thread_id: str, run_id: str, request: Request) -> RunResponse:
     if record is None or record.thread_id != thread_id:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
     return _record_to_response(record)
+
+
+@router.get("/{thread_id}/token-usage", response_model=ThreadTokenUsageResponse)
+async def thread_token_usage(
+    thread_id: str,
+    request: Request,
+    include_active: bool = Query(default=False, description="Include running run progress snapshots"),
+) -> ThreadTokenUsageResponse:
+    """Thread-level token usage aggregation."""
+    await require_thread_owner(request, thread_id)
+    run_mgr = get_run_manager(request)
+    agg = await run_mgr.aggregate_tokens_by_thread(thread_id, include_active=include_active)
+    return ThreadTokenUsageResponse(thread_id=thread_id, **agg)
 
 
 @router.post("/{thread_id}/runs/{run_id}/cancel")

@@ -1027,8 +1027,9 @@ git cherry-pick b5108e35
 
 **验证**
 
-- [ ] JWT secret 在 gateway 重启后保持一致
-- [ ] setup-status 接口不再被 rate limit 阻断
+- [x] JWT secret 在 gateway 重启后保持一致
+- [x] setup-status 接口不再被 rate limit 阻断
+- [x] 2026-05-27 M 组回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_auth_config.py tests/test_auth_setup_status.py -q` — 8 passed
 
 ## 合并完成后
 

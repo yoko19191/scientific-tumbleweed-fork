@@ -148,7 +148,7 @@ class TitleMiddleware(AgentMiddleware[TitleMiddlewareState]):
         prompt, user_msg = self._build_title_prompt(state)
 
         try:
-            model_kwargs = {"thinking_enabled": False}
+            model_kwargs = {"thinking_enabled": False, "attach_tracing": False}
             if self._app_config is not None:
                 model_kwargs["app_config"] = self._app_config
             if config.model_name:

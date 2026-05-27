@@ -19,6 +19,7 @@ import asyncio
 import copy
 import inspect
 import logging
+import os
 from typing import Any, Literal
 
 from deerflow.runtime.serialization import serialize
@@ -143,6 +144,16 @@ async def run_agent(
         # Resolve after runtime context installation so context/configurable reflect
         # the agent name that this run will actually execute.
         config.setdefault("run_name", resolve_root_run_name(config, getattr(record, "assistant_id", None)))
+        from deerflow.tracing import inject_langfuse_metadata
+
+        inject_langfuse_metadata(
+            config,
+            thread_id=thread_id,
+            user_id=runtime_ctx.get("user_id"),
+            model_name=record.model_name,
+            trace_name=config["run_name"],
+            environment=os.getenv("DEER_FLOW_ENV") or os.getenv("ENVIRONMENT"),
+        )
         runnable_config = RunnableConfig(**config)
         agent = agent_factory(config=runnable_config)
         metadata = getattr(agent, "metadata", {}) or {}

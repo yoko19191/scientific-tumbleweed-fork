@@ -91,10 +91,11 @@ def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkey
 
     captured: dict[str, object] = {}
 
-    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None):
+    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None, attach_tracing=True):
         captured["name"] = name
         captured["thinking_enabled"] = thinking_enabled
         captured["reasoning_effort"] = reasoning_effort
+        captured["attach_tracing"] = attach_tracing
         return object()
 
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
@@ -113,6 +114,7 @@ def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkey
 
     assert captured["name"] == "safe-model"
     assert captured["thinking_enabled"] is False
+    assert captured["attach_tracing"] is False
     assert result["model"] is not None
 
 
@@ -133,10 +135,11 @@ def test_make_lead_agent_reads_runtime_options_from_context(monkeypatch):
 
     captured: dict[str, object] = {}
 
-    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None):
+    def _fake_create_chat_model(*, name, thinking_enabled, reasoning_effort=None, attach_tracing=True):
         captured["name"] = name
         captured["thinking_enabled"] = thinking_enabled
         captured["reasoning_effort"] = reasoning_effort
+        captured["attach_tracing"] = attach_tracing
         return object()
 
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
@@ -159,9 +162,49 @@ def test_make_lead_agent_reads_runtime_options_from_context(monkeypatch):
         "name": "context-model",
         "thinking_enabled": False,
         "reasoning_effort": "high",
+        "attach_tracing": False,
     }
     get_available_tools.assert_called_once_with(model_name="context-model", groups=None, subagent_enabled=True)
     assert result["model"] is not None
+
+
+def test_make_lead_agent_attaches_tracing_callbacks_at_graph_root(monkeypatch):
+    app_config = _make_app_config([_make_model("trace-model", supports_thinking=False)])
+
+    import deerflow.tools as tools_module
+
+    sentinel_callback = object()
+    create_model_calls: list[dict[str, object]] = []
+    existing_callback = object()
+
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "build_tracing_callbacks", lambda: [sentinel_callback])
+    monkeypatch.setattr(lead_agent_module, "_load_enabled_skills_for_tool_policy", lambda available_skills, *, app_config: [])
+
+    def _fake_create_chat_model(**kwargs):
+        create_model_calls.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+
+    config = {
+        "callbacks": (existing_callback,),
+        "configurable": {
+            "model_name": "trace-model",
+            "thinking_enabled": False,
+            "is_plan_mode": False,
+            "subagent_enabled": False,
+        },
+    }
+
+    lead_agent_module.make_lead_agent(config)
+
+    assert config["callbacks"] == [existing_callback, sentinel_callback]
+    assert create_model_calls
+    assert all(call["attach_tracing"] is False for call in create_model_calls)
 
 
 def test_make_lead_agent_rejects_invalid_bootstrap_agent_name(monkeypatch):
@@ -276,10 +319,11 @@ def test_create_summarization_middleware_uses_configured_model_alias(monkeypatch
     captured: dict[str, object] = {}
     fake_model = object()
 
-    def _fake_create_chat_model(*, name=None, thinking_enabled, reasoning_effort=None):
+    def _fake_create_chat_model(*, name=None, thinking_enabled, reasoning_effort=None, attach_tracing=True):
         captured["name"] = name
         captured["thinking_enabled"] = thinking_enabled
         captured["reasoning_effort"] = reasoning_effort
+        captured["attach_tracing"] = attach_tracing
         return fake_model
 
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
@@ -289,6 +333,7 @@ def test_create_summarization_middleware_uses_configured_model_alias(monkeypatch
 
     assert captured["name"] == "model-masswork"
     assert captured["thinking_enabled"] is False
+    assert captured["attach_tracing"] is False
     assert middleware["model"] is fake_model
 
 

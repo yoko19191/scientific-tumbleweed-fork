@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import mimetypes
+import os
 import shutil
 import tempfile
 import uuid
@@ -41,6 +42,8 @@ from deerflow.config.extensions_config import ExtensionsConfig, SkillStateConfig
 from deerflow.config.model_config import ModelConfig
 from deerflow.config.paths import get_paths
 from deerflow.models import create_chat_model
+from deerflow.runtime.user_context import get_effective_user_id
+from deerflow.tracing import build_tracing_callbacks, inject_langfuse_metadata
 from deerflow.skills.installer import install_skill_from_archive
 from deerflow.uploads.manager import (
     claim_unique_filename,
@@ -141,6 +144,7 @@ class DeerFlowClient:
         agent_name: str | None = None,
         available_skills: set[str] | None = None,
         middlewares: Sequence[AgentMiddleware] | None = None,
+        environment: str | None = None,
     ):
         """Initialize the client.
 
@@ -158,6 +162,7 @@ class DeerFlowClient:
             agent_name: Name of the agent to use.
             available_skills: Optional set of skill names to make available. If None (default), all scanned skills are available.
             middlewares: Optional list of custom middlewares to inject into the agent.
+            environment: Optional deployment label emitted as a Langfuse tag.
         """
         if config_path is not None:
             reload_app_config(config_path)
@@ -174,6 +179,7 @@ class DeerFlowClient:
         self._agent_name = agent_name
         self._available_skills = set(available_skills) if available_skills is not None else None
         self._middlewares = list(middlewares) if middlewares else []
+        self._environment = environment
 
         # Lazy agent — created on first call, recreated when config changes.
         self._agent = None
@@ -248,7 +254,7 @@ class DeerFlowClient:
         max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
 
         kwargs: dict[str, Any] = {
-            "model": create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
+            "model": create_chat_model(name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False),
             "tools": self._get_tools(model_name=model_name, subagent_enabled=subagent_enabled),
             "middleware": _build_middlewares(config, model_name=model_name, agent_name=self._agent_name, custom_middlewares=self._middlewares),
             "system_prompt": apply_prompt_template(
@@ -571,6 +577,17 @@ class DeerFlowClient:
             thread_id = str(uuid.uuid4())
 
         config = self._get_runnable_config(thread_id, **kwargs)
+        inject_langfuse_metadata(
+            config,
+            thread_id=thread_id,
+            user_id=get_effective_user_id(),
+            assistant_id=self._agent_name or "lead-agent",
+            model_name=config.get("configurable", {}).get("model_name"),
+            environment=self._environment or os.getenv("DEER_FLOW_ENV") or os.getenv("ENVIRONMENT"),
+        )
+        callbacks = build_tracing_callbacks()
+        if callbacks:
+            config["callbacks"] = [*list(config.get("callbacks", []) or []), *callbacks]
         self._ensure_agent(config)
 
         state: dict[str, Any] = {"messages": [HumanMessage(content=message)]}

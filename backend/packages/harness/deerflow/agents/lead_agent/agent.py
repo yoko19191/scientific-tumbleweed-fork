@@ -1,3 +1,11 @@
+"""Lead agent factory.
+
+Tracing callbacks are attached at the graph invocation root in
+``make_lead_agent``. In-graph model calls in this module, and in middleware
+reached by this graph, should pass ``attach_tracing=False`` so Langfuse can lift
+reserved metadata onto the root trace without duplicate model-level spans.
+"""
+
 import logging
 from typing import TYPE_CHECKING
 
@@ -24,6 +32,7 @@ from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.config.memory_config import get_memory_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
+from deerflow.tracing import build_tracing_callbacks
 from deerflow.skills.tool_policy import filter_tools_by_skill_allowed_tools
 from deerflow.skills.types import Skill
 
@@ -89,11 +98,11 @@ def _create_summarization_middleware(*, app_config: AppConfig | None = None) -> 
 
     # Prepare model parameter
     if config.model_name:
-        model = _call_with_optional_app_config(create_chat_model, name=config.model_name, thinking_enabled=False, app_config=resolved_app_config)
+        model = _call_with_optional_app_config(create_chat_model, name=config.model_name, thinking_enabled=False, attach_tracing=False, app_config=resolved_app_config)
     else:
         # Use a lightweight model for summarization to save costs
         # Falls back to default model if not explicitly specified
-        model = _call_with_optional_app_config(create_chat_model, thinking_enabled=False, app_config=resolved_app_config)
+        model = _call_with_optional_app_config(create_chat_model, thinking_enabled=False, attach_tracing=False, app_config=resolved_app_config)
 
     # Prepare kwargs
     kwargs = {
@@ -541,6 +550,9 @@ def make_lead_agent(config: RunnableConfig):
     # Inject run metadata for LangSmith trace tagging
     if "metadata" not in config:
         config["metadata"] = {}
+    callbacks = build_tracing_callbacks()
+    if callbacks:
+        config["callbacks"] = [*list(config.get("callbacks", []) or []), *callbacks]
 
     config["metadata"].update(
         {
@@ -564,7 +576,7 @@ def make_lead_agent(config: RunnableConfig):
             available_tools_kwargs["app_config"] = app_config
         tools = get_available_tools(**available_tools_kwargs) + [setup_agent]
         return create_agent(
-            model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, app_config=app_config_for_child_calls),
+            model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False, app_config=app_config_for_child_calls),
             tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
             middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, app_config=app_config_for_child_calls),
             system_prompt=apply_prompt_template(
@@ -589,7 +601,7 @@ def make_lead_agent(config: RunnableConfig):
     if agent_name:
         tools = tools + [update_agent]
     return create_agent(
-        model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, app_config=app_config_for_child_calls),
+        model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, attach_tracing=False, app_config=app_config_for_child_calls),
         tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
         middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, agent_name=agent_name, app_config=app_config_for_child_calls),
         system_prompt=apply_prompt_template(

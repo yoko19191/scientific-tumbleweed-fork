@@ -738,11 +738,11 @@ git cherry-pick 680187dd
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | L 是剩余工作中耦合最高的 feature 集合，横跨 token usage、app_config、RunStore、custom agent、持久层和 tracing。 |
-| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
+| 当前状态 | L 是剩余工作中耦合最高的 feature 集合，横跨 token usage、app_config、RunStore、custom agent、持久层和 tracing；L2/L3/L4/L5/L6 已完成，L1 仍待处理。 |
+| 分值 | 当前适配度 4/5；目标收益分 5/5；差距 1。 |
 | 取舍结论 | 不做整批合并；每个 L 子系列单独分支、单独验证、单独中文 commit。 |
-| 补齐动作 | 先确定 L2 app_config 与 J gateway hot reload 的先后关系；L1/L3/L6 涉及 backend/frontend/trace 数据流，必须写清楚输入输出和验证证据。 |
-| 建议 merge 节奏 | 建议顺序为 L2 -> L3 -> L1 -> L5 -> L6 -> L4；若 custom agent 自更新与 user_id 隔离冲突扩大，L4 单独延后。 |
+| 补齐动作 | L1 需重新梳理 backend RunStore token usage 聚合、terminal task event、frontend header total 与 turn-anchored 渲染的数据流；已完成项继续保留各自执行备注和验证证据。 |
+| 建议 merge 节奏 | L2/L3/L4/L5/L6 已完成；后续优先处理 L1 token usage 显示体系，再进入合并完成后的全量验证。 |
 
 ### L1: Token Usage 显示体系重构
 
@@ -967,7 +967,7 @@ git cherry-pick de253e4a
 **决策状态**: ✅ 已决定采用
 **说明**: 将 Langfuse callback 从 model 级移到 graph root，传播 `session_id` / `user_id` / `trace_name` / `tags`。
 
-- [ ] `df951542` fix(tracing): propagate session_id and user_id into Langfuse traces (#2944) — 19 files, 910 lines
+- [x] `df951542` fix(tracing): propagate session_id and user_id into Langfuse traces (#2944) — 手工适配 fork 的 agent/model factory、worker 和 embedded client
 
 ```bash
 git cherry-pick df951542
@@ -975,25 +975,34 @@ git cherry-pick df951542
 
 **冲突解决要点**
 
-- [ ] 涉及 fork 定制的 `agents/lead_agent/agent.py` 和 `models/factory.py`
-- [ ] Langfuse callback 从 model 级移到 graph root，需在 fork 的 agent 构建流程中适配
-- [ ] 保留 fork 的 `user_id` 传播路径，确保与上游的 `session_id` / `user_id` / `trace_name` 注入合并
+- [x] 涉及 fork 定制的 `agents/lead_agent/agent.py` 和 `models/factory.py`
+- [x] Langfuse callback 从 model 级移到 graph root，需在 fork 的 agent 构建流程中适配
+- [x] 保留 fork 的 `user_id` 传播路径，确保与上游的 `session_id` / `user_id` / `trace_name` 注入合并
 
 **Trade-off**
 
 | 项目 | 说明 |
 |------|------|
-| 当前状态 | 当前 tracing 对 session/user/trace_name/tags 传播不足；上游将 Langfuse callback 提升到 graph root，能改善可观测性但会碰到 agent/model factory 定制。 |
-| 分值 | 当前适配度 2/5；目标收益分 5/5；差距 3。 |
-| 取舍结论 | 采用并手工适配；必须保留 fork 的 `user_id` 传播和现有 agent 构建流程，不把 callback 迁移做成模型工厂破坏性重构。 |
-| 补齐动作 | 梳理 model-level callback 到 graph-root callback 的迁移边界；补 Langfuse trace 中 session_id/user_id/trace_name/tags 验证；确认非 Langfuse tracing 不受影响。 |
-| 建议 merge 节奏 | L1/L3 后处理，因为 token/run 上下文稳定后 tracing 归因更可靠。 |
+| 当前状态 | 已完成适配：worker 和 embedded client 都在 graph root 注入 tracing callback 与 Langfuse reserved metadata；model factory 保留 `attach_tracing=True` 默认值，in-graph 调用显式关闭 model-level tracing。 |
+| 分值 | 当前适配度 5/5；目标收益分 5/5；差距 0。 |
+| 取舍结论 | 采用；保留 fork 的 `runtime.context.user_id`、`resolve_root_run_name()` 和 custom-agent `agent_name` 语义，不整批套用上游 `lead-agent` 命名。 |
+| 补齐动作 | 已补 `build_langfuse_trace_metadata()` / `inject_langfuse_metadata()`；worker 使用 thread_id、runtime user_id、RunStore model_name 和 root run_name；embedded client 使用 `get_effective_user_id()`、可选 `environment` 和 root callbacks；测试覆盖 caller metadata override 与 disabled no-op。 |
+| 建议 merge 节奏 | L6 已完成；后续 L1 token usage 可复用 RunStore model_name 与 root tracing 归因。 |
+
+**执行备注**
+
+- `deerflow.tracing.metadata` 负责生成 Langfuse v4 reserved keys：`langfuse_session_id`、`langfuse_user_id`、`langfuse_trace_name`、`langfuse_tags`，且仅在 Langfuse provider 启用时生效。
+- `models/factory.py` 新增 `attach_tracing` 开关，默认保留 standalone model tracing；`make_lead_agent()`、summarization middleware、title middleware 和 `DeerFlowClient` 的 in-graph model 调用统一传 `attach_tracing=False`，避免重复 spans。
+- `runtime/runs/worker.py` 只注入 metadata，不重复构建 callback；graph-root callback 在 `make_lead_agent()` 中注入，保留 fork 的 `runtime.context` 和 `run_name` 解析。
+- `DeerFlowClient.stream()` 补齐 embedded path 的 root callback 与 metadata 注入，新增 `environment` 初始化参数用于 Langfuse `env:<value>` tag。
 
 **验证**
 
-- [ ] Langfuse trace 中正确显示 `session_id` 和 `user_id`
-- [ ] `trace_name` 和 `tags` 正确传播
-- [ ] 不影响现有 agent 运行流程
+- [x] Langfuse trace 中正确显示 `session_id` 和 `user_id`
+- [x] `trace_name` 和 `tags` 正确传播
+- [x] 不影响现有 agent 运行流程
+- [x] 2026-05-27 L6 回归: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m pytest tests/test_tracing_metadata.py tests/test_worker_langfuse_metadata.py tests/test_client_langfuse_metadata.py tests/test_tracing_factory.py tests/test_tracing_config.py tests/test_model_factory.py tests/test_lead_agent_model_resolution.py tests/test_title_middleware_core_logic.py -q` — 99 passed
+- [x] 2026-05-27 L6 静态检查: `PYTHONPATH=. PYTHONPYCACHEPREFIX=/private/tmp/st-pycache uv run python -m py_compile ...` — 通过；`rg -n "^(<<<<<<<|=======|>>>>>>>)" ...` 无冲突标记；`git diff --check` — 通过
 
 ## M: Auth 独立修复 (Phase 16)
 

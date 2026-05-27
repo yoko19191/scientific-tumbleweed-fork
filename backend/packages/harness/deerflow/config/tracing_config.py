@@ -129,6 +129,13 @@ def get_tracing_config() -> TracingConfig:
         return _tracing_config
 
 
+def reset_tracing_config() -> None:
+    """Reset cached tracing config. Intended for tests and explicit reloads."""
+    global _tracing_config
+    with _config_lock:
+        _tracing_config = None
+
+
 def get_enabled_tracing_providers() -> list[str]:
     """Return the configured tracing providers that are enabled and complete."""
     return get_tracing_config().enabled_providers

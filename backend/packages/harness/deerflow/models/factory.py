@@ -98,6 +98,7 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
     Returns:
         A chat model instance.
     """
+    attach_tracing = kwargs.pop("attach_tracing", True)
     config = kwargs.pop("app_config", None) or get_app_config()
     if name is None:
         name = config.models[0].name
@@ -222,9 +223,10 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
 
     model_instance = model_class(**{**model_settings_from_config, **kwargs})
 
-    callbacks = build_tracing_callbacks()
-    if callbacks:
-        existing_callbacks = model_instance.callbacks or []
-        model_instance.callbacks = [*existing_callbacks, *callbacks]
-        logger.debug(f"Tracing attached to model '{name}' with providers={len(callbacks)}")
+    if attach_tracing:
+        callbacks = build_tracing_callbacks()
+        if callbacks:
+            existing_callbacks = model_instance.callbacks or []
+            model_instance.callbacks = [*existing_callbacks, *callbacks]
+            logger.debug(f"Tracing attached to model '{name}' with providers={len(callbacks)}")
     return model_instance

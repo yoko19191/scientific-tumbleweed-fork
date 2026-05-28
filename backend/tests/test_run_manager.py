@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from deerflow.runtime import RunManager, RunStatus
+from deerflow.runtime import DisconnectMode, RunManager, RunRecord, RunStatus
 from deerflow.runtime.runs.store import MemoryRunStore
 
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
@@ -13,6 +13,32 @@ ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 @pytest.fixture
 def manager() -> RunManager:
     return RunManager()
+
+
+def test_run_record_from_store_row_maps_defaults_and_token_fields():
+    """Store-row hydration should live on the RunRecord value object."""
+    record = RunRecord.from_store_row(
+        {
+            "run_id": "run-1",
+            "thread_id": "thread-1",
+            "metadata": {"user_id": "user-1"},
+            "kwargs": {"input": {}},
+            "total_input_tokens": 2,
+            "total_output_tokens": 3,
+            "total_tokens": 5,
+            "llm_call_count": 1,
+        }
+    )
+
+    assert record.run_id == "run-1"
+    assert record.thread_id == "thread-1"
+    assert record.status == RunStatus.pending
+    assert record.on_disconnect == DisconnectMode.cancel
+    assert record.metadata == {"user_id": "user-1"}
+    assert record.kwargs == {"input": {}}
+    assert record.store_only is True
+    assert record.total_tokens == 5
+    assert record.llm_call_count == 1
 
 
 @pytest.mark.anyio

@@ -22,6 +22,7 @@ import logging
 import os
 from typing import Any, Literal
 
+from deerflow.runtime.context import RuntimeContext, install_runtime_context
 from deerflow.runtime.serialization import serialize
 from deerflow.runtime.stream_bridge import StreamBridge
 from deerflow.sandbox.exceptions import SandboxCapacityExceededError
@@ -35,33 +36,6 @@ logger = logging.getLogger(__name__)
 
 # Valid stream_mode values for LangGraph's graph.astream()
 _VALID_LG_MODES = {"values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"}
-
-
-def _build_runtime_context(
-    thread_id: str,
-    run_id: str,
-    caller_context: Any | None,
-    app_config: Any | None = None,
-) -> dict[str, Any]:
-    runtime_ctx: dict[str, Any] = {"thread_id": thread_id, "run_id": run_id}
-    if isinstance(caller_context, dict):
-        for key, value in caller_context.items():
-            runtime_ctx.setdefault(key, value)
-    if app_config is not None:
-        runtime_ctx["app_config"] = app_config
-    return runtime_ctx
-
-
-def _install_runtime_context(config: dict, runtime_context: dict[str, Any]) -> None:
-    existing_context = config.get("context")
-    if isinstance(existing_context, dict):
-        existing_context.setdefault("thread_id", runtime_context["thread_id"])
-        existing_context.setdefault("run_id", runtime_context["run_id"])
-        if "app_config" in runtime_context:
-            existing_context["app_config"] = runtime_context["app_config"]
-        return
-
-    config["context"] = dict(runtime_context)
 
 
 async def run_agent(
@@ -144,11 +118,14 @@ async def run_agent(
 
         # Inject runtime context so middlewares/tools can access thread_id and
         # the request-resolved AppConfig without ambient singleton lookups.
-        runtime_ctx = _build_runtime_context(thread_id, run_id, config.get("context"), app_config)
-        user_id = (config.get("metadata") or {}).get("user_id")
-        if user_id is not None:
-            runtime_ctx.setdefault("user_id", user_id)
-        _install_runtime_context(config, runtime_ctx)
+        runtime_context = RuntimeContext.from_config(
+            thread_id=thread_id,
+            run_id=run_id,
+            config=config,
+            app_config=app_config,
+        )
+        runtime_ctx = runtime_context.to_dict()
+        install_runtime_context(config, runtime_context)
         runtime = Runtime(context=runtime_ctx, store=store)
         config.setdefault("configurable", {})["__pregel_runtime"] = runtime
 

@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import yaml
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import tool
 from langgraph.types import Command
 
-from deerflow.config.agents_config import load_agent_config, load_agent_soul, validate_agent_name
+from deerflow.config.agents_config import AgentConfig, CustomAgentStore, normalize_agent_name
 from deerflow.config.app_config import get_app_config
 from deerflow.runtime.user_context import resolve_runtime_user_id
-from deerflow.storage import get_operator, user_agent_config_key, user_agent_soul_key
 from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
@@ -55,7 +53,7 @@ def update_agent(
 
     agent_name_raw = runtime.context.get("agent_name") if runtime.context else None
     try:
-        agent_name = validate_agent_name(agent_name_raw)
+        agent_name = normalize_agent_name(agent_name_raw) if agent_name_raw else None
     except ValueError as exc:
         return _error(str(exc), runtime)
 
@@ -67,8 +65,9 @@ def update_agent(
     if model is not None and get_app_config().get_model_config(model) is None:
         return _error(f"Unknown model '{model}'. Pass a model name that exists in config.yaml.", runtime)
 
+    store = CustomAgentStore()
     try:
-        existing_cfg = load_agent_config(agent_name, user_id=user_id)
+        existing_cfg = store.load_config(agent_name, user_id=user_id)
     except FileNotFoundError:
         return _error(f"Agent '{agent_name}' does not exist for the current user. Use setup_agent to create it first.", runtime)
     except ValueError as exc:
@@ -104,7 +103,7 @@ def update_agent(
     if skills is not None and skills != existing_cfg.skills:
         updated_fields.append("skills")
 
-    existing_soul = load_agent_soul(agent_name, user_id=user_id)
+    existing_soul = store.load_soul(agent_name, user_id=user_id)
     soul_changed = soul is not None and soul != existing_soul
     if soul_changed:
         updated_fields.append("soul")
@@ -112,13 +111,11 @@ def update_agent(
     if not updated_fields:
         return _message(f"No changes applied to agent '{agent_name}'. The provided values matched the existing configuration.", runtime)
 
-    operator = get_operator()
     try:
         if any(field in updated_fields for field in ("description", "model", "tool_groups", "skills")):
-            config_yaml = yaml.dump(config_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
-            operator.write(user_agent_config_key(user_id, agent_name), config_yaml.encode("utf-8"))
+            store.write_config(AgentConfig(**config_data), user_id=user_id)
         if soul_changed and soul is not None:
-            operator.write(user_agent_soul_key(user_id, agent_name), soul.encode("utf-8"))
+            store.write_soul(agent_name, soul, user_id=user_id)
     except Exception as exc:
         logger.error("[update_agent] Failed to update agent '%s' (user=%s): %s", agent_name, user_id, exc, exc_info=True)
         return _error(f"Failed to update agent '{agent_name}': {exc}", runtime)

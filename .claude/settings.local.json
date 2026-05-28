@@ -160,7 +160,8 @@
       "Bash(docker volume *)",
       "Bash(npx -y @modelcontextprotocol/server-postgres --help)",
       "Bash(timeout 10 npx -y @modelcontextprotocol/server-postgres \"postgresql://scientifictumbleweed:scientifictumbleweed@localhost:5432/scientifictumbleweed\")",
-      "Bash(make check-init-sql *)"
+      "Bash(make check-init-sql *)",
+      "Bash(sort -t'#' -k2 -n)"
     ]
   }
 }

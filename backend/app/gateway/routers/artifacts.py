@@ -7,8 +7,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
-from app.gateway.path_utils import resolve_thread_virtual_path
-from app.gateway.thread_ownership import require_thread_owner
+from app.gateway.thread_resources import get_authenticated_thread_resource
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +110,8 @@ async def list_sandbox_root(thread_id: str, request: Request) -> dict:
     description="List files and directories at the given path inside the sandbox.",
 )
 async def list_directory(thread_id: str, path: str, request: Request) -> dict:
-    user_id = await require_thread_owner(request, thread_id)
-    actual_path = resolve_thread_virtual_path(thread_id, path, user_id)
+    thread_resource = await get_authenticated_thread_resource(request, thread_id)
+    actual_path = thread_resource.resolve_virtual_path(path)
 
     if not actual_path.exists():
         raise HTTPException(status_code=404, detail=f"Path not found: {path}")
@@ -180,8 +179,8 @@ async def get_artifact(thread_id: str, path: str, request: Request, download: bo
         skill_file_path = path[: marker_pos + len(".skill")]  # e.g., "mnt/user-data/outputs/my-skill.skill"
         internal_path = path[marker_pos + len(skill_marker) :]  # e.g., "SKILL.md"
 
-        user_id = await require_thread_owner(request, thread_id)
-        actual_skill_path = resolve_thread_virtual_path(thread_id, skill_file_path, user_id)
+        thread_resource = await get_authenticated_thread_resource(request, thread_id)
+        actual_skill_path = thread_resource.resolve_virtual_path(skill_file_path)
 
         if not actual_skill_path.exists():
             raise HTTPException(status_code=404, detail=f"Skill file not found: {skill_file_path}")
@@ -211,8 +210,8 @@ async def get_artifact(thread_id: str, path: str, request: Request, download: bo
         except UnicodeDecodeError:
             return Response(content=content, media_type=mime_type or "application/octet-stream", headers=cache_headers)
 
-    user_id = await require_thread_owner(request, thread_id)
-    actual_path = resolve_thread_virtual_path(thread_id, path, user_id)
+    thread_resource = await get_authenticated_thread_resource(request, thread_id)
+    actual_path = thread_resource.resolve_virtual_path(path)
 
     logger.info(f"Resolving artifact path: thread_id={thread_id}, requested_path={path}, actual_path={actual_path}")
 

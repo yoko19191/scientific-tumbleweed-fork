@@ -8,7 +8,6 @@ frames, and consuming stream bridge events.  Router modules
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import time
@@ -30,8 +29,10 @@ from deerflow.runtime import (
     RunStatus,
     StreamBridge,
     UnsupportedStrategyError,
+    format_sse_frame,
     run_agent,
 )
+from deerflow.runtime.runs.checkpoints import read_thread_checkpoint_values
 from deerflow.runtime.runs.naming import resolve_root_run_name
 
 logger = logging.getLogger(__name__)
@@ -49,13 +50,7 @@ def format_sse(event: str, data: Any, *, event_id: str | None = None) -> str:
     This matches the LangGraph Platform wire format consumed by the
     ``useStream`` React hook and the Python ``langgraph-sdk`` SSE decoder.
     """
-    payload = json.dumps(data, default=str, ensure_ascii=False)
-    parts = [f"event: {event}", f"data: {payload}"]
-    if event_id:
-        parts.append(f"id: {event_id}")
-    parts.append("")
-    parts.append("")
-    return "\n".join(parts)
+    return format_sse_frame(event, data, event_id=event_id)
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +108,18 @@ def normalize_input(raw_input: dict[str, Any] | None) -> dict[str, Any]:
 
 _DEFAULT_ASSISTANT_ID = "lead_agent"
 _MAX_MODEL_NAME_LEN = 128
+_RUNTIME_CONTEXT_CONFIG_KEYS = frozenset(
+    {
+        "model_name",
+        "mode",
+        "thinking_enabled",
+        "reasoning_effort",
+        "is_plan_mode",
+        "subagent_enabled",
+        "max_concurrent_subagents",
+        "tone_style",
+    }
+)
 
 
 def _coerce_model_name(value: Any) -> str | None:
@@ -236,6 +243,34 @@ def build_run_config(
     return config
 
 
+def apply_runtime_context_overrides(config: dict[str, Any], context: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Merge request body context into the active runtime options container.
+
+    If the caller already selected LangGraph ``context`` mode through
+    ``config["context"]``, overrides stay in that container. Otherwise they
+    are added to ``config["configurable"]`` for backward compatibility.
+    """
+    if not context:
+        return config
+
+    if "context" in config:
+        target = config["context"]
+        if target is None:
+            target = {}
+            config["context"] = target
+        if not isinstance(target, dict):
+            raise ValueError("run config 'context' must be a mapping or null.")
+    else:
+        target = config.setdefault("configurable", {})
+        if not isinstance(target, dict):
+            raise ValueError("run config 'configurable' must be a mapping.")
+
+    for key in _RUNTIME_CONTEXT_CONFIG_KEYS:
+        if key in context:
+            target.setdefault(key, context[key])
+    return config
+
+
 # ---------------------------------------------------------------------------
 # Run lifecycle
 # ---------------------------------------------------------------------------
@@ -289,12 +324,9 @@ async def _sync_thread_title_after_run(
     try:
         threads_ns = user_threads_namespace(user_id) if user_id else ("threads",)
 
-        ckpt_config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
-        ckpt_tuple = await checkpointer.aget_tuple(ckpt_config)
-        if ckpt_tuple is None:
+        channel_values = await read_thread_checkpoint_values(checkpointer, thread_id)
+        if channel_values is None:
             return
-
-        channel_values = ckpt_tuple.checkpoint.get("channel_values", {})
         title = channel_values.get("title")
         if not title:
             return
@@ -382,26 +414,11 @@ async def start_run(
 
     config = build_run_config(thread_id, body.config, run_metadata, assistant_id=body.assistant_id)
 
-    # Merge Scientific Tumbleweed-specific context overrides into configurable.
-    # The ``context`` field is a custom extension for the langgraph-compat layer
-    # that carries agent configuration (model_name, thinking_enabled, etc.).
-    # Only agent-relevant keys are forwarded; unknown keys (e.g. thread_id) are ignored.
-    context = getattr(body, "context", None)
-    if context:
-        _CONTEXT_CONFIGURABLE_KEYS = {
-            "model_name",
-            "mode",
-            "thinking_enabled",
-            "reasoning_effort",
-            "is_plan_mode",
-            "subagent_enabled",
-            "max_concurrent_subagents",
-            "tone_style",
-        }
-        configurable = config.setdefault("configurable", {})
-        for key in _CONTEXT_CONFIGURABLE_KEYS:
-            if key in context:
-                configurable.setdefault(key, context[key])
+    # Merge Scientific Tumbleweed-specific context overrides into the active
+    # runtime options container. Unknown keys such as body.context.thread_id are
+    # intentionally ignored; canonical thread_id/run_id/user_id are resolved by
+    # the runtime context interface when the run executes.
+    apply_runtime_context_overrides(config, getattr(body, "context", None))
 
     stream_modes = normalize_stream_modes(body.stream_mode)
 

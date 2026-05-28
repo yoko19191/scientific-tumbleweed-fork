@@ -1,11 +1,10 @@
+import asyncio
 import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI, HTTPException
-import asyncio
-
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
@@ -27,6 +26,13 @@ def _build_thread_app() -> tuple[FastAPI, InMemoryStore, InMemorySaver]:
     app.state.checkpointer = checkpointer
     app.include_router(threads.router)
     return app, store, checkpointer
+
+
+def _patch_thread_resource(user_id: str = _TEST_USER_ID):
+    async def _get_resource(_request, thread_id: str, **_kwargs):
+        return SimpleNamespace(thread_id=thread_id, user_id=user_id)
+
+    return patch("app.gateway.routers.threads.get_authenticated_thread_resource", new=AsyncMock(side_effect=_get_resource))
 
 
 def test_delete_thread_data_removes_thread_directory(tmp_path):
@@ -70,20 +76,20 @@ def test_delete_thread_data_rejects_invalid_thread_id(tmp_path):
 
 
 def test_delete_thread_route_cleans_thread_directory(tmp_path):
-    from unittest.mock import AsyncMock
-
     paths = Paths(tmp_path)
-    thread_dir = paths.thread_dir("thread-route")
-    paths.sandbox_work_dir("thread-route").mkdir(parents=True, exist_ok=True)
-    (paths.sandbox_work_dir("thread-route") / "notes.txt").write_text("hello", encoding="utf-8")
+    thread_dir = paths.user_thread_dir(_TEST_USER_ID, "thread-route")
+    other_thread_dir = paths.user_thread_dir("other-user", "thread-route")
+    paths.user_thread_workspace_dir(_TEST_USER_ID, "thread-route").mkdir(parents=True, exist_ok=True)
+    paths.user_thread_workspace_dir("other-user", "thread-route").mkdir(parents=True, exist_ok=True)
+    (paths.user_thread_workspace_dir(_TEST_USER_ID, "thread-route") / "notes.txt").write_text("hello", encoding="utf-8")
+    (paths.user_thread_workspace_dir("other-user", "thread-route") / "notes.txt").write_text("keep", encoding="utf-8")
 
     app = FastAPI()
     app.include_router(threads.router)
 
     with (
         patch("app.gateway.routers.threads.get_paths", return_value=paths),
-        patch("app.gateway.deps.get_current_user_id", new=AsyncMock(return_value="user-test")),
-        patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value="user-test")),
+        _patch_thread_resource(),
     ):
         with TestClient(app) as client:
             response = client.delete("/api/threads/thread-route")
@@ -91,6 +97,7 @@ def test_delete_thread_route_cleans_thread_directory(tmp_path):
     assert response.status_code == 200
     assert response.json() == {"success": True, "message": "Deleted local thread data for thread-route"}
     assert not thread_dir.exists()
+    assert other_thread_dir.exists()
 
 
 def test_delete_thread_route_rejects_invalid_thread_id(tmp_path):
@@ -107,8 +114,6 @@ def test_delete_thread_route_rejects_invalid_thread_id(tmp_path):
 
 
 def test_delete_thread_route_returns_422_for_route_safe_invalid_id(tmp_path):
-    from unittest.mock import AsyncMock
-
     paths = Paths(tmp_path)
 
     app = FastAPI()
@@ -116,8 +121,7 @@ def test_delete_thread_route_returns_422_for_route_safe_invalid_id(tmp_path):
 
     with (
         patch("app.gateway.routers.threads.get_paths", return_value=paths),
-        patch("app.gateway.deps.get_current_user_id", new=AsyncMock(return_value="user-test")),
-        patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value="user-test")),
+        _patch_thread_resource(),
     ):
         with TestClient(app) as client:
             response = client.delete("/api/threads/thread.with.dot")
@@ -224,7 +228,7 @@ def test_get_thread_returns_iso_for_legacy_unix_record() -> None:
 
     asyncio.run(_seed())
 
-    with patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value=_TEST_USER_ID)):
+    with _patch_thread_resource():
         with TestClient(app) as client:
             response = client.get(f"/api/threads/{legacy_thread_id}")
 
@@ -253,7 +257,7 @@ def test_patch_thread_returns_iso_and_advances_updated_at() -> None:
 
     asyncio.run(_seed())
 
-    with patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value=_TEST_USER_ID)):
+    with _patch_thread_resource():
         with TestClient(app) as client:
             response = client.patch(f"/api/threads/{thread_id}", json={"metadata": {"k": "v1", "user_id": "spoof"}})
 
@@ -323,7 +327,7 @@ def test_get_thread_state_returns_iso_for_legacy_checkpoint_metadata() -> None:
 
     asyncio.run(_seed())
 
-    with patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value=_TEST_USER_ID)):
+    with _patch_thread_resource():
         with TestClient(app) as client:
             response = client.get(f"/api/threads/{thread_id}/state")
 
@@ -349,7 +353,7 @@ def test_get_thread_history_returns_iso_for_legacy_checkpoint_metadata() -> None
 
     asyncio.run(_seed())
 
-    with patch("app.gateway.routers.threads.require_thread_owner", new=AsyncMock(return_value=_TEST_USER_ID)):
+    with _patch_thread_resource():
         with TestClient(app) as client:
             response = client.post(f"/api/threads/{thread_id}/history", json={"limit": 10})
 

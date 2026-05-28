@@ -2,6 +2,8 @@
 
 import json
 
+from deerflow.runtime import format_sse_frame
+
 
 def _format_sse(event: str, data, *, event_id: str | None = None) -> str:
     from app.gateway.services import format_sse
@@ -28,3 +30,12 @@ def test_sse_error_format():
     parsed = json.loads(frame.split("data: ")[1].split("\n")[0])
     assert parsed["message"] == "boom"
     assert parsed["name"] == "ValueError"
+
+
+def test_runtime_sse_frame_is_gateway_wire_format_source():
+    """The harness runtime owns the LangGraph-compatible SSE wire format."""
+    assert format_sse_frame("metadata", {"run_id": "abc"}, event_id="1-0") == _format_sse(
+        "metadata",
+        {"run_id": "abc"},
+        event_id="1-0",
+    )

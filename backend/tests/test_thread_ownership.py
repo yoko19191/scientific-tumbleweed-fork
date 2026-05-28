@@ -18,7 +18,9 @@ from app.gateway.thread_ownership import (
     get_thread_owner,
     require_thread_owner,
 )
+from app.gateway.thread_resources import AuthenticatedThreadResource, get_authenticated_thread_resource
 from app.gateway.user_prefix import user_thread_owners_namespace
+from deerflow.config.paths import Paths
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -130,6 +132,40 @@ class TestRequireThreadOwner:
                 await require_thread_owner(request, THREAD_1)
 
         assert exc_info.value.status_code == 404
+
+
+class TestAuthenticatedThreadResource:
+    def test_resolves_virtual_path_under_authenticated_user_prefix(self, tmp_path):
+        paths = Paths(tmp_path)
+        resource = AuthenticatedThreadResource(thread_id=THREAD_1, user_id=USER_A, paths=paths)
+
+        resolved = resource.resolve_virtual_path("/mnt/user-data/outputs/report.txt")
+
+        assert resolved == (paths.user_thread_dir(USER_A, THREAD_1) / "outputs" / "report.txt").resolve()
+
+    def test_delete_local_data_removes_only_authenticated_user_thread(self, tmp_path):
+        paths = Paths(tmp_path)
+        paths.user_thread_workspace_dir(USER_A, THREAD_1).mkdir(parents=True)
+        paths.user_thread_workspace_dir(USER_B, THREAD_1).mkdir(parents=True)
+
+        resource = AuthenticatedThreadResource(thread_id=THREAD_1, user_id=USER_A, paths=paths)
+        resource.delete_local_data()
+
+        assert not paths.user_thread_dir(USER_A, THREAD_1).exists()
+        assert paths.user_thread_dir(USER_B, THREAD_1).exists()
+
+    @pytest.mark.anyio
+    async def test_get_authenticated_thread_resource_uses_ownership_interface(self, tmp_path):
+        request = _make_request_with_store(_make_store(owner=USER_A))
+        paths = Paths(tmp_path)
+
+        with patch("app.gateway.thread_resources.require_thread_owner", new=AsyncMock(return_value=USER_A)) as require_owner:
+            resource = await get_authenticated_thread_resource(request, THREAD_1, paths=paths)
+
+        require_owner.assert_awaited_once_with(request, THREAD_1)
+        assert resource.thread_id == THREAD_1
+        assert resource.user_id == USER_A
+        assert resource.paths is paths
 
     @pytest.mark.anyio
     async def test_missing_owner_mapping_raises_404(self):

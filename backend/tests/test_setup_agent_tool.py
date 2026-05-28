@@ -94,7 +94,7 @@ class TestSetupAgentNoDataLoss:
     def test_new_agent_objects_cleaned_up_on_failure(self, tmp_path):
         _configure_storage(tmp_path)
 
-        with patch("deerflow.tools.builtins.setup_agent_tool.yaml.dump", side_effect=OSError("write error")):
+        with patch("deerflow.config.agents_config.CustomAgentStore.write_soul", side_effect=OSError("write error")):
             setup_agent.func(
                 soul="new soul",
                 description="desc",

@@ -1,16 +1,14 @@
 import errno
-import json
 import logging
 import shutil
-from pathlib import Path
 
-import opendal.exceptions as opendal_exc
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.deps import get_current_user_id
-from app.gateway.path_utils import resolve_thread_virtual_path
+from app.gateway.thread_resources import get_authenticated_thread_resource
 from deerflow.agents.lead_agent.prompt import refresh_skills_system_prompt_cache_async
+from deerflow.config.extensions_config import aset_user_skill_enabled
 from deerflow.skills import Skill, load_skills
 from deerflow.skills.installer import SkillAlreadyExistsError, ainstall_skill_from_archive
 from deerflow.skills.manager import (
@@ -312,38 +310,9 @@ async def update_skill(skill_name: str, body: SkillUpdateRequest, user_id: str =
         if skill is None:
             raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
 
-        from deerflow.storage import get_async_operator, user_extensions_override_key
+        await aset_user_skill_enabled(user_id, skill_name, body.enabled)
 
-        operator = get_async_operator()
-        config_key = user_extensions_override_key(user_id)
-
-        # Load existing per-user override (preserving mcpServers etc.)
-        try:
-            raw = bytes(await operator.read(config_key))
-        except Exception as exc:
-            if isinstance(exc, (opendal_exc.NotFound, FileNotFoundError)):
-                existing_data: dict = {}
-            else:
-                logger.warning("Failed to read per-user extensions override", exc_info=True)
-                existing_data = {}
-        else:
-            try:
-                existing_data = json.loads(raw.decode("utf-8"))
-                if not isinstance(existing_data, dict):
-                    existing_data = {}
-            except (json.JSONDecodeError, ValueError):
-                existing_data = {}
-
-        # Update skills section
-        skills_data = existing_data.get("skills", {})
-        if not isinstance(skills_data, dict):
-            skills_data = {}
-        skills_data[skill_name] = {"enabled": body.enabled}
-        existing_data["skills"] = skills_data
-
-        await operator.write(config_key, json.dumps(existing_data, indent=2, ensure_ascii=False).encode("utf-8"))
-
-        logger.info("Skills configuration updated for user %s at %s", user_id, config_key)
+        logger.info("Skills configuration updated for user %s", user_id)
         await refresh_skills_system_prompt_cache_async()
 
         skills = load_skills(enabled_only=False, user_id=user_id)
@@ -368,10 +337,12 @@ async def update_skill(skill_name: str, body: SkillUpdateRequest, user_id: str =
     summary="Install Skill",
     description="Install a skill from a .skill file (ZIP archive) located in the thread's user-data directory.",
 )
-async def install_skill(body: SkillInstallRequest, user_id: str = Depends(get_current_user_id)) -> SkillInstallResponse:
+async def install_skill(body: SkillInstallRequest, request: Request) -> SkillInstallResponse:
     try:
-        skill_file_path = resolve_thread_virtual_path(body.thread_id, body.path)
-        result = install_skill_from_archive(skill_file_path, user_id=user_id)
+        thread_resource = await get_authenticated_thread_resource(request, body.thread_id)
+        skill_file_path = thread_resource.resolve_virtual_path(body.path)
+        result = await ainstall_skill_from_archive(skill_file_path, user_id=thread_resource.user_id)
+        await refresh_skills_system_prompt_cache_async()
         return SkillInstallResponse(**result)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

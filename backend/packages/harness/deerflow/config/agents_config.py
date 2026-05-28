@@ -16,9 +16,9 @@ import yaml
 from pydantic import BaseModel
 
 from deerflow.storage import (
-    GLOBAL_SCOPE,
     get_operator,
     user_agent_config_key,
+    user_agent_prefix,
     user_agent_soul_key,
     user_agents_prefix,
 )
@@ -40,6 +40,14 @@ def validate_agent_name(name: str | None) -> str | None:
     return name
 
 
+def normalize_agent_name(name: str) -> str:
+    """Validate and normalize a custom agent name for storage."""
+    validated = validate_agent_name(name)
+    if validated is None:
+        raise ValueError("Invalid agent name. Expected a string.")
+    return validated.lower()
+
+
 class AgentConfig(BaseModel):
     """Configuration for a custom agent."""
 
@@ -57,6 +65,175 @@ def _is_not_found(exc: BaseException) -> bool:
     return isinstance(exc, (opendal_exc.NotFound, FileNotFoundError))
 
 
+class CustomAgentStore:
+    """Storage interface for custom agent config and SOUL.md objects."""
+
+    def __init__(self, operator=None):
+        self.operator = operator or get_operator()
+
+    def config_key(self, name: str, user_id: str | None = None) -> str:
+        return user_agent_config_key(user_id, normalize_agent_name(name))
+
+    def soul_key(self, name: str, user_id: str | None = None) -> str:
+        return user_agent_soul_key(user_id, normalize_agent_name(name))
+
+    def prefix(self, name: str, user_id: str | None = None) -> str:
+        return user_agent_prefix(user_id, normalize_agent_name(name))
+
+    def exists(self, name: str, user_id: str | None = None) -> bool:
+        try:
+            self.operator.stat(self.config_key(name, user_id))
+            return True
+        except Exception as exc:
+            if _is_not_found(exc):
+                return False
+            raise
+
+    def load_config(self, name: str | None, user_id: str | None = None) -> AgentConfig | None:
+        if name is None:
+            return None
+
+        normalized = normalize_agent_name(name)
+        config_key = user_agent_config_key(user_id, normalized)
+        try:
+            raw = bytes(self.operator.read(config_key))
+        except Exception as exc:
+            if _is_not_found(exc):
+                raise FileNotFoundError(f"Agent config not found: {config_key}") from exc
+            raise
+
+        try:
+            data: dict[str, Any] = yaml.safe_load(raw.decode("utf-8")) or {}
+        except yaml.YAMLError as e:
+            raise ValueError(f"Failed to parse agent config {config_key}: {e}") from e
+
+        if "name" not in data:
+            data["name"] = normalized
+
+        known_fields = set(AgentConfig.model_fields.keys())
+        data = {k: v for k, v in data.items() if k in known_fields}
+        data["name"] = normalize_agent_name(data["name"])
+
+        return AgentConfig(**data)
+
+    def load_soul(self, name: str | None, user_id: str | None = None) -> str | None:
+        if name is None:
+            return None
+
+        soul_key = self.soul_key(name, user_id)
+        try:
+            raw = bytes(self.operator.read(soul_key))
+        except Exception as exc:
+            if _is_not_found(exc):
+                return None
+            raise
+
+        content = raw.decode("utf-8").strip()
+        return content or None
+
+    def list_agents(self, user_id: str | None = None) -> list[AgentConfig]:
+        prefix = user_agents_prefix(user_id) + "/"
+
+        seen: set[str] = set()
+        try:
+            entries = list(self.operator.list(prefix))
+        except Exception as exc:
+            if _is_not_found(exc):
+                return []
+            raise
+
+        for entry in entries:
+            path = entry.path
+            if not path.startswith(prefix):
+                continue
+            rest = path[len(prefix):]
+            if not rest:
+                continue
+            head = rest.split("/", 1)[0]
+            if not head or head in seen:
+                continue
+            seen.add(head)
+
+        agents: list[AgentConfig] = []
+        for agent_name in sorted(seen):
+            try:
+                cfg = self.load_config(agent_name, user_id=user_id)
+            except FileNotFoundError:
+                logger.debug("Skipping %s: no config.yaml", agent_name)
+                continue
+            except Exception as e:
+                logger.warning("Skipping agent '%s': %s", agent_name, e)
+                continue
+            if cfg is not None:
+                agents.append(cfg)
+
+        return agents
+
+    def _config_payload(self, config: AgentConfig) -> dict[str, Any]:
+        data: dict[str, Any] = {"name": normalize_agent_name(config.name)}
+        if config.description:
+            data["description"] = config.description
+        if config.model is not None:
+            data["model"] = config.model
+        if config.tool_groups is not None:
+            data["tool_groups"] = config.tool_groups
+        if config.skills is not None:
+            data["skills"] = config.skills
+        return data
+
+    def write_config(self, config: AgentConfig, user_id: str | None = None) -> str:
+        config = config.model_copy(update={"name": normalize_agent_name(config.name)})
+        config_key = user_agent_config_key(user_id, config.name)
+        config_yaml = yaml.dump(self._config_payload(config), default_flow_style=False, allow_unicode=True, sort_keys=False)
+        self.operator.write(config_key, config_yaml.encode("utf-8"))
+        return config_key
+
+    def write_soul(self, name: str, soul: str, user_id: str | None = None) -> str:
+        soul_key = self.soul_key(name, user_id)
+        self.operator.write(soul_key, soul.encode("utf-8"))
+        return soul_key
+
+    def create_agent(self, config: AgentConfig, soul: str, user_id: str | None = None) -> AgentConfig:
+        config = config.model_copy(update={"name": normalize_agent_name(config.name)})
+        if self.exists(config.name, user_id=user_id):
+            raise FileExistsError(f"Agent '{config.name}' already exists for the current user.")
+
+        created_keys: list[str] = []
+        try:
+            created_keys.append(self.write_config(config, user_id=user_id))
+            created_keys.append(self.write_soul(config.name, soul, user_id=user_id))
+        except Exception:
+            for key in created_keys:
+                try:
+                    self.operator.delete(key)
+                except Exception:
+                    logger.debug("Failed to clean up partially created agent object %s", key, exc_info=True)
+            raise
+        loaded = self.load_config(config.name, user_id=user_id)
+        if loaded is None:
+            raise FileNotFoundError(f"Agent config not found after create: {config.name}")
+        return loaded
+
+    def delete_agent(self, name: str, user_id: str | None = None) -> int:
+        prefix = self.prefix(name, user_id) + "/"
+
+        try:
+            entries = list(self.operator.list(prefix))
+        except Exception as exc:
+            if _is_not_found(exc):
+                return 0
+            raise
+
+        removed = 0
+        for entry in entries:
+            path = entry.path
+            if not path or path.endswith("/"):
+                continue
+            self.operator.delete(path)
+            removed += 1
+        return removed
+
+
 def load_agent_config(name: str | None, user_id: str | None = None) -> AgentConfig | None:
     """Load the custom agent's config from object storage.
 
@@ -67,52 +244,12 @@ def load_agent_config(name: str | None, user_id: str | None = None) -> AgentConf
     the agent or its config does not exist; the gateway routers map
     that to a 404.
     """
-    if name is None:
-        return None
-
-    name = validate_agent_name(name)
-
-    operator = get_operator()
-    config_key = user_agent_config_key(user_id, name)
-    try:
-        raw = bytes(operator.read(config_key))
-    except Exception as exc:
-        if _is_not_found(exc):
-            raise FileNotFoundError(f"Agent config not found: {config_key}") from exc
-        raise
-
-    try:
-        data: dict[str, Any] = yaml.safe_load(raw.decode("utf-8")) or {}
-    except yaml.YAMLError as e:
-        raise ValueError(f"Failed to parse agent config {config_key}: {e}") from e
-
-    # Ensure name is set from the storage key if not in the file.
-    if "name" not in data:
-        data["name"] = name
-
-    # Strip unknown fields before passing to Pydantic (e.g. legacy prompt_file).
-    known_fields = set(AgentConfig.model_fields.keys())
-    data = {k: v for k, v in data.items() if k in known_fields}
-
-    return AgentConfig(**data)
+    return CustomAgentStore().load_config(name, user_id=user_id)
 
 
 def load_agent_soul(agent_name: str | None, user_id: str | None = None) -> str | None:
     """Read the SOUL.md file for a custom agent, if it exists."""
-    if agent_name is None:
-        return None
-
-    operator = get_operator()
-    soul_key = user_agent_soul_key(user_id, agent_name)
-    try:
-        raw = bytes(operator.read(soul_key))
-    except Exception as exc:
-        if _is_not_found(exc):
-            return None
-        raise
-
-    content = raw.decode("utf-8").strip()
-    return content or None
+    return CustomAgentStore().load_soul(agent_name, user_id=user_id)
 
 
 def list_custom_agents(user_id: str | None = None) -> list[AgentConfig]:
@@ -122,45 +259,4 @@ def list_custom_agents(user_id: str | None = None) -> list[AgentConfig]:
     extracts the agent name from each ``.../config.yaml`` key, and loads
     the parsed config for every entry.
     """
-    operator = get_operator()
-    prefix = user_agents_prefix(user_id) + "/"
-
-    seen: set[str] = set()
-    try:
-        entries = list(operator.list(prefix))
-    except Exception as exc:
-        if _is_not_found(exc):
-            return []
-        raise
-
-    for entry in entries:
-        path = entry.path  # full key under the operator root
-        if not path.startswith(prefix):
-            continue
-        rest = path[len(prefix):]
-        # We want to flatten the listing to "first-level child name". The
-        # filesystem backend yields entries like
-        # ``custom-agents/abc/foo/`` for directories and
-        # ``custom-agents/abc/foo/config.yaml`` for files; both pin foo
-        # as the agent name once we split on '/'.
-        if not rest:
-            continue
-        head = rest.split("/", 1)[0]
-        if not head or head in seen:
-            continue
-        seen.add(head)
-
-    agents: list[AgentConfig] = []
-    for agent_name in sorted(seen):
-        try:
-            cfg = load_agent_config(agent_name, user_id=user_id)
-        except FileNotFoundError:
-            logger.debug("Skipping %s: no config.yaml", agent_name)
-            continue
-        except Exception as e:
-            logger.warning("Skipping agent '%s': %s", agent_name, e)
-            continue
-        if cfg is not None:
-            agents.append(cfg)
-
-    return agents
+    return CustomAgentStore().list_agents(user_id=user_id)

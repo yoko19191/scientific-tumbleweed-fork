@@ -95,35 +95,10 @@ def load_skills(skills_path: Path | None = None, use_config: bool = True, enable
     skills = list(skills_by_name.values())
 
     # Load skills state configuration and update enabled status.
-    # When user_id is set, read the per-user override from object storage
-    # (OpenDAL) and merge it on top of the global config.
     try:
-        import json as _json
+        from deerflow.config.extensions_config import get_effective_extensions_config
 
-        import opendal.exceptions as _opendal_exc
-
-        from deerflow.config.extensions_config import ExtensionsConfig
-        from deerflow.storage import get_operator, user_extensions_override_key
-
-        if user_id:
-            try:
-                operator = get_operator()
-                raw = bytes(operator.read(user_extensions_override_key(user_id)))
-                user_data = _json.loads(raw.decode("utf-8"))
-                if not isinstance(user_data, dict):
-                    user_data = None
-            except (_opendal_exc.NotFound, FileNotFoundError):
-                user_data = None
-            except Exception:
-                logger.warning("Failed to read per-user extensions override; falling back to global", exc_info=True)
-                user_data = None
-
-            if user_data:
-                extensions_config = ExtensionsConfig.from_dict(user_data)
-            else:
-                extensions_config = ExtensionsConfig.from_file()
-        else:
-            extensions_config = ExtensionsConfig.from_file()
+        extensions_config = get_effective_extensions_config(user_id)
 
         for skill in skills:
             skill.enabled = extensions_config.is_skill_enabled(skill.name, skill.category)

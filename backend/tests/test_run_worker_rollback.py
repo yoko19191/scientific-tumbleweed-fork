@@ -158,6 +158,48 @@ async def test_run_agent_threads_app_config_into_runtime_context():
 
 
 @pytest.mark.anyio
+async def test_run_agent_runtime_context_overrides_reserved_context_keys():
+    run_manager = RunManager()
+    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    bridge = SimpleNamespace(
+        publish=AsyncMock(),
+        publish_end=AsyncMock(),
+        cleanup=AsyncMock(),
+    )
+    captured: dict[str, object] = {}
+
+    class DummyAgent:
+        async def astream(self, graph_input, config=None, stream_mode=None, subgraphs=False):
+            captured["context"] = dict(config["context"])
+            yield {"messages": []}
+
+    def factory(*, config):
+        return DummyAgent()
+
+    await run_agent(
+        bridge,
+        run_manager,
+        record,
+        checkpointer=None,
+        agent_factory=factory,
+        graph_input={},
+        config={
+            "context": {
+                "thread_id": "client-thread",
+                "run_id": "client-run",
+                "agent_name": "finalis",
+            },
+            "metadata": {"user_id": "metadata-user"},
+        },
+    )
+
+    assert captured["context"]["thread_id"] == "thread-1"
+    assert captured["context"]["run_id"] == record.run_id
+    assert captured["context"]["user_id"] == "metadata-user"
+    assert captured["context"]["agent_name"] == "finalis"
+
+
+@pytest.mark.anyio
 async def test_run_agent_persists_effective_model_name_from_agent_metadata():
     store = MemoryRunStore()
     run_manager = RunManager(store=store)

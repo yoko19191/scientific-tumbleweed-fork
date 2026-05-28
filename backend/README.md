@@ -51,7 +51,7 @@ Scientific Tumbleweed is a LangGraph-based AI super agent with sandbox execution
 The single LangGraph agent (`lead_agent`) is the runtime entry point, created via `make_lead_agent(config)`. It combines:
 
 - **Dynamic model selection** with thinking and vision support
-- **Middleware chain** for cross-cutting concerns (9 middlewares)
+- **Middleware chain** for cross-cutting concerns, ordered by the canonical builder
 - **Tool system** with sandbox, MCP, community, and built-in tools
 - **Subagent delegation** for parallel task execution
 - **System prompt** with skills injection, memory context, and working directory guidance
@@ -65,12 +65,26 @@ Middlewares execute in strict order, each handling a specific concern:
 | 1 | **ThreadDataMiddleware** | Creates per-thread isolated directories (workspace, uploads, outputs) |
 | 2 | **UploadsMiddleware** | Injects newly uploaded files into conversation context |
 | 3 | **SandboxMiddleware** | Acquires sandbox environment for code execution |
-| 4 | **SummarizationMiddleware** | Reduces context when approaching token limits (optional) |
-| 5 | **TodoListMiddleware** | Tracks multi-step tasks in plan mode (optional) |
-| 6 | **TitleMiddleware** | Auto-generates conversation titles after first exchange |
-| 7 | **MemoryMiddleware** | Queues conversations for async memory extraction |
-| 8 | **ViewImageMiddleware** | Injects image data for vision-capable models (conditional) |
-| 9 | **ClarificationMiddleware** | Intercepts clarification requests and interrupts execution (must be last) |
+| 4 | **DanglingToolCallMiddleware** | Repairs missing tool responses after interruptions |
+| 5 | **LLMErrorHandlingMiddleware** | Normalizes model/provider failures into recoverable responses |
+| 6 | **GuardrailMiddleware** | Authorizes tool calls when guardrails are configured (optional) |
+| 7 | **SandboxAuditMiddleware** | Audits sandboxed operations before tool execution continues |
+| 8 | **ToolErrorHandlingMiddleware** | Converts tool exceptions into error ToolMessages |
+| 9 | **PermissionMiddleware** | Applies configured tool permission policy (optional) |
+| 10 | **HookMiddleware** | Runs configured pre/post tool hooks (optional) |
+| 11 | **DynamicContextMiddleware** | Injects runtime reminders without changing the static prompt |
+| 12 | **SummarizationMiddleware** | Reduces context when approaching token limits (optional) |
+| 13 | **CompactionMiddleware** | Compresses context when configured (optional) |
+| 14 | **TodoListMiddleware** | Tracks multi-step tasks in plan mode (optional) |
+| 15 | **TokenUsageMiddleware** | Records token usage metrics when enabled |
+| 16 | **TitleMiddleware** | Auto-generates conversation titles after first exchange |
+| 17 | **MemoryMiddleware** | Queues conversations for async memory extraction |
+| 18 | **ViewImageMiddleware** | Injects image data for vision-capable models (conditional) |
+| 19 | **DeferredToolFilterMiddleware** | Hides deferred tool schemas until tool search is enabled |
+| 20 | **SubagentLimitMiddleware** | Enforces parallel subagent call limits (optional) |
+| 21 | **LoopDetectionMiddleware** | Detects repeated tool-call loops and forces a final answer |
+| 22 | **SafetyFinishReasonMiddleware** | Suppresses unsafe provider-terminated tool calls |
+| 23 | **ClarificationMiddleware** | Intercepts clarification requests and interrupts execution (must be last) |
 
 ### Sandbox System
 
@@ -92,6 +106,15 @@ Async task delegation with concurrent execution:
 - **Concurrency**: Max 3 subagents per turn, 15-minute timeout
 - **Execution**: Background thread pools with status tracking and SSE events
 - **Flow**: Agent calls `task()` tool → executor runs subagent in background → polls for completion → returns result
+
+### Custom Agent Store
+
+Custom agents are stored through OpenDAL under
+`custom-agents/{user_id|__global__}/{name}/`. `CustomAgentStore` owns name
+normalization, config YAML reads/writes, `SOUL.md` reads/writes, existence
+checks, prefix deletion, and create-time cleanup. Gateway routes and
+`setup_agent` / `update_agent` tools use that store instead of hand-editing
+agent objects.
 
 ### Memory System
 
@@ -131,6 +154,26 @@ FastAPI application providing REST endpoints for frontend integration:
 | `GET /api/threads/{id}/uploads/list` | List uploaded files |
 | `DELETE /api/threads/{id}` | Delete Scientific Tumbleweed-managed local thread data after LangGraph thread deletion; unexpected failures are logged server-side and return a generic 500 detail |
 | `GET /api/threads/{id}/artifacts/{path}` | Serve generated artifacts |
+
+Thread-scoped Gateway routes resolve uploads, artifacts, local cleanup, and `.skill`
+installation through an authenticated thread resource, so filesystem access is bound
+to the server-verified owner before any `/mnt/user-data/...` path is translated.
+
+Gateway run launch keeps LangGraph `context` mode and legacy `configurable` mode
+separate. Request body runtime options are merged through a single service helper,
+while `RuntimeContext` installs canonical `thread_id`, `run_id`, `user_id`,
+`agent_name`, and `app_config` before the agent executes.
+
+Run wait endpoints read checkpoint-backed final state through
+`deerflow.runtime.runs.checkpoints`, and stream responses format SSE frames
+through `deerflow.runtime.format_sse_frame()`. Persistent run hydration maps
+`RunStore` rows through `RunRecord.from_store_row()` before the Gateway shapes
+HTTP response models.
+
+Agent middleware entry points resolve concrete middleware instances locally, then
+delegate final ordering to `deerflow.agents.middleware_builder`. This keeps
+`make_lead_agent()` and the SDK `create_deerflow_agent()` aligned on ordering,
+extra middleware insertion, and the clarification-last invariant.
 
 ### IM Channels
 
@@ -222,7 +265,8 @@ backend/
 ├── src/
 │   ├── agents/                  # Agent system
 │   │   ├── lead_agent/         # Main agent (factory, prompts)
-│   │   ├── middlewares/        # 9 middleware components
+│   │   ├── middlewares/        # Runtime middleware components
+│   │   ├── middleware_builder.py # Canonical middleware ordering
 │   │   ├── memory/             # Memory extraction & storage
 │   │   └── thread_state.py    # ThreadState schema
 │   ├── gateway/                # FastAPI Gateway API
@@ -308,6 +352,12 @@ MCP servers and skill states in a single file:
   }
 }
 ```
+
+The repo-level file is the developer-level global config. Logged-in user MCP
+and skill enablement changes are stored as per-user OpenDAL overrides at
+`user-extensions/{user_id}/extensions_config.json`, then merged through
+`get_effective_extensions_config()` so MCP and skills share the same effective
+view.
 
 ### Environment Variables
 

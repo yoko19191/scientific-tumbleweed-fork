@@ -21,8 +21,18 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.gateway.authz import require_auth
 from app.gateway.deps import get_checkpointer, get_optional_user_from_request, get_optional_user_id, get_store
-from app.gateway.thread_ownership import bind_thread_to_user, require_thread_owner
-from app.gateway.user_prefix import user_thread_owners_namespace, user_threads_namespace
+from app.gateway.thread_ownership import bind_thread_to_user
+from app.gateway.thread_resources import (
+    LEGACY_THREAD_OWNERS_NS,
+    LEGACY_THREADS_NS,
+    delete_thread_ownership,
+    delete_user_thread_record,
+    get_authenticated_thread_resource,
+    get_user_thread_record,
+    search_thread_ownerships,
+    thread_records_namespace,
+    user_thread_records_namespace,
+)
 from deerflow.config.paths import Paths, get_paths
 from deerflow.runtime import serialize_channel_values
 from deerflow.utils.time import coerce_iso, now_iso
@@ -31,10 +41,10 @@ from deerflow.utils.time import coerce_iso, now_iso
 # Store namespace (legacy global namespaces — kept for backward compat reads)
 # ---------------------------------------------------------------------------
 
-THREADS_NS: tuple[str, ...] = ("threads",)
+THREADS_NS: tuple[str, ...] = LEGACY_THREADS_NS
 """Legacy global namespace — new writes use user-scoped namespaces."""
 
-THREAD_OWNERS_NS: tuple[str, ...] = ("thread_owners",)
+THREAD_OWNERS_NS: tuple[str, ...] = LEGACY_THREAD_OWNERS_NS
 """Legacy global namespace — new writes use user-scoped namespaces."""
 
 logger = logging.getLogger(__name__)
@@ -150,11 +160,11 @@ class ThreadHistoryRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _delete_thread_data(thread_id: str, paths: Paths | None = None) -> ThreadDeleteResponse:
+def _delete_thread_data(thread_id: str, user_id: str | None = None, paths: Paths | None = None) -> ThreadDeleteResponse:
     """Delete local persisted filesystem data for a thread."""
     path_manager = paths or get_paths()
     try:
-        path_manager.delete_thread_dir(thread_id)
+        path_manager.delete_thread_dir(thread_id, user_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except FileNotFoundError:
@@ -276,10 +286,8 @@ async def list_by_user(request: Request) -> list[ThreadResponse]:
 
     checkpointer = get_checkpointer(request)
 
-    # Fetch ownership mappings from the user-scoped namespace
-    owners_ns = user_thread_owners_namespace(user_id)
     try:
-        items = await store.asearch(owners_ns, limit=10_000)
+        items = await search_thread_ownerships(store, user_id, limit=10_000)
     except Exception:
         logger.warning("Store search failed for listByUser", exc_info=True)
         return []
@@ -289,15 +297,12 @@ async def list_by_user(request: Request) -> list[ThreadResponse]:
     if not owned_thread_ids:
         return []
 
-    user_threads_ns = user_threads_namespace(user_id)
     results: list[ThreadResponse] = []
     for thread_id in owned_thread_ids:
         # Read thread metadata from the user-scoped namespace; fall back to the
         # legacy global namespace for thread records written before the
         # user-isolation migration.
-        thread_record = await _store_get(store, thread_id, ns=user_threads_ns)
-        if thread_record is None:
-            thread_record = await _store_get(store, thread_id)
+        thread_record = await get_user_thread_record(store, user_id, thread_id, include_legacy=True)
 
         # Read latest checkpoint for status and title
         config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
@@ -361,25 +366,22 @@ async def delete_thread_data(thread_id: str, request: Request) -> ThreadDeleteRe
     removes the thread record from the Store, and removes the ownership
     mapping from thread_owners.  Verifies the caller owns the thread.
     """
-    # Verify ownership — raises 401/404/503 on failure
-    user_id = await require_thread_owner(request, thread_id)
+    thread_resource = await get_authenticated_thread_resource(request, thread_id)
     store = get_store(request)
 
     # Clean local filesystem
-    response = _delete_thread_data(thread_id)
+    response = _delete_thread_data(thread_resource.thread_id, thread_resource.user_id)
 
     # Remove from Store (best-effort)
     if store is not None:
-        threads_ns = user_threads_namespace(user_id)
         try:
-            await store.adelete(threads_ns, thread_id)
+            await delete_user_thread_record(store, thread_resource.user_id, thread_resource.thread_id)
         except Exception:
             logger.debug("Could not delete store record for thread %s (not critical)", thread_id)
 
         # Remove ownership mapping (idempotent — no error if absent)
-        owners_ns = user_thread_owners_namespace(user_id)
         try:
-            await store.adelete(owners_ns, thread_id)
+            await delete_thread_ownership(store, thread_resource.user_id, thread_resource.thread_id)
         except Exception:
             logger.debug("Could not delete ownership mapping for thread %s (not critical)", thread_id)
 
@@ -412,7 +414,7 @@ async def create_thread(body: ThreadCreateRequest, request: Request) -> ThreadRe
     # Resolve optional user identity (anonymous threads are allowed)
     user = await get_optional_user_from_request(request)
     user_id = str(user.id) if user else None
-    threads_ns = user_threads_namespace(user_id) if user_id else THREADS_NS
+    threads_ns = thread_records_namespace(user_id)
 
     # Idempotency: return existing record from Store when already present
     if store is not None:
@@ -496,7 +498,7 @@ async def search_threads(body: ThreadSearchRequest, request: Request) -> list[Th
     if user_id is None or store is None:
         return []
 
-    threads_ns = user_threads_namespace(user_id)
+    threads_ns = user_thread_records_namespace(user_id)
 
     merged: dict[str, ThreadResponse] = {}
 
@@ -535,12 +537,11 @@ async def search_threads(body: ThreadSearchRequest, request: Request) -> list[Th
 @router.patch("/{thread_id}", response_model=ThreadResponse)
 async def patch_thread(thread_id: str, body: ThreadPatchRequest, request: Request) -> ThreadResponse:
     """Merge metadata into a thread record."""
-    # Verify ownership — raises 401/404/503 on failure
-    user_id = await require_thread_owner(request, thread_id)
+    thread_resource = await get_authenticated_thread_resource(request, thread_id)
+    user_id = thread_resource.user_id
     store = get_store(request)
 
-    threads_ns = user_threads_namespace(user_id)
-    record = await _store_get(store, thread_id, ns=threads_ns)
+    record = await get_user_thread_record(store, user_id, thread_id)
     if record is None:
         raise HTTPException(status_code=404, detail=f"Thread {thread_id} not found")
 
@@ -550,7 +551,7 @@ async def patch_thread(thread_id: str, body: ThreadPatchRequest, request: Reques
     updated["updated_at"] = now
 
     try:
-        await _store_put(store, updated, ns=threads_ns)
+        await _store_put(store, updated, ns=user_thread_records_namespace(user_id))
     except Exception:
         logger.exception("Failed to patch thread %s", thread_id)
         raise HTTPException(status_code=500, detail="Failed to update thread")
@@ -572,15 +573,14 @@ async def get_thread(thread_id: str, request: Request) -> ThreadResponse:
     status from the checkpointer.  Falls back to the checkpointer alone
     for threads that pre-date Store adoption (backward compat).
     """
-    # Verify ownership — raises 401/404/503 on failure
-    user_id = await require_thread_owner(request, thread_id)
+    thread_resource = await get_authenticated_thread_resource(request, thread_id)
+    user_id = thread_resource.user_id
     store = get_store(request)
     checkpointer = get_checkpointer(request)
 
-    threads_ns = user_threads_namespace(user_id)
     record: dict | None = None
     if store is not None:
-        record = await _store_get(store, thread_id, ns=threads_ns)
+        record = await get_user_thread_record(store, user_id, thread_id)
 
     # Derive accurate status from the checkpointer
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
@@ -629,8 +629,7 @@ async def get_thread_state(thread_id: str, request: Request) -> ThreadStateRespo
     Channel values are serialized to ensure LangChain message objects
     are converted to JSON-safe dicts.
     """
-    # Verify ownership — raises 401/404/503 on failure
-    await require_thread_owner(request, thread_id)
+    await get_authenticated_thread_resource(request, thread_id)
     checkpointer = get_checkpointer(request)
 
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
@@ -681,8 +680,8 @@ async def update_thread_state(thread_id: str, body: ThreadStateUpdateRequest, re
     channel values, then syncs any updated ``title`` field back to the Store
     so that ``/threads/search`` reflects the change immediately.
     """
-    # Verify ownership — raises 401/404/503 on failure
-    user_id = await require_thread_owner(request, thread_id)
+    thread_resource = await get_authenticated_thread_resource(request, thread_id)
+    user_id = thread_resource.user_id
     checkpointer = get_checkpointer(request)
     store = get_store(request)
 
@@ -745,7 +744,7 @@ async def update_thread_state(thread_id: str, body: ThreadStateUpdateRequest, re
     # Sync title changes to the Store so /threads/search reflects them immediately.
     if store is not None and body.values and "title" in body.values:
         try:
-            threads_ns = user_threads_namespace(user_id)
+            threads_ns = user_thread_records_namespace(user_id)
             await _store_upsert(store, thread_id, values={"title": body.values["title"]}, ns=threads_ns)
         except Exception:
             logger.debug("Failed to sync title to store for thread %s (non-fatal)", thread_id)
@@ -762,8 +761,7 @@ async def update_thread_state(thread_id: str, body: ThreadStateUpdateRequest, re
 @router.post("/{thread_id}/history", response_model=list[HistoryEntry])
 async def get_thread_history(thread_id: str, body: ThreadHistoryRequest, request: Request) -> list[HistoryEntry]:
     """Get checkpoint history for a thread."""
-    # Verify ownership — raises 401/404/503 on failure
-    await require_thread_owner(request, thread_id)
+    await get_authenticated_thread_resource(request, thread_id)
     checkpointer = get_checkpointer(request)
 
     config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}

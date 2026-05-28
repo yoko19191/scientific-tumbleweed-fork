@@ -318,12 +318,8 @@ def test_extract_requested_model_name_coerces_non_string_configurable_value():
 
 
 def test_context_merges_into_configurable():
-    """Context values must be merged into config['configurable'] by start_run.
-
-    Since start_run is async and requires many dependencies, we test the
-    merging logic directly by simulating what start_run does.
-    """
-    from app.gateway.services import build_run_config
+    """Context values must be merged by the runtime override interface."""
+    from app.gateway.services import apply_runtime_context_overrides, build_run_config
 
     # Simulate the context merging logic from start_run
     config = build_run_config("thread-1", None, None)
@@ -339,19 +335,7 @@ def test_context_merges_into_configurable():
         "thread_id": "should-be-ignored",
     }
 
-    _CONTEXT_CONFIGURABLE_KEYS = {
-        "model_name",
-        "mode",
-        "thinking_enabled",
-        "reasoning_effort",
-        "is_plan_mode",
-        "subagent_enabled",
-        "max_concurrent_subagents",
-    }
-    configurable = config.setdefault("configurable", {})
-    for key in _CONTEXT_CONFIGURABLE_KEYS:
-        if key in context:
-            configurable.setdefault(key, context[key])
+    apply_runtime_context_overrides(config, context)
 
     assert config["configurable"]["model_name"] == "deepseek-v3"
     assert config["configurable"]["thinking_enabled"] is True
@@ -362,13 +346,12 @@ def test_context_merges_into_configurable():
     assert config["configurable"]["mode"] == "ultra"
     # thread_id from context should NOT override the one from build_run_config
     assert config["configurable"]["thread_id"] == "thread-1"
-    # Non-allowlisted keys should not appear
-    assert "thread_id" not in {k for k in context if k in _CONTEXT_CONFIGURABLE_KEYS}
+    assert config["configurable"]["thread_id"] != context["thread_id"]
 
 
 def test_context_does_not_override_existing_configurable():
     """Values already in config.configurable must NOT be overridden by context."""
-    from app.gateway.services import build_run_config
+    from app.gateway.services import apply_runtime_context_overrides, build_run_config
 
     config = build_run_config(
         "thread-1",
@@ -382,25 +365,40 @@ def test_context_does_not_override_existing_configurable():
         "subagent_enabled": True,
     }
 
-    _CONTEXT_CONFIGURABLE_KEYS = {
-        "model_name",
-        "mode",
-        "thinking_enabled",
-        "reasoning_effort",
-        "is_plan_mode",
-        "subagent_enabled",
-        "max_concurrent_subagents",
-    }
-    configurable = config.setdefault("configurable", {})
-    for key in _CONTEXT_CONFIGURABLE_KEYS:
-        if key in context:
-            configurable.setdefault(key, context[key])
+    apply_runtime_context_overrides(config, context)
 
     # Existing values must NOT be overridden
     assert config["configurable"]["model_name"] == "gpt-4"
     assert config["configurable"]["is_plan_mode"] is False
     # New values should be added
     assert config["configurable"]["subagent_enabled"] is True
+
+
+def test_context_overrides_stay_in_context_mode():
+    """Request body context must not reintroduce configurable in context mode."""
+    from app.gateway.services import apply_runtime_context_overrides, build_run_config
+
+    config = build_run_config(
+        "thread-1",
+        {"context": {"agent_name": "finalis"}},
+        None,
+        assistant_id="finalis",
+    )
+
+    apply_runtime_context_overrides(
+        config,
+        {
+            "model_name": "deepseek-v3",
+            "thinking_enabled": True,
+            "thread_id": "ignored-thread",
+        },
+    )
+
+    assert config["context"]["agent_name"] == "finalis"
+    assert config["context"]["model_name"] == "deepseek-v3"
+    assert config["context"]["thinking_enabled"] is True
+    assert config["context"].get("thread_id") is None
+    assert "configurable" not in config
 
 
 # ---------------------------------------------------------------------------

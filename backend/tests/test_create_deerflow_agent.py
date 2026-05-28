@@ -88,6 +88,30 @@ def test_features_mode(mock_create_agent):
     assert "ClarificationMiddleware" in mw_types
 
 
+@patch("deerflow.agents.factory.create_agent")
+def test_features_mode_delegates_to_shared_middleware_builder(mock_create_agent, monkeypatch):
+    mock_create_agent.return_value = MagicMock()
+    ordered_chain = [MagicMock(name="ordered_chain")]
+    captured_slots: dict[str, object] = {}
+
+    def _fake_build_ordered_middleware_chain(**slots):
+        captured_slots.update(slots)
+        return ordered_chain
+
+    monkeypatch.setattr(
+        "deerflow.agents.factory.build_ordered_middleware_chain",
+        _fake_build_ordered_middleware_chain,
+    )
+
+    create_deerflow_agent(_make_mock_model(), features=RuntimeFeatures(sandbox=False))
+
+    call_kwargs = mock_create_agent.call_args[1]
+    assert call_kwargs["middleware"] is ordered_chain
+    assert type(captured_slots["dangling_tool_call_patch"][0]).__name__ == "DanglingToolCallMiddleware"
+    assert type(captured_slots["tool_error_handling"][0]).__name__ == "ToolErrorHandlingMiddleware"
+    assert type(captured_slots["clarification"][0]).__name__ == "ClarificationMiddleware"
+
+
 # ---------------------------------------------------------------------------
 # 5. Middleware full takeover
 # ---------------------------------------------------------------------------

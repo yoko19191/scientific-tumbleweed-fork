@@ -15,16 +15,26 @@ from langchain_core.runnables import RunnableConfig
 
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.memory.summarization_hook import memory_flush_hook
+from deerflow.agents.middleware_builder import build_ordered_middleware_chain
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
+from deerflow.agents.middlewares.dangling_tool_call_middleware import DanglingToolCallMiddleware
+from deerflow.agents.middlewares.dynamic_context_middleware import DynamicContextMiddleware
+from deerflow.agents.middlewares.llm_error_handling_middleware import LLMErrorHandlingMiddleware
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
 from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
+from deerflow.agents.middlewares.sandbox_audit_middleware import SandboxAuditMiddleware
 from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
-from deerflow.agents.middlewares.summarization_middleware import BeforeSummarizationHook, DeerFlowSummarizationMiddleware
+from deerflow.agents.middlewares.summarization_middleware import (
+    BeforeSummarizationHook,
+    DeerFlowSummarizationMiddleware,
+)
+from deerflow.agents.middlewares.thread_data_middleware import ThreadDataMiddleware
 from deerflow.agents.middlewares.title_middleware import TitleMiddleware
 from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
 from deerflow.agents.middlewares.token_usage_middleware import TokenUsageMiddleware
-from deerflow.agents.middlewares.tool_error_handling_middleware import build_lead_runtime_middlewares
+from deerflow.agents.middlewares.tool_error_handling_middleware import ToolErrorHandlingMiddleware
+from deerflow.agents.middlewares.uploads_middleware import UploadsMiddleware
 from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import load_agent_config, validate_agent_name
@@ -32,9 +42,10 @@ from deerflow.config.app_config import AppConfig, get_app_config
 from deerflow.config.memory_config import get_memory_config
 from deerflow.config.summarization_config import get_summarization_config
 from deerflow.models import create_chat_model
-from deerflow.tracing import build_tracing_callbacks
+from deerflow.sandbox.middleware import SandboxMiddleware
 from deerflow.skills.tool_policy import filter_tools_by_skill_allowed_tools
 from deerflow.skills.types import Skill
+from deerflow.tracing import build_tracing_callbacks
 
 if TYPE_CHECKING:
     pass
@@ -262,6 +273,36 @@ Being proactive with task management demonstrates thoroughness and ensures all r
 # ---------------------------------------------------------------------------
 
 
+def _create_guardrail_middleware() -> AgentMiddleware | None:
+    """Create GuardrailMiddleware from config. Returns None if not configured."""
+    from deerflow.config.guardrails_config import get_guardrails_config
+
+    guardrails_config = get_guardrails_config()
+    if not guardrails_config.enabled or not guardrails_config.provider:
+        return None
+
+    import inspect
+
+    from deerflow.guardrails.middleware import GuardrailMiddleware
+    from deerflow.reflection import resolve_variable
+
+    provider_cls = resolve_variable(guardrails_config.provider.use)
+    provider_kwargs = dict(guardrails_config.provider.config) if guardrails_config.provider.config else {}
+    if "framework" not in provider_kwargs:
+        try:
+            sig = inspect.signature(provider_cls.__init__)
+            if "framework" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                provider_kwargs["framework"] = "deerflow"
+        except (ValueError, TypeError):
+            pass
+    provider = provider_cls(**provider_kwargs)
+    return GuardrailMiddleware(
+        provider,
+        fail_closed=guardrails_config.fail_closed,
+        passport=guardrails_config.passport,
+    )
+
+
 def _create_permission_middleware() -> AgentMiddleware | None:
     """Create PermissionMiddleware from config. Returns None if not needed."""
     try:
@@ -341,34 +382,6 @@ def _create_compaction_middleware() -> AgentMiddleware | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Middleware chain assembly
-# ---------------------------------------------------------------------------
-#
-# Canonical order (22 positions):
-#   [0-2]  Sandbox infrastructure (ThreadData → Uploads → Sandbox)
-#   [3]    DanglingToolCallMiddleware
-#   [4]    GuardrailMiddleware (if configured)
-#   [5]    SandboxAuditMiddleware
-#   [6]    ToolErrorHandlingMiddleware
-#   -- base chain ends here (from build_lead_runtime_middlewares) --
-#   [7]    PermissionMiddleware        ← NEW
-#   [8]    HookMiddleware              ← NEW
-#   [9]    SummarizationMiddleware
-#   [10]   CompactionMiddleware        ← NEW
-#   [11]   TodoMiddleware
-#   [12]   TokenUsageMiddleware
-#   [13]   TitleMiddleware
-#   [14]   MemoryMiddleware
-#   [15]   ViewImageMiddleware
-#   [16]   DeferredToolFilterMiddleware
-#   [17]   SubagentLimitMiddleware
-#   [18]   LoopDetectionMiddleware
-#   [19]   [custom middlewares]
-#   [20]   SafetyFinishReasonMiddleware
-#   [21]   ClarificationMiddleware (always last)
-
-
 def _build_middlewares(
     config: RunnableConfig,
     model_name: str | None,
@@ -388,89 +401,65 @@ def _build_middlewares(
         List of middleware instances.
     """
     resolved_app_config = app_config or get_app_config()
-    middlewares = build_lead_runtime_middlewares(lazy_init=True)
-
-    # --- Governance layer (NEW) ---
-    perm_mw = _create_permission_middleware()
-    if perm_mw is not None:
-        middlewares.append(perm_mw)
-
-    hook_mw = _create_hook_middleware()
-    if hook_mw is not None:
-        middlewares.append(hook_mw)
-
-    # Always inject current date (and optionally memory) as <system-reminder> into the
-    # first HumanMessage to keep the system prompt fully static for prefix-cache reuse.
-    from deerflow.agents.middlewares.dynamic_context_middleware import DynamicContextMiddleware
-
-    middlewares.append(DynamicContextMiddleware(agent_name=agent_name))
-
-    # Add summarization middleware if enabled
-    summarization_middleware = _call_with_optional_app_config(_create_summarization_middleware, app_config=resolved_app_config)
-    if summarization_middleware is not None:
-        middlewares.append(summarization_middleware)
-
-    # --- Context compaction (NEW) ---
-    compaction_mw = _create_compaction_middleware()
-    if compaction_mw is not None:
-        middlewares.append(compaction_mw)
-
-    # Add TodoList middleware if plan mode is enabled
     cfg = _get_runtime_config(config)
-    is_plan_mode = cfg.get("is_plan_mode", False)
-    todo_list_middleware = _create_todo_list_middleware(is_plan_mode)
-    if todo_list_middleware is not None:
-        middlewares.append(todo_list_middleware)
 
-    # Add TokenUsageMiddleware when token_usage tracking is enabled
-    if resolved_app_config.token_usage.enabled:
-        middlewares.append(TokenUsageMiddleware())
-
-    # Add TitleMiddleware
-    middlewares.append(TitleMiddleware(app_config=resolved_app_config))
-
-    # Add MemoryMiddleware (after TitleMiddleware)
-    middlewares.append(MemoryMiddleware(agent_name=agent_name, memory_config=resolved_app_config.memory))
+    summarization_middleware = _call_with_optional_app_config(_create_summarization_middleware, app_config=resolved_app_config)
 
     # Add ViewImageMiddleware only if the current model supports vision.
     # Use the resolved runtime model_name from make_lead_agent to avoid stale config values.
     model_config = resolved_app_config.get_model_config(model_name) if model_name else None
-    if model_config is not None and model_config.supports_vision:
-        middlewares.append(ViewImageMiddleware())
+    vision_middleware = ViewImageMiddleware() if model_config is not None and model_config.supports_vision else None
 
-    # Add DeferredToolFilterMiddleware to hide deferred tool schemas from model binding
+    deferred_tool_filter = None
     if resolved_app_config.tool_search.enabled:
         from deerflow.agents.middlewares.deferred_tool_filter_middleware import DeferredToolFilterMiddleware
 
-        middlewares.append(DeferredToolFilterMiddleware())
+        deferred_tool_filter = DeferredToolFilterMiddleware()
 
-    # Add SubagentLimitMiddleware to truncate excess parallel task calls
     subagent_enabled = cfg.get("subagent_enabled", False)
+    subagent_limit_middleware = None
     if subagent_enabled:
         max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
-        middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
+        subagent_limit_middleware = SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents)
 
-    # LoopDetectionMiddleware — detect and break repetitive tool call loops
     loop_detection_config = resolved_app_config.loop_detection
+    loop_detection_middleware = None
     if loop_detection_config.enabled:
-        middlewares.append(LoopDetectionMiddleware.from_config(loop_detection_config))
+        loop_detection_middleware = LoopDetectionMiddleware.from_config(loop_detection_config)
 
-    # Inject custom middlewares before ClarificationMiddleware
-    if custom_middlewares:
-        middlewares.extend(custom_middlewares)
-
-    # SafetyFinishReasonMiddleware — suppress tool execution when the provider
-    # safety-terminated the response. Registered after custom middlewares so
-    # that LangChain's reverse-order after_model dispatch runs Safety first;
-    # cleared tool_calls then flow through Loop/Subagent accounting without
-    # firing extra alarms. See safety_finish_reason_middleware.py docstring.
     safety_config = resolved_app_config.safety_finish_reason
+    safety_finish_reason_middleware = None
     if safety_config.enabled:
-        middlewares.append(SafetyFinishReasonMiddleware.from_config(safety_config))
+        safety_finish_reason_middleware = SafetyFinishReasonMiddleware.from_config(safety_config)
 
-    # ClarificationMiddleware should always be last
-    middlewares.append(ClarificationMiddleware())
-    return middlewares
+    return build_ordered_middleware_chain(
+        sandbox=[
+            ThreadDataMiddleware(lazy_init=True),
+            UploadsMiddleware(),
+            SandboxMiddleware(lazy_init=True),
+        ],
+        dangling_tool_call_patch=[DanglingToolCallMiddleware()],
+        llm_error_handling=[LLMErrorHandlingMiddleware()],
+        guardrail=_create_guardrail_middleware(),
+        sandbox_audit=[SandboxAuditMiddleware()],
+        tool_error_handling=[ToolErrorHandlingMiddleware()],
+        permissions=_create_permission_middleware(),
+        hooks=_create_hook_middleware(),
+        dynamic_context=[DynamicContextMiddleware(agent_name=agent_name)],
+        summarization=summarization_middleware,
+        compaction=_create_compaction_middleware(),
+        plan_mode=_create_todo_list_middleware(cfg.get("is_plan_mode", False)),
+        token_usage=[TokenUsageMiddleware()] if resolved_app_config.token_usage.enabled else None,
+        title=[TitleMiddleware(app_config=resolved_app_config)],
+        memory=[MemoryMiddleware(agent_name=agent_name, memory_config=resolved_app_config.memory)],
+        vision=vision_middleware,
+        deferred_tool_filter=deferred_tool_filter,
+        subagent_limit=subagent_limit_middleware,
+        loop_detection=loop_detection_middleware,
+        custom_middlewares=custom_middlewares,
+        safety_finish_reason=safety_finish_reason_middleware,
+        clarification=[ClarificationMiddleware()],
+    )
 
 
 def _available_skill_names(agent_config, is_bootstrap: bool) -> set[str] | None:

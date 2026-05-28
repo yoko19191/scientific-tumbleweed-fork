@@ -5,10 +5,23 @@ Re-exports the public API of :mod:`~deerflow.runtime.runs` and
 directly from ``deerflow.runtime``.
 """
 
-from .runs import ConflictError, DisconnectMode, RunManager, RunRecord, RunStatus, UnsupportedStrategyError, run_agent
+from .context import RuntimeContext, install_runtime_context
+from .runs import (
+    ConflictError,
+    DisconnectMode,
+    RunManager,
+    RunRecord,
+    RunStatus,
+    UnsupportedStrategyError,
+    checkpoint_channel_values,
+    read_thread_checkpoint_values,
+    read_thread_final_state,
+    run_agent,
+    thread_checkpoint_config,
+)
 from .serialization import serialize, serialize_channel_values, serialize_lc_object, serialize_messages_tuple
 from .store import get_store, make_store, reset_store, store_context
-from .stream_bridge import END_SENTINEL, HEARTBEAT_SENTINEL, MemoryStreamBridge, StreamBridge, StreamEvent, make_stream_bridge
+from .stream_bridge import END_SENTINEL, HEARTBEAT_SENTINEL, MemoryStreamBridge, StreamBridge, StreamEvent, format_sse_frame, make_stream_bridge
 
 __all__ = [
     # runs
@@ -18,7 +31,13 @@ __all__ = [
     "RunRecord",
     "RunStatus",
     "UnsupportedStrategyError",
+    "checkpoint_channel_values",
+    "read_thread_checkpoint_values",
+    "read_thread_final_state",
     "run_agent",
+    "thread_checkpoint_config",
+    "RuntimeContext",
+    "install_runtime_context",
     # serialization
     "serialize",
     "serialize_channel_values",
@@ -35,5 +54,6 @@ __all__ = [
     "MemoryStreamBridge",
     "StreamBridge",
     "StreamEvent",
+    "format_sse_frame",
     "make_stream_bridge",
 ]

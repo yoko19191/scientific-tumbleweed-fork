@@ -10,6 +10,7 @@ by :mod:`asyncio.Queue`.
 from .async_provider import make_stream_bridge
 from .base import END_SENTINEL, HEARTBEAT_SENTINEL, StreamBridge, StreamEvent
 from .memory import MemoryStreamBridge
+from .sse import format_sse_frame
 
 __all__ = [
     "END_SENTINEL",
@@ -17,5 +18,6 @@ __all__ = [
     "MemoryStreamBridge",
     "StreamBridge",
     "StreamEvent",
+    "format_sse_frame",
     "make_stream_bridge",
 ]

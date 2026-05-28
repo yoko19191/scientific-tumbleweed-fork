@@ -36,6 +36,13 @@ def _make_model(name: str, *, supports_thinking: bool) -> ModelConfig:
     )
 
 
+def _disable_optional_middleware_factories(monkeypatch):
+    monkeypatch.setattr(lead_agent_module, "_create_guardrail_middleware", lambda: None)
+    monkeypatch.setattr(lead_agent_module, "_create_permission_middleware", lambda: None)
+    monkeypatch.setattr(lead_agent_module, "_create_hook_middleware", lambda: None)
+    monkeypatch.setattr(lead_agent_module, "_create_compaction_middleware", lambda: None)
+
+
 def test_resolve_model_name_falls_back_to_default(monkeypatch, caplog):
     app_config = _make_app_config(
         [
@@ -244,6 +251,7 @@ def test_build_middlewares_uses_resolved_model_name_for_vision(monkeypatch):
     )
 
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    _disable_optional_middleware_factories(monkeypatch)
     monkeypatch.setattr(lead_agent_module, "_create_summarization_middleware", lambda: None)
     monkeypatch.setattr(lead_agent_module, "_create_todo_list_middleware", lambda is_plan_mode: None)
 
@@ -271,7 +279,7 @@ def test_build_middlewares_uses_loop_detection_config(monkeypatch):
     )
 
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
-    monkeypatch.setattr(lead_agent_module, "build_lead_runtime_middlewares", lambda *, lazy_init=True: [])
+    _disable_optional_middleware_factories(monkeypatch)
     monkeypatch.setattr(lead_agent_module, "_create_summarization_middleware", lambda: None)
     monkeypatch.setattr(lead_agent_module, "_create_todo_list_middleware", lambda is_plan_mode: None)
 
@@ -296,7 +304,7 @@ def test_build_middlewares_omits_loop_detection_when_disabled(monkeypatch):
     )
 
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
-    monkeypatch.setattr(lead_agent_module, "build_lead_runtime_middlewares", lambda *, lazy_init=True: [])
+    _disable_optional_middleware_factories(monkeypatch)
     monkeypatch.setattr(lead_agent_module, "_create_summarization_middleware", lambda: None)
     monkeypatch.setattr(lead_agent_module, "_create_todo_list_middleware", lambda is_plan_mode: None)
 
@@ -306,6 +314,59 @@ def test_build_middlewares_omits_loop_detection_when_disabled(monkeypatch):
     )
 
     assert not any(isinstance(m, LoopDetectionMiddleware) for m in middlewares)
+
+
+def test_build_middlewares_delegates_order_to_shared_builder(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    _disable_optional_middleware_factories(monkeypatch)
+    monkeypatch.setattr(lead_agent_module, "_create_summarization_middleware", lambda: None)
+    monkeypatch.setattr(lead_agent_module, "_create_todo_list_middleware", lambda is_plan_mode: None)
+
+    captured_slots: dict[str, object] = {}
+    ordered_chain = [MagicMock(name="ordered_chain")]
+
+    def _fake_build_ordered_middleware_chain(**slots):
+        captured_slots.update(slots)
+        return ordered_chain
+
+    monkeypatch.setattr(lead_agent_module, "build_ordered_middleware_chain", _fake_build_ordered_middleware_chain)
+
+    result = lead_agent_module._build_middlewares(
+        {"configurable": {"is_plan_mode": False, "subagent_enabled": True}},
+        model_name="safe-model",
+    )
+
+    assert result is ordered_chain
+    assert [type(m).__name__ for m in captured_slots["sandbox"]] == [
+        "ThreadDataMiddleware",
+        "UploadsMiddleware",
+        "SandboxMiddleware",
+    ]
+    assert type(captured_slots["loop_detection"]).__name__ == "LoopDetectionMiddleware"
+    assert type(captured_slots["safety_finish_reason"]).__name__ == "SafetyFinishReasonMiddleware"
+    assert type(captured_slots["clarification"][0]).__name__ == "ClarificationMiddleware"
+
+
+def test_build_middlewares_orders_subagent_loop_safety_and_clarification(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    _disable_optional_middleware_factories(monkeypatch)
+    monkeypatch.setattr(lead_agent_module, "_create_summarization_middleware", lambda: None)
+    monkeypatch.setattr(lead_agent_module, "_create_todo_list_middleware", lambda is_plan_mode: None)
+
+    middlewares = lead_agent_module._build_middlewares(
+        {"configurable": {"is_plan_mode": False, "subagent_enabled": True}},
+        model_name="safe-model",
+    )
+
+    mw_types = [type(m).__name__ for m in middlewares]
+    assert mw_types[-1] == "ClarificationMiddleware"
+    assert mw_types.index("SubagentLimitMiddleware") < mw_types.index("LoopDetectionMiddleware")
+    assert mw_types.index("LoopDetectionMiddleware") < mw_types.index("SafetyFinishReasonMiddleware")
+    assert mw_types.index("SafetyFinishReasonMiddleware") < mw_types.index("ClarificationMiddleware")
 
 
 def test_create_summarization_middleware_uses_configured_model_alias(monkeypatch):

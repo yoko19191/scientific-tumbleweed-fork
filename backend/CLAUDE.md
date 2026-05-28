@@ -145,6 +145,8 @@ All persistent state lives in a single PostgreSQL instance (default image: `para
 - **Shared engines**: `deerflow.db.init_engine()` returns a SQLAlchemy 2.0 `AsyncEngine`; `deerflow.db.init_sync_engine()` returns the matching sync `Engine` for repositories whose public interface is synchronous (memory storage, tool cache, channel store). `deerflow.db.init_pool()` keeps a thin asyncpg pool around for the `pg_advisory_xact_lock` transaction in `ensure_schema`. All three share the DSN resolved by `deerflow.db.dsn.resolve_dsn`.
 - **ORM models**: `deerflow.db.models` defines the SQLModel table classes (`User`, `UserMemory`, `ToolCacheEntry`, `ChannelThread`). `metadata.create_all` is the runtime safety net; `docker/postgres/init.sql` (regenerated with `make emit-init-sql`) is the bootstrap. Alembic baseline lives under `backend/alembic/`.
 - **Object storage**: persistent files (USER.md, custom agents, per-user MCP/skill enable overrides, plus the deferred uploads/outputs/workspace once MinIO lands) flow through OpenDAL via `deerflow.storage.get_operator()` / `get_async_operator()`; backend selected by `storage:` in `config.yaml`. Round 2.1 moved USER.md → `user-profile/{uid}/USER.md`, custom agents → `custom-agents/{uid}/{name}/...`, and the per-user `extensions_config.json` → `user-extensions/{uid}/extensions_config.json`. The repo-level **public** `extensions_config.json` stays on disk by design. See `backend/docs/STORAGE_GUIDELINES.md` for the full decision tree.
+- **Custom agents**: `deerflow.config.agents_config.CustomAgentStore` is the storage lifecycle boundary for `config.yaml` and `SOUL.md`. Gateway routes, `setup_agent`, and `update_agent` must use it for existence checks, YAML writes, SOUL writes, prefix deletion, and create-time cleanup. Agent name normalization goes through `normalize_agent_name()`.
+- **Runs and checkpoints**: `deerflow.runtime.runs.checkpoints` owns root-checkpoint config construction, raw channel-value extraction, and serialized final-state reads for wait endpoints. `RunRecord.from_store_row()` owns persistent `RunStore` row hydration. `deerflow.runtime.format_sse_frame()` owns the LangGraph-compatible SSE frame shape; Gateway `format_sse()` is only a wrapper.
 - **Legacy SQLite / JSON**: archived under `backend/.deer-flow-legacy/` (sibling of `.deer-flow/`). Not re-imported. Can be removed once you no longer need it. See `backend/docs/MIGRATION.md` and `backend/docs/POSTGRES_SCHEMA.md`.
 
 Required environment: `POSTGRES_DSN` (or the individual `POSTGRES_DB / USER / PASSWORD / HOST_PORT` if you use `docker compose`). The `paradedb` service in `docker-compose*.yaml` provides this out of the box; `gateway` and `langgraph` `depends_on: paradedb: service_healthy`.
@@ -195,7 +197,7 @@ from deerflow.config import get_app_config
 
 ### Middleware Chain
 
-Lead-agent middlewares are assembled in strict append order across `packages/harness/deerflow/agents/middlewares/tool_error_handling_middleware.py` (`build_lead_runtime_middlewares`) and `packages/harness/deerflow/agents/lead_agent/agent.py` (`_build_middlewares`):
+Lead-agent and SDK middlewares are ordered by `packages/harness/deerflow/agents/middleware_builder.py`. `make_lead_agent()` and `create_deerflow_agent()` may resolve which concrete slots are enabled, but final relative order must go through `build_ordered_middleware_chain()`. `extra_middleware` insertion belongs in `insert_extra_middlewares()` so `@Next`, `@Prev`, circular-anchor detection, and the clarification tail invariant stay shared.
 
 1. **ThreadDataMiddleware** - Creates per-thread directories (`backend/.deer-flow/threads/{thread_id}/user-data/{workspace,uploads,outputs}`); Web UI thread deletion now follows LangGraph thread removal with Gateway cleanup of the local `.deer-flow/threads/{thread_id}` directory
 2. **UploadsMiddleware** - Tracks and injects newly uploaded files into conversation
@@ -205,16 +207,21 @@ Lead-agent middlewares are assembled in strict append order across `packages/har
 6. **GuardrailMiddleware** - Pre-tool-call authorization via pluggable `GuardrailProvider` protocol (optional, if `guardrails.enabled` in config). Evaluates each tool call and returns error ToolMessage on deny. Three provider options: built-in `AllowlistProvider` (zero deps), OAP policy providers (e.g. `aport-agent-guardrails`), or custom providers. See [docs/GUARDRAILS.md](docs/GUARDRAILS.md) for setup, usage, and how to implement a provider.
 7. **SandboxAuditMiddleware** - Audits sandboxed shell/file operations for security logging before tool execution continues
 8. **ToolErrorHandlingMiddleware** - Converts tool exceptions into error `ToolMessage`s so the run can continue instead of aborting
-9. **SummarizationMiddleware** - Context reduction when approaching token limits (optional, if enabled)
-10. **TodoListMiddleware** - Task tracking with `write_todos` tool (optional, if plan_mode)
-11. **TokenUsageMiddleware** - Records token usage metrics when token tracking is enabled (optional)
-12. **TitleMiddleware** - Auto-generates thread title after first complete exchange and normalizes structured message content before prompting the title model
-13. **MemoryMiddleware** - Queues conversations for async memory update (filters to user + final AI responses)
-14. **ViewImageMiddleware** - Injects base64 image data before LLM call (conditional on vision support)
-15. **DeferredToolFilterMiddleware** - Hides deferred tool schemas from the bound model until tool search is enabled (optional)
-16. **SubagentLimitMiddleware** - Truncates excess `task` tool calls from model response to enforce `MAX_CONCURRENT_SUBAGENTS` limit (optional, if `subagent_enabled`)
-17. **LoopDetectionMiddleware** - Detects repeated tool-call loops; hard-stop responses clear both structured `tool_calls` and raw provider tool-call metadata before forcing a final text answer
-18. **ClarificationMiddleware** - Intercepts `ask_clarification` tool calls, interrupts via `Command(goto=END)` (must be last)
+9. **PermissionMiddleware** - Applies configured tool permission policy (optional)
+10. **HookMiddleware** - Runs configured pre/post tool hooks (optional)
+11. **DynamicContextMiddleware** - Injects runtime reminders into the first human message while keeping the main system prompt static
+12. **SummarizationMiddleware** - Context reduction when approaching token limits (optional, if enabled)
+13. **CompactionMiddleware** - Context compression when configured (optional)
+14. **TodoListMiddleware** - Task tracking with `write_todos` tool (optional, if plan_mode)
+15. **TokenUsageMiddleware** - Records token usage metrics when token tracking is enabled (optional)
+16. **TitleMiddleware** - Auto-generates thread title after first complete exchange and normalizes structured message content before prompting the title model
+17. **MemoryMiddleware** - Queues conversations for async memory update (filters to user + final AI responses)
+18. **ViewImageMiddleware** - Injects base64 image data before LLM call (conditional on vision support)
+19. **DeferredToolFilterMiddleware** - Hides deferred tool schemas from the bound model until tool search is enabled (optional)
+20. **SubagentLimitMiddleware** - Truncates excess `task` tool calls from model response to enforce `MAX_CONCURRENT_SUBAGENTS` limit (optional, if `subagent_enabled`)
+21. **LoopDetectionMiddleware** - Detects repeated tool-call loops; hard-stop responses clear both structured `tool_calls` and raw provider tool-call metadata before forcing a final text answer
+22. **SafetyFinishReasonMiddleware** - Suppresses tool execution when the provider safety-terminated a response that still contained tool calls
+23. **ClarificationMiddleware** - Intercepts `ask_clarification` tool calls, interrupts via `Command(goto=END)` (must be last)
 
 ### Configuration System
 
@@ -247,6 +254,13 @@ Configuration priority:
 3. `extensions_config.json` in current directory (backend/)
 4. `extensions_config.json` in parent directory (project root - **recommended location**)
 
+The repo-level file is developer-level global config. Logged-in user enablement
+overrides live in object storage at
+`user-extensions/{user_id}/extensions_config.json` and are merged through
+`deerflow.config.extensions_config.get_effective_extensions_config()` /
+`aget_effective_extensions_config()`. Skills and MCP must use that effective
+config interface instead of reading or writing per-user JSON directly.
+
 ### Gateway API (`app/gateway/`)
 
 FastAPI application on port 8001 with health check at `GET /health`. Set `GATEWAY_ENABLE_DOCS=false` to disable `/docs`, `/redoc`, and `/openapi.json` in production (default: enabled).
@@ -267,6 +281,12 @@ CORS is same-origin by default when requests enter through nginx on port 2026. S
 | **Suggestions** (`/api/threads/{id}/suggestions`) | `POST /` - generate follow-up questions; rich list/block model content is normalized before JSON parsing |
 
 Proxied through nginx: `/api/langgraph/*` → Gateway LangGraph-compatible runtime, all other `/api/*` → Gateway REST APIs.
+
+Thread-scoped Gateway filesystem routes must go through `app.gateway.thread_resources.get_authenticated_thread_resource()` before resolving `/mnt/user-data/...`, uploads paths, local cleanup, or `.skill` archive installation. That interface verifies ownership once and carries the server-authenticated `user_id` into the lower-level `Paths` adapter, so routes do not call user namespace helpers or unscoped virtual-path resolution directly.
+
+Gateway run launch is centralized in `app.gateway.services.start_run()`. Use `build_run_config()` and `apply_runtime_context_overrides()` for request config/body context precedence; do not duplicate context merge logic in routers or tests. The harness worker then resolves `deerflow.runtime.RuntimeContext` and installs canonical `thread_id`, `run_id`, `user_id`, `agent_name`, and `app_config` into LangGraph `Runtime.context`.
+
+Run wait and stream protocol helpers are harness runtime concerns. Routers should call `read_thread_final_state()` for checkpoint-backed wait responses, services should call `read_thread_checkpoint_values()` when they need raw channel values such as generated titles, and SSE formatting should delegate to `format_sse_frame()`.
 
 ### Sandbox System (`packages/harness/deerflow/sandbox/`)
 
@@ -328,13 +348,13 @@ Proxied through nginx: `/api/langgraph/*` → Gateway LangGraph-compatible runti
 - **Cache invalidation**: Detects config file changes via mtime comparison
 - **Transports**: stdio (command-based), SSE, HTTP
 - **OAuth (HTTP/SSE)**: Supports token endpoint flows (`client_credentials`, `refresh_token`) with automatic token refresh + Authorization header injection
-- **Runtime updates**: Gateway API saves to extensions_config.json; LangGraph detects via mtime
+- **Runtime updates**: Gateway API writes per-user enabled overrides through the effective extensions config helpers; developer-level global file edits are still detected via mtime
 
 ### Skills System (`packages/harness/deerflow/skills/`)
 
 - **Location**: `deer-flow/skills/{public,custom}/`
 - **Format**: Directory with `SKILL.md` (YAML frontmatter: name, description, license, allowed-tools)
-- **Loading**: `load_skills()` recursively scans `skills/{public,custom}` for `SKILL.md`, parses metadata, and reads enabled state from extensions_config.json
+- **Loading**: `load_skills()` recursively scans `skills/{public,custom}` for `SKILL.md`, parses metadata, and reads enabled state through the effective extensions config interface
 - **Injection**: Enabled skills listed in agent system prompt with container paths
 - **Installation**: `POST /api/skills/install` extracts .skill ZIP archive to custom/ directory
 
@@ -436,7 +456,8 @@ Focused regression coverage for the updater lives in `backend/tests/test_memory_
 - `mcpServers` - Map of server name → config (enabled, type, command, args, env, url, headers, oauth, description)
 - `skills` - Map of skill name → state (enabled)
 
-Both can be modified at runtime via Gateway API endpoints or `DeerFlowClient` methods.
+Gateway endpoints modify per-user enablement overrides. `DeerFlowClient` can
+still modify the developer-level config file for embedded or local workflows.
 
 ### Embedded Client (`packages/harness/deerflow/client.py`)
 
@@ -451,7 +472,7 @@ Both can be modified at runtime via Gateway API endpoints or `DeerFlowClient` me
   - `"messages-tuple"` — per-chunk update: for AI text this is a **delta** (concat per `id` to rebuild the full message); tool calls and tool results are emitted once each
   - `"custom"` — forwarded from `StreamWriter`
   - `"end"` — stream finished (carries cumulative `usage` counted once per message id)
-- Agent created lazily via `create_agent()` + `_build_middlewares()`, same as `make_lead_agent`
+- Agent created lazily via `create_agent()` + `_build_middlewares()`, same as `make_lead_agent`; both entry points use the canonical middleware builder
 - Supports `checkpointer` parameter for state persistence across turns
 - `reset_agent()` forces agent recreation (e.g. after memory or skill changes)
 - See [docs/STREAMING.md](docs/STREAMING.md) for the full design: why Gateway and DeerFlowClient are parallel paths, LangGraph's `stream_mode` semantics, the per-id dedup invariants, and regression testing strategy

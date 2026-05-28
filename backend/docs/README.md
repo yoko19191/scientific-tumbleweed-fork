@@ -7,6 +7,7 @@ This directory contains detailed documentation for the Scientific Tumbleweed bac
 | Document | Description |
 |----------|-------------|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture overview |
+| [AGENT_LIFECYCLE.md](AGENT_LIFECYCLE.md) | Agent run lifecycle, semantic boundaries, state model, and ownership rules |
 | [API.md](API.md) | Complete API reference |
 | [CONFIGURATION.md](CONFIGURATION.md) | Configuration options |
 | [SETUP.md](SETUP.md) | Quick setup guide |
@@ -41,6 +42,7 @@ This directory contains detailed documentation for the Scientific Tumbleweed bac
 docs/
 ├── README.md                  # This file
 ├── ARCHITECTURE.md            # System architecture
+├── AGENT_LIFECYCLE.md         # Agent lifecycle and semantic boundaries
 ├── API.md                     # API reference
 ├── CONFIGURATION.md           # Configuration guide
 ├── SETUP.md                   # Setup instructions

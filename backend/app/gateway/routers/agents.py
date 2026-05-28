@@ -1,29 +1,20 @@
 """CRUD API for custom agents."""
 
 import logging
-import re
 
-import opendal
 import opendal.exceptions as opendal_exc
-import yaml
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.gateway.deps import get_current_user_id
-from deerflow.config.agents_config import AgentConfig, list_custom_agents, load_agent_config, load_agent_soul
+from deerflow.config.agents_config import AgentConfig, CustomAgentStore, normalize_agent_name, validate_agent_name
 from deerflow.storage import (
     get_async_operator,
-    get_operator,
-    user_agent_config_key,
-    user_agent_prefix,
-    user_agent_soul_key,
     user_profile_key,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["agents"])
-
-AGENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
 
 
 def _is_opendal_not_found(exc: BaseException) -> bool:
@@ -34,48 +25,6 @@ def _is_opendal_not_found(exc: BaseException) -> bool:
     filesystem backend. Cover both.
     """
     return isinstance(exc, (opendal_exc.NotFound, FileNotFoundError))
-
-
-def _agent_config_exists(name: str, user_id: str | None) -> bool:
-    """Return True if the agent's config.yaml exists in object storage."""
-    operator = get_operator()
-    try:
-        operator.stat(user_agent_config_key(user_id, name))
-        return True
-    except Exception as exc:
-        if _is_opendal_not_found(exc):
-            return False
-        raise
-
-
-def _delete_agent_objects(name: str, user_id: str | None) -> int:
-    """Delete every object under a custom agent's prefix.
-
-    OpenDAL exposes per-key ``delete`` only — there is no atomic
-    ``delete_prefix`` across all backends. We list the prefix and delete
-    each entry; for the small per-agent layout (config.yaml + SOUL.md +
-    a couple of optional siblings) this is plenty.
-    """
-    operator = get_operator()
-    prefix = user_agent_prefix(user_id, name) + "/"
-
-    try:
-        entries = list(operator.list(prefix))
-    except Exception as exc:
-        if _is_opendal_not_found(exc):
-            return 0
-        raise
-
-    removed = 0
-    for entry in entries:
-        path = entry.path
-        # Skip directory pseudo-entries — they have a trailing slash on
-        # the filesystem backend.
-        if not path or path.endswith("/"):
-            continue
-        operator.delete(path)
-        removed += 1
-    return removed
 
 
 class AgentResponse(BaseModel):
@@ -122,23 +71,25 @@ def _validate_agent_name(name: str) -> None:
     Raises:
         HTTPException: 422 if the name is invalid.
     """
-    if not AGENT_NAME_PATTERN.match(name):
+    try:
+        validate_agent_name(name)
+    except ValueError as exc:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid agent name '{name}'. Must match ^[A-Za-z0-9-]+$ (letters, digits, and hyphens only).",
-        )
+            detail=str(exc),
+        ) from exc
 
 
 def _normalize_agent_name(name: str) -> str:
     """Normalize agent name to lowercase for filesystem storage."""
-    return name.lower()
+    return normalize_agent_name(name)
 
 
 def _agent_config_to_response(agent_cfg: AgentConfig, include_soul: bool = False, user_id: str | None = None) -> AgentResponse:
     """Convert AgentConfig to AgentResponse."""
     soul: str | None = None
     if include_soul:
-        soul = load_agent_soul(agent_cfg.name, user_id=user_id) or ""
+        soul = CustomAgentStore().load_soul(agent_cfg.name, user_id=user_id) or ""
 
     return AgentResponse(
         name=agent_cfg.name,
@@ -162,7 +113,7 @@ async def list_agents(user_id: str = Depends(get_current_user_id)) -> AgentsList
         List of all custom agents with their metadata and soul content.
     """
     try:
-        agents = list_custom_agents(user_id=user_id)
+        agents = CustomAgentStore().list_agents(user_id=user_id)
         return AgentsListResponse(agents=[_agent_config_to_response(a, include_soul=True, user_id=user_id) for a in agents])
     except Exception as e:
         logger.error(f"Failed to list agents: {e}", exc_info=True)
@@ -178,7 +129,7 @@ async def check_agent_name(name: str, user_id: str = Depends(get_current_user_id
     """Check whether an agent name is valid and not yet taken."""
     _validate_agent_name(name)
     normalized = _normalize_agent_name(name)
-    available = not _agent_config_exists(normalized, user_id)
+    available = not CustomAgentStore().exists(normalized, user_id)
     return {"available": available, "name": normalized}
 
 
@@ -255,7 +206,7 @@ async def get_agent(name: str, user_id: str = Depends(get_current_user_id)) -> A
     name = _normalize_agent_name(name)
 
     try:
-        agent_cfg = load_agent_config(name, user_id=user_id)
+        agent_cfg = CustomAgentStore().load_config(name, user_id=user_id)
         return _agent_config_to_response(agent_cfg, include_soul=True, user_id=user_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
@@ -276,40 +227,29 @@ async def create_agent_endpoint(body: AgentCreateRequest, user_id: str = Depends
     _validate_agent_name(body.name)
     normalized_name = _normalize_agent_name(body.name)
 
-    if _agent_config_exists(normalized_name, user_id):
+    store = CustomAgentStore()
+    if store.exists(normalized_name, user_id):
         raise HTTPException(status_code=409, detail=f"Agent '{normalized_name}' already exists")
 
-    operator = get_operator()
-    config_key = user_agent_config_key(user_id, normalized_name)
-    soul_key = user_agent_soul_key(user_id, normalized_name)
-
     try:
-        # Build config.yaml payload.
-        config_data: dict = {"name": normalized_name}
-        if body.description:
-            config_data["description"] = body.description
-        if body.model is not None:
-            config_data["model"] = body.model
-        if body.tool_groups is not None:
-            config_data["tool_groups"] = body.tool_groups
-
-        config_yaml = yaml.dump(config_data, default_flow_style=False, allow_unicode=True)
-        operator.write(config_key, config_yaml.encode("utf-8"))
-        operator.write(soul_key, body.soul.encode("utf-8"))
-
-        logger.info("Created agent '%s' at %s", normalized_name, config_key)
-
-        agent_cfg = load_agent_config(normalized_name, user_id=user_id)
+        agent_cfg = store.create_agent(
+            AgentConfig(
+                name=normalized_name,
+                description=body.description,
+                model=body.model,
+                tool_groups=body.tool_groups,
+            ),
+            body.soul,
+            user_id=user_id,
+        )
+        logger.info("Created agent '%s'", normalized_name)
         return _agent_config_to_response(agent_cfg, include_soul=True, user_id=user_id)
 
     except HTTPException:
         raise
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail=f"Agent '{normalized_name}' already exists")
     except Exception as e:
-        # Best-effort cleanup on failure.
-        try:
-            _delete_agent_objects(normalized_name, user_id)
-        except Exception:
-            logger.exception("Failed to clean up partially created agent '%s'", normalized_name)
         logger.error(f"Failed to create agent '{body.name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
 
@@ -326,41 +266,34 @@ async def update_agent(name: str, body: AgentUpdateRequest, user_id: str = Depen
     name = _normalize_agent_name(name)
 
     try:
-        agent_cfg = load_agent_config(name, user_id=user_id)
+        store = CustomAgentStore()
+        agent_cfg = store.load_config(name, user_id=user_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
-
-    operator = get_operator()
-    config_key = user_agent_config_key(user_id, name)
-    soul_key = user_agent_soul_key(user_id, name)
 
     try:
         # Update config if any config fields changed
         config_changed = any(v is not None for v in [body.description, body.model, body.tool_groups])
 
         if config_changed:
-            updated: dict = {
-                "name": agent_cfg.name,
-                "description": body.description if body.description is not None else agent_cfg.description,
-            }
-            new_model = body.model if body.model is not None else agent_cfg.model
-            if new_model is not None:
-                updated["model"] = new_model
-
-            new_tool_groups = body.tool_groups if body.tool_groups is not None else agent_cfg.tool_groups
-            if new_tool_groups is not None:
-                updated["tool_groups"] = new_tool_groups
-
-            config_yaml = yaml.dump(updated, default_flow_style=False, allow_unicode=True)
-            operator.write(config_key, config_yaml.encode("utf-8"))
+            store.write_config(
+                AgentConfig(
+                    name=agent_cfg.name,
+                    description=body.description if body.description is not None else agent_cfg.description,
+                    model=body.model if body.model is not None else agent_cfg.model,
+                    tool_groups=body.tool_groups if body.tool_groups is not None else agent_cfg.tool_groups,
+                    skills=agent_cfg.skills,
+                ),
+                user_id=user_id,
+            )
 
         # Update SOUL.md if provided
         if body.soul is not None:
-            operator.write(soul_key, body.soul.encode("utf-8"))
+            store.write_soul(name, body.soul, user_id=user_id)
 
         logger.info(f"Updated agent '{name}'")
 
-        refreshed_cfg = load_agent_config(name, user_id=user_id)
+        refreshed_cfg = store.load_config(name, user_id=user_id)
         return _agent_config_to_response(refreshed_cfg, include_soul=True, user_id=user_id)
 
     except HTTPException:
@@ -381,11 +314,12 @@ async def delete_agent(name: str, user_id: str = Depends(get_current_user_id)) -
     _validate_agent_name(name)
     name = _normalize_agent_name(name)
 
-    if not _agent_config_exists(name, user_id):
+    store = CustomAgentStore()
+    if not store.exists(name, user_id):
         raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
 
     try:
-        removed = _delete_agent_objects(name, user_id)
+        removed = store.delete_agent(name, user_id)
         logger.info("Deleted agent '%s' (removed %d objects)", name, removed)
     except Exception as e:
         logger.error(f"Failed to delete agent '{name}': {e}", exc_info=True)

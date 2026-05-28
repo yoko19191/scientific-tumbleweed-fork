@@ -18,7 +18,7 @@ from app.gateway.deps import get_checkpointer, get_optional_user_id, get_run_man
 from app.gateway.routers.thread_runs import RunCreateRequest
 from app.gateway.services import sse_consumer, start_run
 from app.gateway.thread_ownership import bind_thread_to_user, require_thread_owner
-from deerflow.runtime import serialize_channel_values
+from deerflow.runtime import read_thread_final_state
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/runs", tags=["runs"])
@@ -123,13 +123,10 @@ async def stateless_wait(body: RunCreateRequest, request: Request) -> dict:
             pass
 
     checkpointer = get_checkpointer(request)
-    config = {"configurable": {"thread_id": thread_id}}
     try:
-        checkpoint_tuple = await checkpointer.aget_tuple(config)
-        if checkpoint_tuple is not None:
-            checkpoint = getattr(checkpoint_tuple, "checkpoint", {}) or {}
-            channel_values = checkpoint.get("channel_values", {})
-            return serialize_channel_values(channel_values)
+        final_state = await read_thread_final_state(checkpointer, thread_id)
+        if final_state is not None:
+            return final_state
     except Exception:
         logger.exception("Failed to fetch final state for run %s", record.run_id)
 

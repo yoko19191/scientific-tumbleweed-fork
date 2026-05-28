@@ -1,7 +1,8 @@
 import asyncio
 import zipfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -24,9 +25,9 @@ def _make_request(query_string: bytes = b"") -> Request:
     return Request({"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": query_string})
 
 
-def _patch_require_owner(user_id: str = USER_A):
-    """Patch require_thread_owner to return user_id without hitting the store."""
-    return patch.object(artifacts_router, "require_thread_owner", new=AsyncMock(return_value=user_id))
+def _patch_resolved_thread_path(monkeypatch, resolved_path: Path, user_id: str = USER_A):
+    resource = SimpleNamespace(user_id=user_id, resolve_virtual_path=lambda _path: resolved_path)
+    monkeypatch.setattr(artifacts_router, "get_authenticated_thread_resource", AsyncMock(return_value=resource))
 
 
 def test_get_artifact_reads_utf8_text_file_on_windows_locale(tmp_path, monkeypatch) -> None:
@@ -41,8 +42,7 @@ def test_get_artifact_reads_utf8_text_file_on_windows_locale(tmp_path, monkeypat
         return original_read_text(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", read_text_with_gbk_default)
-    monkeypatch.setattr(artifacts_router, "resolve_thread_virtual_path", lambda _thread_id, _path, _user_id=None: artifact_path)
-    monkeypatch.setattr(artifacts_router, "require_thread_owner", AsyncMock(return_value=USER_A))
+    _patch_resolved_thread_path(monkeypatch, artifact_path)
 
     request = _make_request()
     response = asyncio.run(artifacts_router.get_artifact("thread-1", "mnt/user-data/outputs/note.txt", request))
@@ -51,13 +51,26 @@ def test_get_artifact_reads_utf8_text_file_on_windows_locale(tmp_path, monkeypat
     assert response.media_type == "text/plain"
 
 
+def test_get_artifact_resolves_path_through_authenticated_resource(tmp_path, monkeypatch) -> None:
+    artifact_path = tmp_path / "note.txt"
+    artifact_path.write_text("hello", encoding="utf-8")
+    resource = SimpleNamespace(user_id=USER_A, resolve_virtual_path=Mock(return_value=artifact_path))
+    get_resource = AsyncMock(return_value=resource)
+    monkeypatch.setattr(artifacts_router, "get_authenticated_thread_resource", get_resource)
+
+    response = asyncio.run(artifacts_router.get_artifact("thread-1", "mnt/user-data/outputs/note.txt", _make_request()))
+
+    assert response.body == b"hello"
+    get_resource.assert_awaited_once()
+    resource.resolve_virtual_path.assert_called_once_with("mnt/user-data/outputs/note.txt")
+
+
 @pytest.mark.parametrize(("filename", "content"), ACTIVE_ARTIFACT_CASES)
 def test_get_artifact_forces_download_for_active_content(tmp_path, monkeypatch, filename: str, content: str) -> None:
     artifact_path = tmp_path / filename
     artifact_path.write_text(content, encoding="utf-8")
 
-    monkeypatch.setattr(artifacts_router, "resolve_thread_virtual_path", lambda _thread_id, _path, _user_id=None: artifact_path)
-    monkeypatch.setattr(artifacts_router, "require_thread_owner", AsyncMock(return_value=USER_A))
+    _patch_resolved_thread_path(monkeypatch, artifact_path)
 
     response = asyncio.run(artifacts_router.get_artifact("thread-1", f"mnt/user-data/outputs/{filename}", _make_request()))
 
@@ -71,8 +84,7 @@ def test_get_artifact_forces_download_for_active_content_in_skill_archive(tmp_pa
     with zipfile.ZipFile(skill_path, "w") as zip_ref:
         zip_ref.writestr(filename, content)
 
-    monkeypatch.setattr(artifacts_router, "resolve_thread_virtual_path", lambda _thread_id, _path, _user_id=None: skill_path)
-    monkeypatch.setattr(artifacts_router, "require_thread_owner", AsyncMock(return_value=USER_A))
+    _patch_resolved_thread_path(monkeypatch, skill_path)
 
     response = asyncio.run(artifacts_router.get_artifact("thread-1", f"mnt/user-data/outputs/sample.skill/{filename}", _make_request()))
 
@@ -84,8 +96,7 @@ def test_get_artifact_download_false_does_not_force_attachment(tmp_path, monkeyp
     artifact_path = tmp_path / "note.txt"
     artifact_path.write_text("hello", encoding="utf-8")
 
-    monkeypatch.setattr(artifacts_router, "resolve_thread_virtual_path", lambda _thread_id, _path, _user_id=None: artifact_path)
-    monkeypatch.setattr(artifacts_router, "require_thread_owner", AsyncMock(return_value=USER_A))
+    _patch_resolved_thread_path(monkeypatch, artifact_path)
 
     app = FastAPI()
     app.include_router(artifacts_router.router)
@@ -103,8 +114,7 @@ def test_get_artifact_download_true_forces_attachment_for_skill_archive(tmp_path
     with zipfile.ZipFile(skill_path, "w") as zip_ref:
         zip_ref.writestr("notes.txt", "hello")
 
-    monkeypatch.setattr(artifacts_router, "resolve_thread_virtual_path", lambda _thread_id, _path, _user_id=None: skill_path)
-    monkeypatch.setattr(artifacts_router, "require_thread_owner", AsyncMock(return_value=USER_A))
+    _patch_resolved_thread_path(monkeypatch, skill_path)
 
     app = FastAPI()
     app.include_router(artifacts_router.router)

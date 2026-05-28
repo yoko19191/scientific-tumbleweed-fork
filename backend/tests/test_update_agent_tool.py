@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import yaml
 from unittest.mock import MagicMock
+
+import yaml
 
 from deerflow.config.storage_config import FilesystemStorageConfig, StorageConfig, set_storage_config
 from deerflow.storage import reset_operators, user_agent_config_key, user_agent_soul_key

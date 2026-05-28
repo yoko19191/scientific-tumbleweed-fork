@@ -7,6 +7,7 @@ Both ``make_lead_agent`` (config-driven) and ``create_deerflow_agent``
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,161 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+MiddlewareSlot = AgentMiddleware | Sequence[AgentMiddleware] | None
+
+
+def _slot_items(slot: MiddlewareSlot) -> list[AgentMiddleware]:
+    if slot is None:
+        return []
+    if isinstance(slot, AgentMiddleware):
+        return [slot]
+    return list(slot)
+
+
+def build_ordered_middleware_chain(
+    *,
+    sandbox: MiddlewareSlot = None,
+    dangling_tool_call_patch: MiddlewareSlot = None,
+    llm_error_handling: MiddlewareSlot = None,
+    guardrail: MiddlewareSlot = None,
+    sandbox_audit: MiddlewareSlot = None,
+    tool_error_handling: MiddlewareSlot = None,
+    permissions: MiddlewareSlot = None,
+    hooks: MiddlewareSlot = None,
+    dynamic_context: MiddlewareSlot = None,
+    summarization: MiddlewareSlot = None,
+    compaction: MiddlewareSlot = None,
+    plan_mode: MiddlewareSlot = None,
+    token_usage: MiddlewareSlot = None,
+    title: MiddlewareSlot = None,
+    memory: MiddlewareSlot = None,
+    vision: MiddlewareSlot = None,
+    deferred_tool_filter: MiddlewareSlot = None,
+    subagent_limit: MiddlewareSlot = None,
+    loop_detection: MiddlewareSlot = None,
+    custom_middlewares: MiddlewareSlot = None,
+    safety_finish_reason: MiddlewareSlot = None,
+    clarification: MiddlewareSlot = None,
+) -> list[AgentMiddleware]:
+    """Build the canonical middleware order from concrete slot contents."""
+    chain: list[AgentMiddleware] = []
+    for slot in (
+        sandbox,
+        dangling_tool_call_patch,
+        llm_error_handling,
+        guardrail,
+        sandbox_audit,
+        tool_error_handling,
+        permissions,
+        hooks,
+        dynamic_context,
+        summarization,
+        compaction,
+        plan_mode,
+        token_usage,
+        title,
+        memory,
+        vision,
+        deferred_tool_filter,
+        subagent_limit,
+        loop_detection,
+        custom_middlewares,
+        safety_finish_reason,
+        clarification,
+    ):
+        chain.extend(_slot_items(slot))
+    ensure_clarification_last(chain)
+    return chain
+
+
+def ensure_clarification_last(chain: list[AgentMiddleware]) -> None:
+    """Keep ClarificationMiddleware at the tail when present."""
+    from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
+
+    for idx, middleware in enumerate(chain):
+        if isinstance(middleware, ClarificationMiddleware):
+            if idx != len(chain) - 1:
+                chain.append(chain.pop(idx))
+            return
+
+
+def insert_extra_middlewares(chain: list[AgentMiddleware], extras: list[AgentMiddleware]) -> None:
+    """Insert extra middlewares via @Next/@Prev anchors, preserving tail invariants."""
+    from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
+
+    next_targets: dict[type, type] = {}
+    prev_targets: dict[type, type] = {}
+
+    anchored: list[tuple[AgentMiddleware, str, type]] = []
+    unanchored: list[AgentMiddleware] = []
+
+    for mw in extras:
+        next_anchor = getattr(type(mw), "_next_anchor", None)
+        prev_anchor = getattr(type(mw), "_prev_anchor", None)
+
+        if next_anchor and prev_anchor:
+            raise ValueError(f"{type(mw).__name__} cannot have both @Next and @Prev")
+
+        if next_anchor:
+            if next_anchor in next_targets:
+                raise ValueError(
+                    f"Conflict: {type(mw).__name__} and "
+                    f"{next_targets[next_anchor].__name__} both @Next({next_anchor.__name__})"
+                )
+            if next_anchor in prev_targets:
+                raise ValueError(
+                    f"Conflict: {type(mw).__name__} @Next({next_anchor.__name__}) and "
+                    f"{prev_targets[next_anchor].__name__} @Prev({next_anchor.__name__}) "
+                    "- use cross-anchoring between extras instead"
+                )
+            next_targets[next_anchor] = type(mw)
+            anchored.append((mw, "next", next_anchor))
+        elif prev_anchor:
+            if prev_anchor in prev_targets:
+                raise ValueError(
+                    f"Conflict: {type(mw).__name__} and "
+                    f"{prev_targets[prev_anchor].__name__} both @Prev({prev_anchor.__name__})"
+                )
+            if prev_anchor in next_targets:
+                raise ValueError(
+                    f"Conflict: {type(mw).__name__} @Prev({prev_anchor.__name__}) and "
+                    f"{next_targets[prev_anchor].__name__} @Next({prev_anchor.__name__}) "
+                    "- use cross-anchoring between extras instead"
+                )
+            prev_targets[prev_anchor] = type(mw)
+            anchored.append((mw, "prev", prev_anchor))
+        else:
+            unanchored.append(mw)
+
+    clarification_idx = next(i for i, m in enumerate(chain) if isinstance(m, ClarificationMiddleware))
+    for mw in unanchored:
+        chain.insert(clarification_idx, mw)
+        clarification_idx += 1
+
+    pending = list(anchored)
+    max_rounds = len(pending) + 1
+    for _ in range(max_rounds):
+        if not pending:
+            break
+        remaining = []
+        for mw, direction, anchor in pending:
+            try:
+                idx = next(i for i, m in enumerate(chain) if isinstance(m, anchor))
+            except StopIteration:
+                remaining.append((mw, direction, anchor))
+                continue
+            insert_at = idx + 1 if direction == "next" else idx
+            chain.insert(insert_at, mw)
+        if len(remaining) == len(pending):
+            names = [f"{type(mw).__name__} @{direction}({anchor.__name__})" for mw, direction, anchor in remaining]
+            if any(getattr(type(mw), "_next_anchor", None) in {type(x) for x, _, _ in remaining} for mw, _, _ in remaining):
+                raise ValueError(f"Circular dependency among extra_middleware: {names}")
+            raise ValueError(f"Cannot resolve middleware anchors: {names}")
+        pending = remaining
+
+    ensure_clarification_last(chain)
 
 
 @dataclass
@@ -53,136 +209,116 @@ class MiddlewareFeatures:
 
 
 def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[AgentMiddleware]:
-    """Assemble the middleware chain in canonical order.
+    """Assemble concrete middleware slots and delegate canonical ordering."""
+    sandbox: list[AgentMiddleware] = []
+    dangling_tool_call_patch: list[AgentMiddleware] = []
+    llm_error_handling: list[AgentMiddleware] = []
+    permissions: list[AgentMiddleware] = []
+    guardrail: list[AgentMiddleware] = []
+    hooks: list[AgentMiddleware] = []
+    sandbox_audit: list[AgentMiddleware] = []
+    tool_error_handling: list[AgentMiddleware] = []
+    dynamic_context: list[AgentMiddleware] = []
+    summarization: list[AgentMiddleware] = []
+    compaction: list[AgentMiddleware] = []
+    plan_mode: list[AgentMiddleware] = []
+    token_usage: list[AgentMiddleware] = []
+    title: list[AgentMiddleware] = []
+    memory: list[AgentMiddleware] = []
+    vision: list[AgentMiddleware] = []
+    deferred_tool_filter: list[AgentMiddleware] = []
+    subagent_limit: list[AgentMiddleware] = []
+    loop_detection: list[AgentMiddleware] = []
+    safety_finish_reason: list[AgentMiddleware] = []
+    clarification: list[AgentMiddleware] = []
 
-    Order:
-      [0]  ThreadDataMiddleware
-      [1]  UploadsMiddleware
-      [2]  SandboxMiddleware
-      [3]  DanglingToolCallMiddleware
-      [4]  PermissionMiddleware          (NEW)
-      [5]  GuardrailMiddleware
-      [6]  HookMiddleware                (NEW)
-      [7]  SandboxAuditMiddleware
-      [8]  ToolErrorHandlingMiddleware
-      [9]  DynamicContextMiddleware
-      [10] SummarizationMiddleware       (optional)
-      [11] CompactionMiddleware          (NEW, optional)
-      [12] TodoMiddleware                (optional)
-      [13] TokenUsageMiddleware          (optional)
-      [14] TitleMiddleware
-      [15] MemoryMiddleware
-      [16] ViewImageMiddleware           (optional)
-      [17] DeferredToolFilterMiddleware  (optional)
-      [18] SubagentLimitMiddleware       (optional)
-      [19] LoopDetectionMiddleware
-      [20] [custom middlewares]
-      [21] SafetyFinishReasonMiddleware
-      [22] ClarificationMiddleware       (always last)
-    """
-    chain: list[AgentMiddleware] = []
-
-    # --- [0-2] Sandbox infrastructure ---
     if features.sandbox:
         from deerflow.agents.middlewares.thread_data_middleware import ThreadDataMiddleware
         from deerflow.sandbox.middleware import SandboxMiddleware
 
-        chain.append(ThreadDataMiddleware(lazy_init=features.lazy_init))
+        sandbox.append(ThreadDataMiddleware(lazy_init=features.lazy_init))
 
         if features.uploads:
             from deerflow.agents.middlewares.uploads_middleware import UploadsMiddleware
 
-            chain.append(UploadsMiddleware())
+            sandbox.append(UploadsMiddleware())
 
-        chain.append(SandboxMiddleware(lazy_init=features.lazy_init))
+        sandbox.append(SandboxMiddleware(lazy_init=features.lazy_init))
 
-    # --- [3] DanglingToolCallMiddleware ---
     if features.dangling_tool_call_patch:
         from deerflow.agents.middlewares.dangling_tool_call_middleware import DanglingToolCallMiddleware
 
-        chain.append(DanglingToolCallMiddleware())
+        dangling_tool_call_patch.append(DanglingToolCallMiddleware())
 
-    # --- [4] PermissionMiddleware (NEW) ---
-    if features.permissions:
-        _maybe_add_permission_middleware(chain)
+    from deerflow.agents.middlewares.llm_error_handling_middleware import LLMErrorHandlingMiddleware
 
-    # --- [5] GuardrailMiddleware ---
+    llm_error_handling.append(LLMErrorHandlingMiddleware())
+
     if features.guardrail:
-        _maybe_add_guardrail_middleware(chain)
+        _maybe_add_guardrail_middleware(guardrail)
 
-    # --- [6] HookMiddleware (NEW) ---
-    if features.hooks:
-        _maybe_add_hook_middleware(chain)
-
-    # --- [7] SandboxAuditMiddleware ---
     if features.sandbox_audit:
         from deerflow.agents.middlewares.sandbox_audit_middleware import SandboxAuditMiddleware
 
-        chain.append(SandboxAuditMiddleware())
+        sandbox_audit.append(SandboxAuditMiddleware())
 
-    # --- [8] ToolErrorHandlingMiddleware ---
     if features.tool_error_handling:
         from deerflow.agents.middlewares.tool_error_handling_middleware import ToolErrorHandlingMiddleware
 
-        chain.append(ToolErrorHandlingMiddleware())
+        tool_error_handling.append(ToolErrorHandlingMiddleware())
 
-    # --- [9] DynamicContextMiddleware ---
+    if features.permissions:
+        _maybe_add_permission_middleware(permissions)
+
+    if features.hooks:
+        _maybe_add_hook_middleware(hooks)
+
     if features.dynamic_context:
         from deerflow.agents.middlewares.dynamic_context_middleware import DynamicContextMiddleware
 
-        chain.append(DynamicContextMiddleware(agent_name=features.agent_name))
+        dynamic_context.append(DynamicContextMiddleware(agent_name=features.agent_name))
 
-    # --- [10] SummarizationMiddleware ---
     if features.summarization:
-        _maybe_add_summarization_middleware(chain)
+        _maybe_add_summarization_middleware(summarization)
 
-    # --- [11] CompactionMiddleware (NEW) ---
     if features.compaction:
-        _maybe_add_compaction_middleware(chain)
+        _maybe_add_compaction_middleware(compaction)
 
-    # --- [12] TodoMiddleware ---
     if features.plan_mode:
         from deerflow.agents.middlewares.todo_middleware import TodoMiddleware
 
-        chain.append(TodoMiddleware())
+        plan_mode.append(TodoMiddleware())
 
-    # --- [13] TokenUsageMiddleware ---
     if features.token_usage:
         from deerflow.agents.middlewares.token_usage_middleware import TokenUsageMiddleware
 
-        chain.append(TokenUsageMiddleware())
+        token_usage.append(TokenUsageMiddleware())
 
-    # --- [14] TitleMiddleware ---
     if features.title:
         from deerflow.agents.middlewares.title_middleware import TitleMiddleware
 
-        chain.append(TitleMiddleware())
+        title.append(TitleMiddleware())
 
-    # --- [15] MemoryMiddleware ---
     if features.memory:
         from deerflow.agents.middlewares.memory_middleware import MemoryMiddleware
 
-        chain.append(MemoryMiddleware(agent_name=features.agent_name))
+        memory.append(MemoryMiddleware(agent_name=features.agent_name))
 
-    # --- [16] ViewImageMiddleware ---
     if features.vision:
         from deerflow.agents.middlewares.view_image_middleware import ViewImageMiddleware
 
-        chain.append(ViewImageMiddleware())
+        vision.append(ViewImageMiddleware())
 
-    # --- [17] DeferredToolFilterMiddleware ---
     if features.deferred_tool_filter:
         from deerflow.agents.middlewares.deferred_tool_filter_middleware import DeferredToolFilterMiddleware
 
-        chain.append(DeferredToolFilterMiddleware())
+        deferred_tool_filter.append(DeferredToolFilterMiddleware())
 
-    # --- [18] SubagentLimitMiddleware ---
     if features.subagent_limit:
         from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
 
-        chain.append(SubagentLimitMiddleware(max_concurrent=features.max_concurrent_subagents))
+        subagent_limit.append(SubagentLimitMiddleware(max_concurrent=features.max_concurrent_subagents))
 
-    # --- [19] LoopDetectionMiddleware ---
     if features.loop_detection:
         from deerflow.config.app_config import get_app_config
 
@@ -190,13 +326,8 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
         if loop_detection_config.enabled:
             from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 
-            chain.append(LoopDetectionMiddleware.from_config(loop_detection_config))
+            loop_detection.append(LoopDetectionMiddleware.from_config(loop_detection_config))
 
-    # --- [20] Custom middlewares ---
-    for mw in features.custom_middlewares:
-        chain.append(mw)
-
-    # --- [21] SafetyFinishReasonMiddleware ---
     if features.safety_finish_reason:
         from deerflow.config.app_config import get_app_config
 
@@ -204,15 +335,37 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
         if safety_config.enabled:
             from deerflow.agents.middlewares.safety_finish_reason_middleware import SafetyFinishReasonMiddleware
 
-            chain.append(SafetyFinishReasonMiddleware.from_config(safety_config))
+            safety_finish_reason.append(SafetyFinishReasonMiddleware.from_config(safety_config))
 
-    # --- [22] ClarificationMiddleware (always last) ---
     if features.clarification:
         from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 
-        chain.append(ClarificationMiddleware())
+        clarification.append(ClarificationMiddleware())
 
-    return chain
+    return build_ordered_middleware_chain(
+        sandbox=sandbox,
+        dangling_tool_call_patch=dangling_tool_call_patch,
+        llm_error_handling=llm_error_handling,
+        guardrail=guardrail,
+        sandbox_audit=sandbox_audit,
+        tool_error_handling=tool_error_handling,
+        permissions=permissions,
+        hooks=hooks,
+        dynamic_context=dynamic_context,
+        summarization=summarization,
+        compaction=compaction,
+        plan_mode=plan_mode,
+        token_usage=token_usage,
+        title=title,
+        memory=memory,
+        vision=vision,
+        deferred_tool_filter=deferred_tool_filter,
+        subagent_limit=subagent_limit,
+        loop_detection=loop_detection,
+        custom_middlewares=features.custom_middlewares,
+        safety_finish_reason=safety_finish_reason,
+        clarification=clarification,
+    )
 
 
 # ---------------------------------------------------------------------------

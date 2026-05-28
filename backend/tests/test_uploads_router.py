@@ -24,8 +24,16 @@ def _mock_request(user_id: str | None = None) -> MagicMock:
 
 
 def _patch_require_owner(user_id: str = USER_A):
-    """Patch require_thread_owner to return user_id without hitting the store."""
-    return patch.object(uploads, "require_thread_owner", new=AsyncMock(return_value=user_id))
+    """Patch authenticated thread resource lookup without hitting the store."""
+
+    async def _get_resource(_request, thread_id: str):
+        resource = MagicMock()
+        resource.thread_id = thread_id
+        resource.user_id = user_id
+        resource.uploads_dir.return_value = Path("/tmp/thread-uploads")
+        return resource
+
+    return patch.object(uploads, "get_authenticated_thread_resource", new=AsyncMock(side_effect=_get_resource))
 
 
 def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_path):
@@ -53,6 +61,33 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
     assert (thread_uploads_dir / "notes.txt").read_bytes() == b"hello uploads"
 
     sandbox.update_file.assert_not_called()
+
+
+def test_upload_files_uses_authenticated_resource_user_id(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+
+    resource = MagicMock()
+    resource.thread_id = "thread-owned"
+    resource.user_id = USER_B
+    resource.uploads_dir.return_value = thread_uploads_dir
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = False
+    provider.acquire.return_value = "sandbox-owned"
+    provider.get.return_value = MagicMock()
+
+    with (
+        patch.object(uploads, "get_authenticated_thread_resource", new=AsyncMock(return_value=resource)) as get_resource,
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir) as ensure_dir,
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        file = UploadFile(filename="notes.txt", file=BytesIO(b"hello uploads"))
+        result = asyncio.run(uploads.upload_files("thread-owned", _mock_request(), files=[file]))
+
+    assert result.success is True
+    get_resource.assert_awaited_once()
+    ensure_dir.assert_called_once_with("thread-owned", USER_B)
+    provider.acquire.assert_called_once_with("thread-owned", USER_B)
 
 
 def test_upload_files_auto_renames_duplicate_form_filenames(tmp_path):

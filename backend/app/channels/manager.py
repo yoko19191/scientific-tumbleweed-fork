@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
-import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
@@ -15,16 +14,16 @@ import httpx
 from langgraph_sdk.errors import ConflictError
 
 from app.channels.message_bus import InboundMessage, InboundMessageType, MessageBus, OutboundMessage, ResolvedAttachment
-from app.channels.store import ChannelStore, _BaseChannelStore
+from app.channels.store import _BaseChannelStore
 from app.gateway.csrf_middleware import CSRF_COOKIE_NAME, CSRF_HEADER_NAME, generate_csrf_token
 from app.gateway.internal_auth import create_internal_auth_headers
+from deerflow.config.agents_config import normalize_agent_name
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_LANGGRAPH_URL = "http://localhost:2024"
 DEFAULT_GATEWAY_URL = "http://localhost:8001"
 DEFAULT_ASSISTANT_ID = "lead_agent"
-CUSTOM_AGENT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-]+$")
 
 DEFAULT_RUN_CONFIG: dict[str, Any] = {"recursion_limit": 100}
 DEFAULT_RUN_CONTEXT: dict[str, Any] = {
@@ -127,12 +126,15 @@ def _merge_dicts(*layers: Any) -> dict[str, Any]:
 
 def _normalize_custom_agent_name(raw_value: str) -> str:
     """Normalize legacy channel assistant IDs into valid custom agent names."""
-    normalized = raw_value.strip().lower().replace("_", "-")
-    if not normalized:
+    candidate = raw_value.strip().replace("_", "-")
+    if not candidate:
         raise InvalidChannelSessionConfigError("Channel session assistant_id is empty. Use 'lead_agent' or a valid custom agent name.")
-    if not CUSTOM_AGENT_NAME_PATTERN.fullmatch(normalized):
-        raise InvalidChannelSessionConfigError(f"Invalid channel session assistant_id {raw_value!r}. Use 'lead_agent' or a custom agent name containing only letters, digits, and hyphens.")
-    return normalized
+    try:
+        return normalize_agent_name(candidate)
+    except ValueError as exc:
+        raise InvalidChannelSessionConfigError(
+            f"Invalid channel session assistant_id {raw_value!r}. Use 'lead_agent' or a custom agent name containing only letters, digits, and hyphens."
+        ) from exc
 
 
 def _extract_response_text(result: dict | list) -> str:

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from app.gateway.deps import get_checkpointer, get_run_manager, get_stream_bridge
 from app.gateway.services import sse_consumer, start_run
 from app.gateway.thread_ownership import require_thread_owner
-from deerflow.runtime import RunRecord, serialize_channel_values
+from deerflow.runtime import RunRecord, read_thread_final_state
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/threads", tags=["runs"])
@@ -170,13 +170,10 @@ async def wait_run(thread_id: str, body: RunCreateRequest, request: Request) -> 
             pass
 
     checkpointer = get_checkpointer(request)
-    config = {"configurable": {"thread_id": thread_id}}
     try:
-        checkpoint_tuple = await checkpointer.aget_tuple(config)
-        if checkpoint_tuple is not None:
-            checkpoint = getattr(checkpoint_tuple, "checkpoint", {}) or {}
-            channel_values = checkpoint.get("channel_values", {})
-            return serialize_channel_values(channel_values)
+        final_state = await read_thread_final_state(checkpointer, thread_id)
+        if final_state is not None:
+            return final_state
     except Exception:
         logger.exception("Failed to fetch final state for run %s", record.run_id)
 

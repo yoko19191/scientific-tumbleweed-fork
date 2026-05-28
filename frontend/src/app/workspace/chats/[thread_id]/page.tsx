@@ -351,8 +351,7 @@ export default function ChatPage() {
                 )}
                 {!isNewThread && (
                   <p
-                    className="text-muted-foreground/50 relative z-10 text-center text-[10px] leading-none"
-                    style={{ marginTop: "-10px" }}
+                    className="text-muted-foreground/50 relative z-10 mt-2 text-center text-[10px] leading-none"
                   >
                     {t.inputBox.aiDisclaimer}
                   </p>

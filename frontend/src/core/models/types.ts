@@ -1,3 +1,12 @@
+export type ReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "max"
+  | "xhigh";
+
 export interface Model {
   id: string;
   name: string;

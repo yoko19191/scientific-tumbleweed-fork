@@ -1,14 +1,16 @@
-import type { Model } from "@/core/models/types";
+import type { Model, ReasoningEffort } from "@/core/models/types";
 
 export type InputMode = "chat" | "agent" | "swarm";
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "max";
+export type { ReasoningEffort };
 
 export const REASONING_EFFORT_VALUES = [
+  "none",
   "minimal",
   "low",
   "medium",
   "high",
   "max",
+  "xhigh",
 ] as const satisfies readonly ReasoningEffort[];
 
 export const DEFAULT_REASONING_EFFORT_LEVELS: ReasoningEffort[] = [

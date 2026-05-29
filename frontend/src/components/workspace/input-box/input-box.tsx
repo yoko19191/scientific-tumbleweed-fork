@@ -554,6 +554,8 @@ export function InputBox({
                 <PromptInputActionMenuTrigger className="gap-1! px-2!">
                   <div className="text-xs font-normal">
                     {t.inputBox.reasoningEffort}:
+                    {context.reasoning_effort === "none" &&
+                      " " + t.inputBox.reasoningEffortNone}
                     {context.reasoning_effort === "minimal" &&
                       " " + t.inputBox.reasoningEffortMinimal}
                     {context.reasoning_effort === "low" &&
@@ -564,6 +566,8 @@ export function InputBox({
                       " " + t.inputBox.reasoningEffortHigh}
                     {context.reasoning_effort === "max" &&
                       " " + t.inputBox.reasoningEffortMax}
+                    {context.reasoning_effort === "xhigh" &&
+                      " " + t.inputBox.reasoningEffortXhigh}
                   </div>
                 </PromptInputActionMenuTrigger>
                 <PromptInputActionMenuContent className="w-70">
@@ -574,18 +578,22 @@ export function InputBox({
                     <PromptInputActionMenu>
                       {reasoningEffortLevels.map((level) => {
                         const label = {
+                          none: t.inputBox.reasoningEffortNone,
                           minimal: t.inputBox.reasoningEffortMinimal,
                           low: t.inputBox.reasoningEffortLow,
                           medium: t.inputBox.reasoningEffortMedium,
                           high: t.inputBox.reasoningEffortHigh,
                           max: t.inputBox.reasoningEffortMax,
+                          xhigh: t.inputBox.reasoningEffortXhigh,
                         }[level];
                         const description = {
+                          none: t.inputBox.reasoningEffortNoneDescription,
                           minimal: t.inputBox.reasoningEffortMinimalDescription,
                           low: t.inputBox.reasoningEffortLowDescription,
                           medium: t.inputBox.reasoningEffortMediumDescription,
                           high: t.inputBox.reasoningEffortHighDescription,
                           max: t.inputBox.reasoningEffortMaxDescription,
+                          xhigh: t.inputBox.reasoningEffortXhighDescription,
                         }[level];
                         const isSelected =
                           context.reasoning_effort === level ||

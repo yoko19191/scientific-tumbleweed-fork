@@ -434,6 +434,9 @@ export const enUS: Translations = {
     swarmModeDescription:
       "Up to 5 subagents working in parallel; best for research and complex multi-step tasks",
     reasoningEffort: "Reasoning Effort",
+    reasoningEffortNone: "None",
+    reasoningEffortNoneDescription:
+      "No extra reasoning budget — fastest responses for direct prompts",
     reasoningEffortMinimal: "Minimal",
     reasoningEffortMinimalDescription:
       "Quick lookup, direct answer — fact retrieval, definitions, simple Q&A",
@@ -449,6 +452,9 @@ export const enUS: Translations = {
     reasoningEffortMax: "Max",
     reasoningEffortMaxDescription:
       "Maximum depth — complex agent tasks, exhaustive multi-step reasoning, no budget limit",
+    reasoningEffortXhigh: "X-High",
+    reasoningEffortXhighDescription:
+      "Extra-high reasoning — provider-specific tier above high",
     searchModels: "Search models...",
     surpriseMe: "Surprise",
     surpriseMePrompt: "Surprise me",

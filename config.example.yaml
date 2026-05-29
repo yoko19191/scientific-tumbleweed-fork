@@ -46,7 +46,7 @@ models:
     supports_thinking: true
     supports_vision: false
     supports_reasoning_effort: true
-    reasoning_effort_levels: ["high", "max"]
+    reasoning_effort_levels: ["none", "high", "max"]
     max_tokens: 131072
     profile:
       max_input_tokens: 1048576
@@ -67,7 +67,7 @@ models:
     supports_thinking: true
     supports_vision: false
     supports_reasoning_effort: true
-    reasoning_effort_levels: ["high", "max"]
+    reasoning_effort_levels: ["none", "high", "max"]
     max_tokens: 131072
     profile:
       max_input_tokens: 1048576
@@ -88,7 +88,7 @@ models:
     supports_thinking: true
     supports_vision: true
     supports_reasoning_effort: true
-    #reasoning_effort_levels: ["high", "max"]
+    reasoning_effort_levels: ["none", "minimal", "low", "medium", "high", "max", "xhigh"]
     max_tokens: 98304
     profile:
       max_input_tokens: 262144
@@ -161,6 +161,8 @@ models:
     supports_thinking: true
     supports_vision: true
     supports_reasoning_effort: true
+    reasoning_effort_levels: ["none", "low", "medium", "high", "xhigh"]
+    default_reasoning_effort: medium
     max_tokens: 65536
     profile:
       max_input_tokens: 131072

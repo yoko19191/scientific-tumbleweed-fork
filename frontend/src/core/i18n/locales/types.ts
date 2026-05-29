@@ -186,6 +186,8 @@ export interface Translations {
     swarmMode: string;
     swarmModeDescription: string;
     reasoningEffort: string;
+    reasoningEffortNone: string;
+    reasoningEffortNoneDescription: string;
     reasoningEffortMinimal: string;
     reasoningEffortMinimalDescription: string;
     reasoningEffortLow: string;
@@ -196,6 +198,8 @@ export interface Translations {
     reasoningEffortHighDescription: string;
     reasoningEffortMax: string;
     reasoningEffortMaxDescription: string;
+    reasoningEffortXhigh: string;
+    reasoningEffortXhighDescription: string;
     searchModels: string;
     surpriseMe: string;
     surpriseMePrompt: string;

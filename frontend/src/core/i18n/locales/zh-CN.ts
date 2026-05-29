@@ -429,6 +429,9 @@ export const zhCN: Translations = {
     swarmModeDescription:
       "最多 5 个子代理并行协作，适合文献综述等需要大量资料搜集的场景",
     reasoningEffort: "推理深度",
+    reasoningEffortNone: "关闭",
+    reasoningEffortNoneDescription:
+      "不额外分配推理预算 — 适合直接提示和最快响应",
     reasoningEffortMinimal: "最低",
     reasoningEffortMinimalDescription:
       "快速检索、直接回答 — 事实查询、名词解释、简单问答",
@@ -444,6 +447,9 @@ export const zhCN: Translations = {
     reasoningEffortMax: "最大",
     reasoningEffortMaxDescription:
       "最大深度 — 复杂智能体任务、穷尽式多步推理、无预算限制",
+    reasoningEffortXhigh: "超高",
+    reasoningEffortXhighDescription:
+      "超高推理 — 高于高档的供应商特定档位",
     searchModels: "搜索模型...",
     surpriseMe: "小惊喜",
     surpriseMePrompt: "给我一个小惊喜吧",

@@ -1,4 +1,5 @@
 import type { TokenUsagePreset } from "../messages/usage-model";
+import type { ReasoningEffort } from "../models/types";
 import type { AgentThreadContext } from "../threads";
 
 export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
@@ -53,7 +54,7 @@ export interface LocalSettings {
   > & {
     model_name?: string | undefined;
     mode: "chat" | "agent" | "swarm" | undefined;
-    reasoning_effort?: "minimal" | "low" | "medium" | "high" | "max";
+    reasoning_effort?: ReasoningEffort;
   };
 }
 

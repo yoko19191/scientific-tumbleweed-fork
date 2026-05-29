@@ -5,7 +5,7 @@ import {
   Loader2Icon,
   XCircleIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Streamdown } from "streamdown";
 
 import {
@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { useI18n } from "@/core/i18n/hooks";
 import { hasToolCalls } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { streamdownPluginsWithWordAnimation } from "@/core/streamdown";
 import { useSubtask } from "@/core/tasks/context";
 import { explainLastToolCall } from "@/core/tools/utils";
@@ -27,43 +26,58 @@ import { cn } from "@/lib/utils";
 import { CitationLink } from "../citations/citation-link";
 import { FlipDisplay } from "../flip-display";
 
-import { MarkdownContent } from "./markdown-content";
+import { MarkdownContent, type MarkdownContentProps } from "./markdown-content";
 
-export function SubtaskCard({
+function SubtaskCardComponent({
   className,
   taskId,
-  isLoading,
+  isLoading: _isLoading,
+  rehypePlugins,
 }: {
   className?: string;
   taskId: string;
   isLoading: boolean;
+  rehypePlugins: NonNullable<MarkdownContentProps["rehypePlugins"]>;
 }) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(true);
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const task = useSubtask(taskId);
+  const taskStatus = task?.status;
+  const debouncedLatestMessageId = useDebouncedValue(
+    task?.latestMessage?.id ?? "",
+    200,
+  );
   const icon = useMemo(() => {
     if (!task) return <Loader2Icon className="size-3 animate-spin" />;
-    if (task.status === "completed") {
+    if (taskStatus === "completed") {
       return <CheckCircleIcon className="size-3" />;
-    } else if (task.status === "failed") {
+    } else if (taskStatus === "failed") {
       return <XCircleIcon className="size-3 text-red-500" />;
-    } else if (task.status === "in_progress") {
+    } else if (taskStatus === "in_progress") {
       return <Loader2Icon className="size-3 animate-spin" />;
     }
-  }, [task?.status]);
+  }, [task, taskStatus]);
   if (!task) {
     return (
       <ChainOfThought
-        className={cn("relative w-full gap-2 rounded-lg border py-0", className)}
+        className={cn(
+          "relative w-full gap-2 rounded-lg border py-0",
+          className,
+        )}
         open={false}
       >
         <div className="bg-background/95 flex w-full flex-col rounded-lg">
           <div className="flex w-full items-center justify-between p-0.5">
-            <Button className="w-full items-start justify-start text-left" variant="ghost" disabled>
+            <Button
+              className="w-full items-start justify-start text-left"
+              variant="ghost"
+              disabled
+            >
               <div className="flex w-full items-center gap-2">
                 <Loader2Icon className="size-3 animate-spin" />
-                <span className="text-muted-foreground text-sm">{t.subtasks.in_progress}</span>
+                <span className="text-muted-foreground text-sm">
+                  {t.subtasks.in_progress}
+                </span>
               </div>
             </Button>
           </div>
@@ -85,7 +99,9 @@ export function SubtaskCard({
       {task.status === "in_progress" && (
         <>
           <ShineBorder
+            key={`${task.id}-${task.status}`}
             borderWidth={1.5}
+            className="will-change-transform"
             shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]}
           />
         </>
@@ -122,7 +138,7 @@ export function SubtaskCard({
                     {icon}
                     <FlipDisplay
                       className="max-w-[420px] truncate pb-1"
-                      uniqueKey={task.latestMessage?.id ?? ""}
+                      uniqueKey={debouncedLatestMessageId}
                     >
                       {task.status === "in_progress" &&
                       task.latestMessage &&
@@ -194,4 +210,22 @@ export function SubtaskCard({
       </div>
     </ChainOfThought>
   );
+}
+
+export const SubtaskCard = memo(SubtaskCardComponent);
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
 }

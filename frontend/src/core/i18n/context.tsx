@@ -1,12 +1,26 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { Locale } from "@/core/i18n";
+import type { Translations } from "@/core/i18n/locales/types";
+import {
+  getCachedTranslations,
+  loadTranslations,
+} from "@/core/i18n/translations";
 
 export interface I18nContextType {
   locale: Locale;
   setLocale: (locale: Locale) => void;
+  t: Translations;
 }
 
 export const I18nContext = createContext<I18nContextType | null>(null);
@@ -19,17 +33,34 @@ export function I18nProvider({
   initialLocale: Locale;
 }) {
   const [locale, setLocale] = useState<Locale>(initialLocale);
-
-  const handleSetLocale = (newLocale: Locale) => {
-    setLocale(newLocale);
-    document.cookie = `locale=${newLocale}; path=/; max-age=31536000`;
-  };
-
-  return (
-    <I18nContext.Provider value={{ locale, setLocale: handleSetLocale }}>
-      {children}
-    </I18nContext.Provider>
+  const [t, setTranslations] = useState<Translations>(() =>
+    getCachedTranslations(initialLocale),
   );
+
+  const handleSetLocale = useCallback((newLocale: Locale) => {
+    setLocale(newLocale);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadTranslations(locale).then((translations) => {
+      if (!cancelled) {
+        setTranslations(translations);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [locale]);
+
+  const value = useMemo(
+    () => ({ locale, setLocale: handleSetLocale, t }),
+    [handleSetLocale, locale, t],
+  );
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
 export function useI18nContext() {

@@ -5,8 +5,8 @@ import { QueryClientProvider } from "@/components/query-client-provider";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { CommandPalette } from "@/components/workspace/command-palette";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
-import { AuthProvider } from "@/core/auth/AuthProvider";
 import { AuthGuard } from "@/core/auth/AuthGuard";
+import { AuthProvider } from "@/core/auth/AuthProvider";
 
 function parseSidebarOpenCookie(
   value: string | undefined,
@@ -28,7 +28,10 @@ export default async function WorkspaceLayout({
     <AuthProvider>
       <AuthGuard>
         <QueryClientProvider>
-          <SidebarProvider className="h-screen" defaultOpen={initialSidebarOpen}>
+          <SidebarProvider
+            className="h-screen"
+            defaultOpen={initialSidebarOpen}
+          >
             <WorkspaceSidebar />
             <SidebarInset className="min-w-0">{children}</SidebarInset>
           </SidebarProvider>

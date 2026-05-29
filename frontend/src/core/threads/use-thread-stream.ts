@@ -545,14 +545,26 @@ export function useThreadStream({
     ],
   );
 
-  // Merge thread with optimistic messages for display
-  const mergedThread =
-    optimisticMessages.length > 0
-      ? ({
-          ...thread,
-          messages: [...thread.messages, ...optimisticMessages],
-        } as typeof thread)
-      : thread;
+  const mergedMessages = useMemo(
+    () =>
+      optimisticMessages.length > 0
+        ? [...thread.messages, ...optimisticMessages]
+        : thread.messages,
+    [optimisticMessages, thread.messages],
+  );
+
+  // Merge thread with optimistic messages for display while preserving the
+  // stream object identity when there is nothing optimistic to merge.
+  const mergedThread = useMemo(
+    () =>
+      optimisticMessages.length > 0
+        ? ({
+            ...thread,
+            messages: mergedMessages,
+          } as typeof thread)
+        : thread,
+    [mergedMessages, optimisticMessages.length, thread],
+  );
   const pendingUsageMessages = thread.isLoading
     ? getMessagesAfterBaseline(
         thread.messages,

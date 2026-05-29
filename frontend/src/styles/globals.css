@@ -220,6 +220,13 @@
       background-position: 0% 0%;
     }
   }
+
+  --animate-shimmer-text: shimmer-text var(--shimmer-duration) infinite linear;
+  @keyframes shimmer-text {
+    to {
+      background-position: 0% center;
+    }
+  }
 }
 
 :root {

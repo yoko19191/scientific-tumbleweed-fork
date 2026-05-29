@@ -1,8 +1,7 @@
-export { enUS } from "./locales/en-US";
-export { zhCN } from "./locales/zh-CN";
 export type { Translations } from "./locales/types";
 export {
   DEFAULT_LOCALE,
+  LOCALE_LOCAL_NAMES,
   SUPPORTED_LOCALES,
   detectLocale,
   isLocale,

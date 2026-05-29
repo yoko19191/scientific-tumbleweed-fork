@@ -1,5 +1,7 @@
 import type { BaseStream } from "@langchain/langgraph-sdk/react";
-import { Fragment, useEffect } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo } from "react";
+import { useStickToBottomContext } from "use-stick-to-bottom";
 
 import {
   Conversation,
@@ -28,7 +30,7 @@ import {
 } from "@/core/messages/utils";
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { parseSubtaskResult, type Subtask } from "@/core/tasks";
-import { useSubtaskContext } from "@/core/tasks/context";
+import { useSetSubtasks } from "@/core/tasks/context";
 import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +52,7 @@ import { MessageListSkeleton } from "./skeleton";
 import { SubtaskCard } from "./subtask-card";
 
 export const MESSAGE_LIST_DEFAULT_PADDING_BOTTOM = 24;
+const VIRTUALIZED_TURN_THRESHOLD = 40;
 
 export function MessageList({
   className,
@@ -68,8 +71,18 @@ export function MessageList({
 }) {
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
-  const { setTasks: setSubtasks } = useSubtaskContext();
+  const setSubtasks = useSetSubtasks();
   const messages = thread.messages;
+  const groupedMessages = useMemo(
+    () =>
+      groupMessages(messages, (group) => ({
+        id: group.id,
+        messages: group.messages,
+        type: group.type,
+      })),
+    [messages],
+  );
+  const messageTurns = useMemo(() => splitTurns(messages), [messages]);
   const showTurnUsage = tokenUsagePreset === "per_turn";
   const showStepDebug = tokenUsagePreset === "step_debug";
 
@@ -98,41 +111,43 @@ export function MessageList({
       }
     }
     setSubtasks((prev) => {
-      // Preserve latestMessage and other fields not derived from messages
+      let changed = Object.keys(prev).length !== Object.keys(next).length;
       const merged: Record<string, Subtask> = {};
       for (const [id, task] of Object.entries(next)) {
-        merged[id] = { ...prev[id], ...task };
+        const mergedTask = { ...prev[id], ...task };
+        merged[id] = mergedTask;
+        if (!areSubtasksShallowEqual(prev[id], mergedTask)) {
+          changed = true;
+        }
       }
-      if (JSON.stringify(merged) === JSON.stringify(prev)) return prev;
-      return merged;
+      return changed ? merged : prev;
     });
   }, [messages, setSubtasks]);
 
-  if (thread.isThreadLoading && messages.length === 0) {
-    return <MessageListSkeleton />;
-  }
-
-  // Pre-compute aggregated token usage per turn (one human → next human),
-  // keyed by the leading human message id. The prelude (messages before the
-  // first human, if any) is keyed by `null`. Computed every render: cheap,
-  // and ensures live streaming numbers track `messages` exactly.
-  const turnUsageByHumanId = new Map<string | null, TokenUsage | null>();
-  const debugStepsByHumanId = new Map<
-    string | null,
-    ReturnType<typeof buildTokenDebugSteps>
-  >();
-  if (showTurnUsage || showStepDebug) {
-    for (const turn of splitTurns(messages)) {
-      if (showTurnUsage) {
-        turnUsageByHumanId.set(turn.humanId, accumulateUsage(turn.messages));
-      }
-      if (showStepDebug) {
-        debugStepsByHumanId.set(
-          turn.humanId,
-          buildTokenDebugSteps(turn.messages, t),
-        );
+  const { debugStepsByHumanId, turnUsageByHumanId } = useMemo(() => {
+    const turnUsageByHumanId = new Map<string | null, TokenUsage | null>();
+    const debugStepsByHumanId = new Map<
+      string | null,
+      ReturnType<typeof buildTokenDebugSteps>
+    >();
+    if (showTurnUsage || showStepDebug) {
+      for (const turn of messageTurns) {
+        if (showTurnUsage) {
+          turnUsageByHumanId.set(turn.humanId, accumulateUsage(turn.messages));
+        }
+        if (showStepDebug) {
+          debugStepsByHumanId.set(
+            turn.humanId,
+            buildTokenDebugSteps(turn.messages, t),
+          );
+        }
       }
     }
+    return { debugStepsByHumanId, turnUsageByHumanId };
+  }, [messageTurns, showStepDebug, showTurnUsage, t]);
+
+  if (thread.isThreadLoading && messages.length === 0) {
+    return <MessageListSkeleton />;
   }
 
   // Render each group via the existing per-type branches, capturing the
@@ -143,7 +158,7 @@ export function MessageList({
     type: string;
     node: React.ReactNode;
   };
-  const rendered: GroupRender[] = groupMessages(messages, (group) => {
+  const rendered: GroupRender[] = groupedMessages.map((group) => {
     let node: React.ReactNode = null;
     if (group.type === "human" || group.type === "assistant") {
       node = group.messages.map((msg) => (
@@ -152,6 +167,7 @@ export function MessageList({
           message={msg}
           isLoading={thread.isLoading}
           threadId={threadId}
+          rehypePlugins={rehypePlugins}
         />
       ));
     } else if (group.type === "assistant:clarification") {
@@ -234,6 +250,7 @@ export function MessageList({
               key={"thinking-group-" + message.id}
               messages={[message]}
               isLoading={thread.isLoading}
+              rehypePlugins={rehypePlugins}
             />,
           );
         }
@@ -254,6 +271,7 @@ export function MessageList({
               key={"task-group-" + taskId}
               taskId={taskId!}
               isLoading={thread.isLoading}
+              rehypePlugins={rehypePlugins}
             />,
           );
         }
@@ -272,6 +290,7 @@ export function MessageList({
           <MessageGroup
             messages={group.messages}
             isLoading={thread.isLoading}
+            rehypePlugins={rehypePlugins}
           />
         </div>
       );
@@ -282,7 +301,7 @@ export function MessageList({
   // Walk the rendered groups in order, segmenting at every `human` group.
   // After each turn's groups output a single MessageTokenUsage card. The
   // current human-id tracks which turn's aggregated usage to read.
-  const turnNodes: React.ReactNode[] = [];
+  const turnItems: TurnRender[] = [];
   let currentHumanId: string | null = null;
   let buffer: React.ReactNode[] = [];
   let turnIndex = 0;
@@ -291,15 +310,12 @@ export function MessageList({
     if (buffer.length === 0) return;
     const usage = turnUsageByHumanId.get(currentHumanId) ?? null;
     const debugSteps = debugStepsByHumanId.get(currentHumanId) ?? [];
-    turnNodes.push(
-      <Fragment key={`turn-${currentHumanId ?? "prelude"}-${turnIndex}`}>
-        {buffer}
-        {showTurnUsage && usage && <MessageTokenUsage enabled usage={usage} />}
-        {showStepDebug && (
-          <MessageTokenUsageDebugList enabled steps={debugSteps} />
-        )}
-      </Fragment>,
-    );
+    turnItems.push({
+      debugSteps,
+      key: `turn-${currentHumanId ?? "prelude"}-${turnIndex}`,
+      nodes: buffer,
+      usage,
+    });
     buffer = [];
     turnIndex += 1;
   };
@@ -319,10 +335,135 @@ export function MessageList({
     >
       <ConversationScrollButton bottomOffset={paddingBottom + 16} />
       <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-12">
-        {turnNodes}
+        <TurnList
+          turnItems={turnItems}
+          showStepDebug={showStepDebug}
+          showTurnUsage={showTurnUsage}
+        />
         {thread.isLoading && <StreamingIndicator className="my-4" />}
         <div style={{ height: `${paddingBottom}px` }} />
       </ConversationContent>
     </Conversation>
   );
+}
+
+type TurnRender = {
+  debugSteps: ReturnType<typeof buildTokenDebugSteps>;
+  key: string;
+  nodes: React.ReactNode[];
+  usage: TokenUsage | null;
+};
+
+function TurnList({
+  turnItems,
+  showStepDebug,
+  showTurnUsage,
+}: {
+  turnItems: TurnRender[];
+  showStepDebug: boolean;
+  showTurnUsage: boolean;
+}) {
+  if (turnItems.length > VIRTUALIZED_TURN_THRESHOLD) {
+    return (
+      <VirtualizedTurnList
+        turnItems={turnItems}
+        showStepDebug={showStepDebug}
+        showTurnUsage={showTurnUsage}
+      />
+    );
+  }
+
+  return turnItems.map((item) => (
+    <TurnContent
+      key={item.key}
+      item={item}
+      showStepDebug={showStepDebug}
+      showTurnUsage={showTurnUsage}
+    />
+  ));
+}
+
+function VirtualizedTurnList({
+  turnItems,
+  showStepDebug,
+  showTurnUsage,
+}: {
+  turnItems: TurnRender[];
+  showStepDebug: boolean;
+  showTurnUsage: boolean;
+}) {
+  const { scrollRef } = useStickToBottomContext();
+  const rowVirtualizer = useVirtualizer<HTMLElement, HTMLDivElement>({
+    count: turnItems.length,
+    estimateSize: () => 360,
+    getScrollElement: () => scrollRef.current,
+    overscan: 6,
+  });
+
+  return (
+    <div
+      className="relative w-full"
+      style={{ height: rowVirtualizer.getTotalSize() }}
+    >
+      {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+        const item = turnItems[virtualItem.index];
+        if (!item) {
+          return null;
+        }
+
+        return (
+          <div
+            key={item.key}
+            ref={rowVirtualizer.measureElement}
+            data-index={virtualItem.index}
+            className="absolute top-0 left-0 w-full pb-8"
+            style={{ transform: `translateY(${virtualItem.start}px)` }}
+          >
+            <TurnContent
+              item={item}
+              showStepDebug={showStepDebug}
+              showTurnUsage={showTurnUsage}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TurnContent({
+  item,
+  showStepDebug,
+  showTurnUsage,
+}: {
+  item: TurnRender;
+  showStepDebug: boolean;
+  showTurnUsage: boolean;
+}) {
+  return (
+    <div className="flex w-full flex-col gap-8">
+      {item.nodes}
+      {showTurnUsage && item.usage && (
+        <MessageTokenUsage enabled usage={item.usage} />
+      )}
+      {showStepDebug && (
+        <MessageTokenUsageDebugList enabled steps={item.debugSteps} />
+      )}
+    </div>
+  );
+}
+
+function areSubtasksShallowEqual(
+  prev: Subtask | undefined,
+  next: Subtask,
+): boolean {
+  if (!prev) {
+    return false;
+  }
+  const prevKeys = Object.keys(prev) as Array<keyof Subtask>;
+  const nextKeys = Object.keys(next) as Array<keyof Subtask>;
+  if (prevKeys.length !== nextKeys.length) {
+    return false;
+  }
+  return nextKeys.every((key) => Object.is(prev[key], next[key]));
 }

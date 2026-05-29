@@ -5,19 +5,19 @@ const { parseOpenUI, resolveNode } = await import(
   new URL("./parser.ts", import.meta.url).href
 );
 
-describe("parseOpenUI", () => {
-  it("returns null for empty input", () => {
+void describe("parseOpenUI", () => {
+  void it("returns null for empty input", () => {
     assert.strictEqual(parseOpenUI(""), null);
     assert.strictEqual(parseOpenUI("   "), null);
     assert.strictEqual(parseOpenUI("\n\n"), null);
   });
 
-  it("returns null when no root node exists", () => {
+  void it("returns null when no root node exists", () => {
     const source = `header = TextContent("Hello", "medium")`;
     assert.strictEqual(parseOpenUI(source), null);
   });
 
-  it("parses a minimal Card with TextContent", () => {
+  void it("parses a minimal Card with TextContent", () => {
     const source = `root = Card([header])
 header = TextContent("Hello world", "medium")`;
     const program = parseOpenUI(source);
@@ -25,7 +25,11 @@ header = TextContent("Hello world", "medium")`;
     assert.strictEqual(program.nodes.size, 2);
 
     const root = program.nodes.get("root");
-    assert.deepStrictEqual(root, { type: "Card", id: "root", children: ["header"] });
+    assert.deepStrictEqual(root, {
+      type: "Card",
+      id: "root",
+      children: ["header"],
+    });
 
     const header = program.nodes.get("header");
     assert.deepStrictEqual(header, {
@@ -36,7 +40,7 @@ header = TextContent("Hello world", "medium")`;
     });
   });
 
-  it("parses RadioGroup with RadioItems (approach_choice)", () => {
+  void it("parses RadioGroup with RadioItems (approach_choice)", () => {
     const source = `root = Card([header, options, actions])
 header = TextContent("选择方案：", "medium")
 options = RadioGroup("approach", [optA, optB])
@@ -75,7 +79,7 @@ submitBtn = Button("确认", Action([@ToAssistant("确认选择")]), "primary")`
     });
   });
 
-  it("parses CheckBoxGroup (suggestion acceptance)", () => {
+  void it("parses CheckBoxGroup (suggestion acceptance)", () => {
     const source = `root = Card([header, suggestions, actions])
 header = TextContent("发现以下优化建议：", "medium")
 suggestions = CheckBoxGroup("accepted", [s1, s2])
@@ -105,7 +109,7 @@ submitBtn = Button("提交选择", Action([@ToAssistant("提交选择")]), "seco
     });
   });
 
-  it("parses Form with Input, Select, TextArea (missing_info)", () => {
+  void it("parses Form with Input, Select, TextArea (missing_info)", () => {
     const source = `root = Card([header, form])
 header = TextContent("需要补充信息：", "medium")
 form = Form("deploy_info", btns, [versionField, regionField, noteField])
@@ -163,7 +167,7 @@ submitBtn = Button("提交", Action([@ToAssistant("提交")]), "primary")`;
     });
   });
 
-  it("parses Alert for risk confirmation", () => {
+  void it("parses Alert for risk confirmation", () => {
     const source = `root = Card([alert, details, actions])
 alert = Alert("高风险操作确认", "warning")
 details = Stack([op, impact], "column", "s")
@@ -201,7 +205,7 @@ cancelBtn = Button("取消", Action([@ToAssistant("取消")]), "secondary")`;
     ]);
   });
 
-  it("parses Progress for wizard step", () => {
+  void it("parses Progress for wizard step", () => {
     const source = `root = Card([header, progress, form])
 header = CardHeader("初始化向导", "Step 1 of 3")
 progress = Progress(33)
@@ -223,7 +227,11 @@ nextBtn = Button("下一步", Action([@ToAssistant("下一步")]), "primary")`;
     });
 
     const progress = program.nodes.get("progress");
-    assert.deepStrictEqual(progress, { type: "Progress", id: "progress", value: 33 });
+    assert.deepStrictEqual(progress, {
+      type: "Progress",
+      id: "progress",
+      value: 33,
+    });
 
     const nameInput = program.nodes.get("nameInput");
     assert.deepStrictEqual(nameInput, {
@@ -236,7 +244,7 @@ nextBtn = Button("下一步", Action([@ToAssistant("下一步")]), "primary")`;
     });
   });
 
-  it("parses Separator and chat_escape pattern", () => {
+  void it("parses Separator and chat_escape pattern", () => {
     const source = `root = Card([header, sep, chatEscape])
 header = TextContent("问题", "medium")
 sep = Separator()
@@ -262,7 +270,7 @@ sendBtn = Button("发送", Action([@ToAssistant("发送")]), "secondary")`;
     });
   });
 
-  it("skips invalid lines gracefully", () => {
+  void it("skips invalid lines gracefully", () => {
     const source = `root = Card([header])
 this is not valid
 header = TextContent("Hello")
@@ -274,7 +282,7 @@ another broken`;
     assert.strictEqual(program.nodes.size, 2);
   });
 
-  it("skips comment lines", () => {
+  void it("skips comment lines", () => {
     const source = `// This is a comment
 # This is also a comment
 root = Card([header])
@@ -285,7 +293,7 @@ header = TextContent("Hello")`;
     assert.strictEqual(program.nodes.size, 2);
   });
 
-  it("handles escaped characters in strings", () => {
+  void it("handles escaped characters in strings", () => {
     const source = `root = Card([content])
 content = TextContent("Line 1\\nLine 2")`;
 
@@ -296,7 +304,7 @@ content = TextContent("Line 1\\nLine 2")`;
     assert.strictEqual(content.text, "Line 1\nLine 2");
   });
 
-  it("parses Slider node", () => {
+  void it("parses Slider node", () => {
     const source = `root = Card([slider])
 slider = Slider("concurrency", 50, 1000, 50)`;
 
@@ -313,7 +321,7 @@ slider = Slider("concurrency", 50, 1000, 50)`;
     });
   });
 
-  it("parses SwitchGroup and SwitchItem", () => {
+  void it("parses SwitchGroup and SwitchItem", () => {
     const source = `root = Card([switches])
 switches = SwitchGroup("options", [s1, s2])
 s1 = SwitchItem("monitor", "启用监控")
@@ -339,7 +347,7 @@ s2 = SwitchItem("auto_stop", "自动停止")`;
     });
   });
 
-  it("parses CodeBlock", () => {
+  void it("parses CodeBlock", () => {
     const source = `root = Card([code])
 code = CodeBlock("diff", " M  src/index.ts  (+3)")`;
 
@@ -355,8 +363,8 @@ code = CodeBlock("diff", " M  src/index.ts  (+3)")`;
   });
 });
 
-describe("resolveNode", () => {
-  it("resolves existing nodes", () => {
+void describe("resolveNode", () => {
+  void it("resolves existing nodes", () => {
     const source = `root = Card([header])
 header = TextContent("Hello")`;
     const program = parseOpenUI(source);
@@ -369,7 +377,7 @@ header = TextContent("Hello")`;
     assert.strictEqual(resolveNode(program, "header").type, "TextContent");
   });
 
-  it("returns undefined for missing nodes", () => {
+  void it("returns undefined for missing nodes", () => {
     const source = `root = Card([header])
 header = TextContent("Hello")`;
     const program = parseOpenUI(source);

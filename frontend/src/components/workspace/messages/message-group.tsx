@@ -13,7 +13,7 @@ import {
   SquareTerminalIcon,
   WrenchIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import {
   ChainOfThought,
@@ -26,10 +26,9 @@ import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
 import {
+  extractTextFromMessage,
   extractReasoningContentFromMessage,
-  findToolCallResult,
 } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { extractTitleFromMarkdown } from "@/core/utils/markdown";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
@@ -38,16 +37,18 @@ import { useArtifacts } from "../artifacts";
 import { FlipDisplay } from "../flip-display";
 import { Tooltip } from "../tooltip";
 
-import { MarkdownContent } from "./markdown-content";
+import { MarkdownContent, type MarkdownContentProps } from "./markdown-content";
 
-export function MessageGroup({
+function MessageGroupComponent({
   className,
   messages,
   isLoading = false,
+  rehypePlugins,
 }: {
   className?: string;
   messages: Message[];
   isLoading?: boolean;
+  rehypePlugins: NonNullable<MarkdownContentProps["rehypePlugins"]>;
 }) {
   const { t } = useI18n();
   const [showAbove, setShowAbove] = useState(
@@ -77,7 +78,6 @@ export function MessageGroup({
       return filteredSteps[filteredSteps.length - 1];
     }
   }, [lastToolCallStep, steps]);
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   return (
     <ChainOfThought
       className={cn("w-full gap-2 rounded-lg border p-0.5", className)}
@@ -184,6 +184,8 @@ export function MessageGroup({
   );
 }
 
+export const MessageGroup = memo(MessageGroupComponent);
+
 function ToolCall({
   id,
   messageId,
@@ -243,7 +245,9 @@ function ToolCall({
                       paper.year,
                       paper.venue,
                       paper.citationCount != null
-                        ? t.toolCalls.academicPaperCitations(paper.citationCount)
+                        ? t.toolCalls.academicPaperCitations(
+                            paper.citationCount,
+                          )
                         : null,
                     ]
                       .filter(Boolean)
@@ -279,11 +283,7 @@ function ToolCall({
               target="_blank"
               rel="noopener noreferrer"
             >
-              {[
-                paper.authors?.slice(0, 3).join(", "),
-                paper.year,
-                paper.venue,
-              ]
+              {[paper.authors?.slice(0, 3).join(", "), paper.year, paper.venue]
                 .filter(Boolean)
                 .join(" · ")}
             </a>
@@ -530,6 +530,17 @@ type CoTStep = CoTReasoningStep | CoTToolCallStep;
 
 function convertToSteps(messages: Message[]): CoTStep[] {
   const steps: CoTStep[] = [];
+  const toolCallResults = new Map<string, string>();
+
+  for (const message of messages) {
+    if (message.type === "tool" && message.tool_call_id) {
+      const content = extractTextFromMessage(message);
+      if (content) {
+        toolCallResults.set(message.tool_call_id, content);
+      }
+    }
+  }
+
   for (const message of messages) {
     if (message.type === "ai") {
       const reasoning = extractReasoningContentFromMessage(message);
@@ -555,7 +566,7 @@ function convertToSteps(messages: Message[]): CoTStep[] {
         };
         const toolCallId = tool_call.id;
         if (toolCallId) {
-          const toolCallResult = findToolCallResult(toolCallId, messages);
+          const toolCallResult = toolCallResults.get(toolCallId);
           if (toolCallResult) {
             try {
               const json = JSON.parse(toolCallResult);

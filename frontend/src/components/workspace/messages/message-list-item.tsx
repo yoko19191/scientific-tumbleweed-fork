@@ -1,6 +1,11 @@
 import type { Message } from "@langchain/langgraph-sdk";
 import { FileIcon, Loader2Icon } from "lucide-react";
-import { memo, useMemo, type AnchorHTMLAttributes, type ImgHTMLAttributes } from "react";
+import {
+  memo,
+  useMemo,
+  type AnchorHTMLAttributes,
+  type ImgHTMLAttributes,
+} from "react";
 import rehypeKatex from "rehype-katex";
 
 import { Loader } from "@/components/ai-elements/loader";
@@ -26,24 +31,32 @@ import {
   stripUploadedFilesTag,
   type FileInMessage,
 } from "@/core/messages/utils";
-import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { humanMessagePlugins } from "@/core/streamdown";
 import { cn } from "@/lib/utils";
 
 import { CopyButton } from "../copy-button";
 
-import { MarkdownContent } from "./markdown-content";
+import { MarkdownContent, type MarkdownContentProps } from "./markdown-content";
 
-export function MessageListItem({
+type RehypePlugins = NonNullable<MarkdownContentProps["rehypePlugins"]>;
+
+const katexRehypePlugin: RehypePlugins[number] = [
+  rehypeKatex,
+  { output: "html" },
+];
+
+function MessageListItemComponent({
   className,
   message,
   isLoading,
   threadId,
+  rehypePlugins,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
   threadId: string;
+  rehypePlugins: RehypePlugins;
 }) {
   const isHuman = message.type === "human";
   return (
@@ -56,6 +69,7 @@ export function MessageListItem({
         message={message}
         isLoading={isLoading}
         threadId={threadId}
+        rehypePlugins={rehypePlugins}
       />
       {!isLoading && (
         <MessageToolbar
@@ -78,6 +92,8 @@ export function MessageListItem({
     </AIElementMessage>
   );
 }
+
+export const MessageListItem = memo(MessageListItemComponent);
 
 /**
  * Custom image component that handles artifact URLs
@@ -114,23 +130,35 @@ function MessageContent_({
   message,
   isLoading = false,
   threadId,
+  rehypePlugins,
 }: {
   className?: string;
   message: Message;
   isLoading?: boolean;
   threadId: string;
+  rehypePlugins: RehypePlugins;
 }) {
-  const rehypePlugins = useRehypeSplitWordsIntoSpans(isLoading);
   const isHuman = message.type === "human";
+  const assistantRehypePlugins = useMemo<RehypePlugins>(
+    () => [...rehypePlugins, katexRehypePlugin],
+    [rehypePlugins],
+  );
   const components = useMemo(
     () => ({
       img: (props: ImgHTMLAttributes<HTMLImageElement>) => (
         <MessageImage {...props} threadId={threadId} maxWidth="90%" />
       ),
       a: ({ href, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) => {
-        if (href && href.startsWith("/mnt/")) {
+        if (href?.startsWith("/mnt/")) {
           const url = resolveArtifactURL(href, threadId);
-          return <a {...props} href={url} target="_blank" rel="noopener noreferrer" />;
+          return (
+            <a
+              {...props}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+            />
+          );
         }
         return <a {...props} href={href} />;
       },
@@ -222,7 +250,7 @@ function MessageContent_({
       <MarkdownContent
         content={contentToDisplay}
         isLoading={isLoading}
-        rehypePlugins={[...rehypePlugins, [rehypeKatex, { output: "html" }]]}
+        rehypePlugins={assistantRehypePlugins}
         className="my-3"
         components={components}
       />

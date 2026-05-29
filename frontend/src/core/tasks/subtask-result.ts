@@ -7,7 +7,9 @@ export const CANCELLED_PREFIX = "Task cancelled by user.";
 export const POLLING_TIMEOUT_PREFIX = "Task polling timed out";
 export const ERROR_WRAPPER_PATTERN = /^Error:/;
 
-export function parseSubtaskResult(result: string): Pick<Subtask, "status" | "result" | "error"> {
+export function parseSubtaskResult(
+  result: string,
+): Pick<Subtask, "status" | "result" | "error"> {
   const text = result.trim();
 
   if (text.startsWith(SUCCESS_PREFIX)) {
@@ -28,7 +30,7 @@ export function parseSubtaskResult(result: string): Pick<Subtask, "status" | "re
     text.startsWith(TIMEOUT_PREFIX) ||
     text.startsWith(CANCELLED_PREFIX) ||
     text.startsWith(POLLING_TIMEOUT_PREFIX) ||
-    ERROR_WRAPPER_PATTERN.test(text)
+    text.startsWith("Error:")
   ) {
     return {
       status: "failed",

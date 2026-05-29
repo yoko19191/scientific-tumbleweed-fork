@@ -88,12 +88,19 @@ export function Welcome({
 
   const greeting = useMemo(() => {
     const timeGreeting = getTimeGreeting(locale);
-    const name = user?.display_name || user?.username || "";
+    const name = user?.display_name ?? user?.username ?? "";
     return name ? `${timeGreeting}，${name}` : timeGreeting;
   }, [locale, user]);
 
-  const quips = useMemo(() => (locale === "zh-CN" ? QUIPS_ZH : QUIPS_EN), [locale]);
-  const [quipIndex, setQuipIndex] = useState(() => Math.floor(Math.random() * (locale === "zh-CN" ? QUIPS_ZH.length : QUIPS_EN.length)));
+  const quips = useMemo(
+    () => (locale === "zh-CN" ? QUIPS_ZH : QUIPS_EN),
+    [locale],
+  );
+  const [quipIndex, setQuipIndex] = useState(() =>
+    Math.floor(
+      Math.random() * (locale === "zh-CN" ? QUIPS_ZH.length : QUIPS_EN.length),
+    ),
+  );
   const [quipFading, setQuipFading] = useState(false);
 
   const cycleQuip = useCallback(() => {
@@ -154,7 +161,10 @@ export function Welcome({
       <div className="flex items-center gap-3 text-4xl font-bold">
         <button
           type="button"
-          className={cn("inline-block cursor-pointer", waving ? "animate-wave" : (!waved ? "animate-wave" : ""))}
+          className={cn(
+            "inline-block cursor-pointer",
+            waving ? "animate-wave" : !waved ? "animate-wave" : "",
+          )}
           onClick={replayWave}
           aria-label="Wave"
         >

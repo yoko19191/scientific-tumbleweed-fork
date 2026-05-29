@@ -18,7 +18,10 @@ import type { ActionStep, OpenUINode, OpenUIProgram } from "./types";
  * Parse a string literal (double-quoted), handling basic escapes.
  * Returns [parsed_string, chars_consumed] or null if not a string.
  */
-function parseStringLiteral(input: string, start: number): [string, number] | null {
+function parseStringLiteral(
+  input: string,
+  start: number,
+): [string, number] | null {
   if (input[start] !== '"') return null;
   let i = start + 1;
   let result = "";
@@ -61,7 +64,10 @@ type ArgValue =
  * Skip whitespace and commas (argument separators).
  */
 function skipSeparators(input: string, pos: number): number {
-  while (pos < input.length && (input[pos] === " " || input[pos] === "," || input[pos] === "\t")) {
+  while (
+    pos < input.length &&
+    (input[pos] === " " || input[pos] === "," || input[pos] === "\t")
+  ) {
     pos++;
   }
   return pos;
@@ -119,7 +125,7 @@ function parseArgValue(input: string, pos: number): [ArgValue, number] | null {
         key = keyResult[0];
         pos += keyResult[1];
       } else {
-        const keyMatch = input.slice(pos).match(/^([a-zA-Z_]\w*)/);
+        const keyMatch = /^([a-zA-Z_]\w*)/.exec(input.slice(pos));
         if (!keyMatch?.[1]) break;
         key = keyMatch[1];
         pos += key.length;
@@ -145,7 +151,6 @@ function parseArgValue(input: string, pos: number): [ArgValue, number] | null {
     // Find the matching closing paren
     let depth = 1;
     let actionContent = "";
-    const actionStart = pos;
     while (pos < input.length && depth > 0) {
       if (input[pos] === "(") depth++;
       else if (input[pos] === ")") depth--;
@@ -164,9 +169,12 @@ function parseArgValue(input: string, pos: number): [ArgValue, number] | null {
   }
 
   // Number
-  const numMatch = input.slice(pos).match(/^-?\d+(\.\d+)?/);
+  const numMatch = /^-?\d+(\.\d+)?/.exec(input.slice(pos));
   if (numMatch) {
-    return [{ kind: "number", value: Number(numMatch[0]) }, pos + numMatch[0].length];
+    return [
+      { kind: "number", value: Number(numMatch[0]) },
+      pos + numMatch[0].length,
+    ];
   }
 
   // Boolean / null
@@ -181,7 +189,7 @@ function parseArgValue(input: string, pos: number): [ArgValue, number] | null {
   }
 
   // Reference (identifier)
-  const refMatch = input.slice(pos).match(/^[a-zA-Z_]\w*/);
+  const refMatch = /^[a-zA-Z_]\w*/.exec(input.slice(pos));
   if (refMatch) {
     return [{ kind: "ref", value: refMatch[0] }, pos + refMatch[0].length];
   }
@@ -231,14 +239,18 @@ function argToStringArray(arg: ArgValue | undefined): string[] {
   if (!arg) return [];
   if (arg.kind === "array") {
     return arg.value
-      .map((v) => (v.kind === "ref" ? v.value : v.kind === "string" ? v.value : null))
+      .map((v) =>
+        v.kind === "ref" ? v.value : v.kind === "string" ? v.value : null,
+      )
       .filter((v): v is string => v !== null);
   }
   return [];
 }
 
-function argToObject(arg: ArgValue | undefined): Record<string, unknown> | undefined {
-  if (!arg || arg.kind !== "object") return undefined;
+function argToObject(
+  arg: ArgValue | undefined,
+): Record<string, unknown> | undefined {
+  if (arg?.kind !== "object") return undefined;
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(arg.value)) {
     if (v.kind === "string") result[k] = v.value;
@@ -280,7 +292,7 @@ function parseLine(line: string): OpenUINode | null {
     return null;
   }
 
-  const match = trimmed.match(LINE_RE);
+  const match = LINE_RE.exec(trimmed);
   if (!match?.[1] || !match[2]) return null;
 
   const id = match[1];
@@ -504,7 +516,7 @@ function parseLine(line: string): OpenUINode | null {
  * Returns null if the input is empty or has no valid root node.
  */
 export function parseOpenUI(source: string): OpenUIProgram | null {
-  if (!source || !source.trim()) return null;
+  if (!source?.trim()) return null;
 
   const lines = source.split("\n");
   const nodes = new Map<string, OpenUINode>();

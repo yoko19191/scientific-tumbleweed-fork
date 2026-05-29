@@ -9,7 +9,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -33,10 +33,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-
 import { parseOpenUI, resolveNode } from "@/core/openui";
 import type { OpenUINode, OpenUIProgram } from "@/core/openui";
+import { cn } from "@/lib/utils";
 
 // --- Public types ---
 
@@ -65,7 +64,7 @@ export function ClarificationUI({
     // Fallback: render plain text if parsing fails
     if (fallbackContent) {
       return (
-        <div className="text-sm text-muted-foreground whitespace-pre-wrap">
+        <div className="text-muted-foreground text-sm whitespace-pre-wrap">
           {fallbackContent}
         </div>
       );
@@ -105,7 +104,7 @@ function ClarificationUIRenderer({
 
       // Check if this is a chat_escape form submission
       if (formName === "chat_escape") {
-        const chatMessage = formState["chat_message"];
+        const chatMessage = formState.chat_message;
         if (typeof chatMessage === "string" && chatMessage.trim()) {
           onSubmit({ type: "chat_escape", message: chatMessage.trim() });
         }
@@ -189,9 +188,7 @@ function NodeRenderer({
       return (
         <CardHeader className="px-0 pt-0">
           <CardTitle>{node.title}</CardTitle>
-          {node.subtitle && (
-            <CardDescription>{node.subtitle}</CardDescription>
-          )}
+          {node.subtitle && <CardDescription>{node.subtitle}</CardDescription>}
         </CardHeader>
       );
 
@@ -217,7 +214,7 @@ function NodeRenderer({
 
     case "CodeBlock":
       return (
-        <pre className="rounded-md border bg-muted/50 p-3 text-xs overflow-x-auto">
+        <pre className="bg-muted/50 overflow-x-auto rounded-md border p-3 text-xs">
           <code>{node.code}</code>
         </pre>
       );
@@ -254,7 +251,7 @@ function NodeRenderer({
       return (
         <div className="flex items-center gap-3 py-2">
           <Separator className="flex-1" />
-          <span className="text-xs text-muted-foreground">或者</span>
+          <span className="text-muted-foreground text-xs">或者</span>
           <Separator className="flex-1" />
         </div>
       );
@@ -301,7 +298,9 @@ function NodeRenderer({
       const inputNode = resolveNode(program, node.input);
       return (
         <div className="space-y-2">
-          <Label className="text-sm font-medium leading-relaxed">{node.label}</Label>
+          <Label className="text-sm leading-relaxed font-medium">
+            {node.label}
+          </Label>
           {inputNode && (
             <NodeRenderer
               node={inputNode}
@@ -354,7 +353,7 @@ function NodeRenderer({
           <SelectContent>
             {node.items.map((itemId) => {
               const item = resolveNode(program, itemId);
-              if (!item || item.type !== "SelectItem") return null;
+              if (item?.type !== "SelectItem") return null;
               return (
                 <SelectItem key={itemId} value={item.value}>
                   {item.label}
@@ -375,11 +374,21 @@ function NodeRenderer({
         >
           {node.items.map((itemId) => {
             const item = resolveNode(program, itemId);
-            if (!item || item.type !== "RadioItem") return null;
+            if (item?.type !== "RadioItem") return null;
             return (
-              <div key={itemId} className="flex items-start gap-3 rounded-md border p-3 has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary/5">
-                <RadioGroupItem value={item.value} id={itemId} className="mt-0.5 shrink-0" />
-                <Label htmlFor={itemId} className="font-normal leading-relaxed cursor-pointer text-sm">
+              <div
+                key={itemId}
+                className="has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary/5 flex items-start gap-3 rounded-md border p-3"
+              >
+                <RadioGroupItem
+                  value={item.value}
+                  id={itemId}
+                  className="mt-0.5 shrink-0"
+                />
+                <Label
+                  htmlFor={itemId}
+                  className="cursor-pointer text-sm leading-relaxed font-normal"
+                >
                   {item.label}
                 </Label>
               </div>
@@ -394,10 +403,13 @@ function NodeRenderer({
         <div className="space-y-3">
           {node.items.map((itemId) => {
             const item = resolveNode(program, itemId);
-            if (!item || item.type !== "CheckBoxItem") return null;
+            if (item?.type !== "CheckBoxItem") return null;
             const isChecked = checked.includes(item.value);
             return (
-              <div key={itemId} className="flex items-start gap-3 rounded-md border p-3 has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary/5">
+              <div
+                key={itemId}
+                className="has-[[data-state=checked]]:border-primary/50 has-[[data-state=checked]]:bg-primary/5 flex items-start gap-3 rounded-md border p-3"
+              >
                 <Checkbox
                   id={itemId}
                   checked={isChecked}
@@ -414,7 +426,10 @@ function NodeRenderer({
                   disabled={disabled}
                   className="mt-0.5 shrink-0"
                 />
-                <Label htmlFor={itemId} className="font-normal leading-relaxed cursor-pointer text-sm">
+                <Label
+                  htmlFor={itemId}
+                  className="cursor-pointer text-sm leading-relaxed font-normal"
+                >
                   {item.label}
                 </Label>
               </div>
@@ -428,9 +443,9 @@ function NodeRenderer({
       const value = (formState[node.name] as number) ?? node.min ?? 0;
       return (
         <div className="space-y-2">
-          <div className="flex justify-between text-xs text-muted-foreground">
+          <div className="text-muted-foreground flex justify-between text-xs">
             <span>{node.min ?? 0}</span>
-            <span className="font-medium text-foreground">{value}</span>
+            <span className="text-foreground font-medium">{value}</span>
             <span>{node.max ?? 100}</span>
           </div>
           <input
@@ -441,7 +456,7 @@ function NodeRenderer({
             value={value}
             onChange={(e) => updateField(node.name, Number(e.target.value))}
             disabled={disabled}
-            className="w-full accent-primary"
+            className="accent-primary w-full"
           />
         </div>
       );
@@ -453,11 +468,14 @@ function NodeRenderer({
         <div className="space-y-3">
           {node.items.map((itemId) => {
             const item = resolveNode(program, itemId);
-            if (!item || item.type !== "SwitchItem") return null;
+            if (item?.type !== "SwitchItem") return null;
             const isOn = switchValues.includes(item.value);
             return (
-              <div key={itemId} className="flex items-center justify-between gap-2">
-                <Label htmlFor={itemId} className="font-normal cursor-pointer">
+              <div
+                key={itemId}
+                className="flex items-center justify-between gap-2"
+              >
+                <Label htmlFor={itemId} className="cursor-pointer font-normal">
                   {item.label}
                 </Label>
                 <Switch
@@ -579,11 +597,14 @@ function WizardRenderer({
 }) {
   const [currentStep, setCurrentStep] = useState(0);
   const totalSteps = node.steps.length;
-  const progress = totalSteps > 0 ? Math.round(((currentStep + 1) / totalSteps) * 100) : 0;
+  const progress =
+    totalSteps > 0 ? Math.round(((currentStep + 1) / totalSteps) * 100) : 0;
 
   const currentStepNode = resolveNode(program, node.steps[currentStep] ?? "");
-  const stepTitle = currentStepNode?.type === "WizardStep" ? currentStepNode.title : "";
-  const stepFields = currentStepNode?.type === "WizardStep" ? currentStepNode.fields : [];
+  const stepTitle =
+    currentStepNode?.type === "WizardStep" ? currentStepNode.title : "";
+  const stepFields =
+    currentStepNode?.type === "WizardStep" ? currentStepNode.fields : [];
 
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === totalSteps - 1;
@@ -595,7 +616,7 @@ function WizardRenderer({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">{stepTitle}</span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-muted-foreground text-xs">
               Step {currentStep + 1} of {totalSteps}
             </span>
           </div>

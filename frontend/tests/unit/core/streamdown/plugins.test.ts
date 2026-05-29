@@ -1,13 +1,15 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
 import rehypeRaw from "rehype-raw";
-import { expect, test } from "vitest";
 
 import { reasoningPlugins, streamdownPlugins } from "@/core/streamdown/plugins";
 
-test("streamdownPlugins includes rehypeRaw", () => {
-  expect(streamdownPlugins.rehypePlugins).toContain(rehypeRaw);
+void test("streamdownPlugins includes rehypeRaw", () => {
+  assert.ok(streamdownPlugins.rehypePlugins?.includes(rehypeRaw));
 });
 
-test("reasoningPlugins does not include rehypeRaw", () => {
+void test("reasoningPlugins does not include rehypeRaw", () => {
   const flat = reasoningPlugins.rehypePlugins?.flat();
-  expect(flat).not.toContain(rehypeRaw);
+  assert.equal(flat?.includes(rehypeRaw), false);
 });

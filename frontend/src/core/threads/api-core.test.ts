@@ -34,26 +34,30 @@ void test("creates a thread with the requested thread_id", async () => {
   assert.equal(calls[0]?.init?.method, "POST");
   const body = calls[0]?.init?.body;
   assert.equal(typeof body, "string");
-  assert.deepEqual(
-    JSON.parse(body),
-    {
-      thread_id: "788f569d-c917-4b8c-a8f7-bdc9b36f85d6",
-      metadata: { agent_name: "demo" },
-    },
-  );
+  if (typeof body !== "string") {
+    throw new TypeError("Expected request body to be a string");
+  }
+  assert.deepEqual(JSON.parse(body), {
+    thread_id: "788f569d-c917-4b8c-a8f7-bdc9b36f85d6",
+    metadata: { agent_name: "demo" },
+  });
 });
 
 void test("throws backend error detail when create thread fails", async () => {
   await assert.rejects(
     () =>
-      createThreadWithDeps("thread-1", {}, {
-        getBackendBaseURL: () => "",
-        fetchWithAuth: async () =>
-          Response.json(
-            { detail: "Thread ownership conflict" },
-            { status: 403 },
-          ),
-      }),
+      createThreadWithDeps(
+        "thread-1",
+        {},
+        {
+          getBackendBaseURL: () => "",
+          fetchWithAuth: async () =>
+            Response.json(
+              { detail: "Thread ownership conflict" },
+              { status: 403 },
+            ),
+        },
+      ),
     /Thread ownership conflict/,
   );
 });

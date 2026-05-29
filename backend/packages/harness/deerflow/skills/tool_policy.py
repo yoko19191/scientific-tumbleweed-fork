@@ -44,4 +44,29 @@ def filter_tools_by_skill_allowed_tools(tools: list[ToolT], skills: list[Skill])
     if allowed is None:
         return tools
 
-    return [tool for tool in tools if tool.name in allowed]
+    available = {tool.name for tool in tools}
+    unknown = allowed - available
+    matched = allowed & available
+
+    if not matched:
+        # All declared allowed-tools are unknown to the runtime. Treat the
+        # whole policy as misconfigured and fall back to allow-all so the
+        # agent is not silently left with zero tools.
+        offenders = sorted(skill.name for skill in skills if skill.allowed_tools and not (set(skill.allowed_tools) & available))
+        logger.warning(
+            "Skill allowed-tools policy matches no available tool — falling back to allow-all. "
+            "Declared but unknown: %s. Offending skills: %s. Available tools: %s.",
+            sorted(unknown),
+            offenders,
+            sorted(available),
+        )
+        return tools
+
+    if unknown:
+        logger.warning(
+            "Skill allowed-tools references unknown tool name(s) that will be ignored: %s. Known tools: %s.",
+            sorted(unknown),
+            sorted(available),
+        )
+
+    return [tool for tool in tools if tool.name in matched]

@@ -15,6 +15,7 @@ async def test_run_agent_injects_langfuse_metadata(monkeypatch):
     monkeypatch.setattr(tracing_metadata, "get_enabled_tracing_providers", lambda: ["langfuse"])
     run_manager = RunManager()
     record = await run_manager.create("thread-1", assistant_id="lead_agent", metadata={"user_id": "user-1"})
+    run_manager.cleanup = AsyncMock()  # type: ignore[method-assign]
     record.model_name = "deepseek-v3"
     bridge = SimpleNamespace(publish=AsyncMock(), publish_end=AsyncMock(), cleanup=AsyncMock())
     captured = {}

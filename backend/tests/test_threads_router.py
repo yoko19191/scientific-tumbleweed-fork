@@ -28,6 +28,24 @@ def _build_thread_app() -> tuple[FastAPI, InMemoryStore, InMemorySaver]:
     return app, store, checkpointer
 
 
+class RecordingInMemoryStore(InMemoryStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.asearch_calls: list[dict] = []
+
+    async def asearch(self, namespace_prefix, /, **kwargs):
+        self.asearch_calls.append({"namespace": namespace_prefix, **kwargs})
+        return await super().asearch(namespace_prefix, **kwargs)
+
+
+def _build_thread_app_with_store(store) -> tuple[FastAPI, InMemorySaver]:
+    app = FastAPI()
+    app.state.store = store
+    app.state.checkpointer = InMemorySaver()
+    app.include_router(threads.router)
+    return app, app.state.checkpointer
+
+
 def _patch_thread_resource(user_id: str = _TEST_USER_ID):
     async def _get_resource(_request, thread_id: str, **_kwargs):
         return SimpleNamespace(thread_id=thread_id, user_id=user_id)
@@ -309,6 +327,90 @@ def test_search_threads_normalizes_legacy_unix_seconds_to_iso() -> None:
     for item in items:
         assert _ISO_TIMESTAMP_RE.match(item["created_at"]), item
         assert _ISO_TIMESTAMP_RE.match(item["updated_at"]), item
+
+
+def test_search_threads_pushes_status_filter_but_keeps_metadata_filtering_in_python() -> None:
+    store = RecordingInMemoryStore()
+    app, _checkpointer = _build_thread_app_with_store(store)
+
+    async def _seed() -> None:
+        ns = user_threads_namespace(_TEST_USER_ID)
+        await store.aput(
+            ns,
+            "idle-new",
+            {
+                "thread_id": "idle-new",
+                "status": "idle",
+                "created_at": "2026-04-27T00:00:00+00:00",
+                "updated_at": "2026-04-27T00:00:03+00:00",
+                "metadata": {"project": "a"},
+            },
+        )
+        await store.aput(
+            ns,
+            "idle-old",
+            {
+                "thread_id": "idle-old",
+                "status": "idle",
+                "created_at": "2026-04-27T00:00:00+00:00",
+                "updated_at": "2026-04-27T00:00:02+00:00",
+                "metadata": {"project": "a"},
+            },
+        )
+        await store.aput(
+            ns,
+            "idle-other-project",
+            {
+                "thread_id": "idle-other-project",
+                "status": "idle",
+                "created_at": "2026-04-27T00:00:00+00:00",
+                "updated_at": "2026-04-27T00:00:04+00:00",
+                "metadata": {"project": "b"},
+            },
+        )
+        await store.aput(
+            ns,
+            "busy",
+            {
+                "thread_id": "busy",
+                "status": "busy",
+                "created_at": "2026-04-27T00:00:00+00:00",
+                "updated_at": "2026-04-27T00:00:05+00:00",
+                "metadata": {"project": "a"},
+            },
+        )
+
+    asyncio.run(_seed())
+
+    with patch("app.gateway.routers.threads.get_optional_user_id", return_value=_TEST_USER_ID):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/threads/search",
+                json={"status": "idle", "metadata": {"project": "a"}, "offset": 1, "limit": 1},
+            )
+
+    assert response.status_code == 200, response.text
+    assert store.asearch_calls == [
+        {
+            "namespace": user_threads_namespace(_TEST_USER_ID),
+            "filter": {"status": "idle"},
+            "limit": 10_000,
+        }
+    ]
+    assert [item["thread_id"] for item in response.json()] == ["idle-old"]
+
+
+def test_search_threads_unauthenticated_does_not_query_store() -> None:
+    store = RecordingInMemoryStore()
+    app, _checkpointer = _build_thread_app_with_store(store)
+
+    with patch("app.gateway.routers.threads.get_optional_user_id", return_value=None):
+        with TestClient(app) as client:
+            response = client.post("/api/threads/search", json={"status": "idle"})
+
+    assert response.status_code == 200, response.text
+    assert response.json() == []
+    assert store.asearch_calls == []
 
 
 def test_get_thread_state_returns_iso_for_legacy_checkpoint_metadata() -> None:

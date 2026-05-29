@@ -52,8 +52,47 @@ class RunManager:
 
     def __init__(self, store: RunStore | None = None) -> None:
         self._runs: dict[str, RunRecord] = {}
+        self._runs_by_thread: dict[str, dict[str, RunRecord]] = {}
+        self._inflight_by_thread: dict[str, dict[str, RunRecord]] = {}
         self._lock = asyncio.Lock()
         self._store = store
+
+    @staticmethod
+    def _is_inflight(status: RunStatus) -> bool:
+        return status in (RunStatus.pending, RunStatus.running)
+
+    def _register_locked(self, record: RunRecord) -> None:
+        self._runs[record.run_id] = record
+        self._runs_by_thread.setdefault(record.thread_id, {})[record.run_id] = record
+        self._sync_inflight_locked(record)
+
+    def _sync_inflight_locked(self, record: RunRecord) -> None:
+        if self._is_inflight(record.status):
+            inflight = self._inflight_by_thread.setdefault(record.thread_id, {})
+            inflight[record.run_id] = record
+            return
+        inflight = self._inflight_by_thread.get(record.thread_id)
+        if inflight is None:
+            return
+        inflight.pop(record.run_id, None)
+        if not inflight:
+            self._inflight_by_thread.pop(record.thread_id, None)
+
+    def _unregister_locked(self, run_id: str) -> RunRecord | None:
+        record = self._runs.pop(run_id, None)
+        if record is None:
+            return None
+        by_thread = self._runs_by_thread.get(record.thread_id)
+        if by_thread is not None:
+            by_thread.pop(run_id, None)
+            if not by_thread:
+                self._runs_by_thread.pop(record.thread_id, None)
+        inflight = self._inflight_by_thread.get(record.thread_id)
+        if inflight is not None:
+            inflight.pop(run_id, None)
+            if not inflight:
+                self._inflight_by_thread.pop(record.thread_id, None)
+        return record
 
     async def _persist_to_store(self, record: RunRecord) -> None:
         """Best-effort persist run metadata to the backing store."""
@@ -169,7 +208,7 @@ class RunManager:
             updated_at=now,
         )
         async with self._lock:
-            self._runs[run_id] = record
+            self._register_locked(record)
         await self._persist_to_store(record)
         logger.info("Run created: run_id=%s thread_id=%s", run_id, thread_id)
         return record
@@ -208,7 +247,7 @@ class RunManager:
         async with self._lock:
             # Dict insertion order matches creation order, so reversing it gives
             # us deterministic newest-first results even when timestamps tie.
-            memory_records = [r for r in self._runs.values() if r.thread_id == thread_id]
+            memory_records = list(self._runs_by_thread.get(thread_id, {}).values())
         sorted_memory_records = sorted(
             reversed(memory_records),
             key=lambda r: r.created_at,
@@ -240,6 +279,7 @@ class RunManager:
                 logger.warning("Failed to aggregate token usage for thread %s from store", thread_id, exc_info=True)
 
         async with self._lock:
+            memory_records = list(self._runs_by_thread.get(thread_id, {}).values())
             rows = [
                 {
                     "thread_id": record.thread_id,
@@ -252,8 +292,8 @@ class RunManager:
                     "subagent_tokens": record.subagent_tokens,
                     "middleware_tokens": record.middleware_tokens,
                 }
-                for record in self._runs.values()
-                if record.thread_id == thread_id and (include_active or record.status not in {RunStatus.pending, RunStatus.running})
+                for record in memory_records
+                if include_active or not self._is_inflight(record.status)
             ]
         return _aggregate_token_rows(rows)
 
@@ -268,6 +308,7 @@ class RunManager:
             record.updated_at = _now_iso()
             if error is not None:
                 record.error = error
+            self._sync_inflight_locked(record)
         await self._persist_status(run_id, status, error=error)
         logger.info("Run %s -> %s", run_id, status.value)
 
@@ -310,6 +351,7 @@ class RunManager:
                 record.task.cancel()
             record.status = RunStatus.interrupted
             record.updated_at = _now_iso()
+            self._sync_inflight_locked(record)
         await self._persist_status(run_id, RunStatus.interrupted)
         logger.info("Run %s cancelled (action=%s)", run_id, action)
         return True
@@ -344,7 +386,7 @@ class RunManager:
             if multitask_strategy not in _supported_strategies:
                 raise UnsupportedStrategyError(f"Multitask strategy '{multitask_strategy}' is not yet supported. Supported strategies: {', '.join(_supported_strategies)}")
 
-            inflight = [r for r in self._runs.values() if r.thread_id == thread_id and r.status in (RunStatus.pending, RunStatus.running)]
+            inflight = list(self._inflight_by_thread.get(thread_id, {}).values())
 
             if multitask_strategy == "reject" and inflight:
                 raise ConflictError(f"Thread {thread_id} already has an active run")
@@ -357,6 +399,7 @@ class RunManager:
                         r.task.cancel()
                     r.status = RunStatus.interrupted
                     r.updated_at = now
+                    self._sync_inflight_locked(r)
                     interrupted_run_ids.append(r.run_id)
                 logger.info(
                     "Cancelled %d inflight run(s) on thread %s (strategy=%s)",
@@ -378,7 +421,7 @@ class RunManager:
                 updated_at=now,
                 model_name=model_name,
             )
-            self._runs[run_id] = record
+            self._register_locked(record)
 
         for interrupted_run_id in interrupted_run_ids:
             await self._persist_status(interrupted_run_id, RunStatus.interrupted)
@@ -389,14 +432,14 @@ class RunManager:
     async def has_inflight(self, thread_id: str) -> bool:
         """Return ``True`` if *thread_id* has a pending or running run."""
         async with self._lock:
-            return any(r.thread_id == thread_id and r.status in (RunStatus.pending, RunStatus.running) for r in self._runs.values())
+            return bool(self._inflight_by_thread.get(thread_id))
 
     async def cleanup(self, run_id: str, *, delay: float = 300) -> None:
         """Remove a run record after an optional delay."""
         if delay > 0:
             await asyncio.sleep(delay)
         async with self._lock:
-            self._runs.pop(run_id, None)
+            self._unregister_locked(run_id)
         logger.debug("Run record %s cleaned up", run_id)
 
 

@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, call
 
@@ -15,10 +16,15 @@ class FakeCheckpointer:
         self.aput_writes = AsyncMock()
 
 
+def _disable_delayed_run_cleanup(run_manager: RunManager) -> None:
+    run_manager.cleanup = AsyncMock()  # type: ignore[method-assign]
+
+
 @pytest.mark.anyio
 async def test_run_agent_defaults_root_run_name_from_assistant_id():
     run_manager = RunManager()
     record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
         publish_end=AsyncMock(),
@@ -53,6 +59,7 @@ async def test_run_agent_defaults_root_run_name_from_assistant_id():
 async def test_run_agent_defaults_root_run_name_from_context_agent_name():
     run_manager = RunManager()
     record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
         publish_end=AsyncMock(),
@@ -87,6 +94,7 @@ async def test_run_agent_defaults_root_run_name_from_context_agent_name():
 async def test_run_agent_defaults_root_run_name_from_configurable_agent_name():
     run_manager = RunManager()
     record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
         publish_end=AsyncMock(),
@@ -121,6 +129,7 @@ async def test_run_agent_defaults_root_run_name_from_configurable_agent_name():
 async def test_run_agent_threads_app_config_into_runtime_context():
     run_manager = RunManager()
     record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
         publish_end=AsyncMock(),
@@ -161,6 +170,7 @@ async def test_run_agent_threads_app_config_into_runtime_context():
 async def test_run_agent_runtime_context_overrides_reserved_context_keys():
     run_manager = RunManager()
     record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
         publish_end=AsyncMock(),
@@ -204,6 +214,7 @@ async def test_run_agent_persists_effective_model_name_from_agent_metadata():
     store = MemoryRunStore()
     run_manager = RunManager(store=store)
     record = await run_manager.create("thread-1", assistant_id="lead_agent", metadata={"user_id": "user-1"})
+    _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
         publish_end=AsyncMock(),
@@ -233,6 +244,39 @@ async def test_run_agent_persists_effective_model_name_from_agent_metadata():
     stored = await store.get(record.run_id, user_id="user-1")
     assert stored is not None
     assert stored["model_name"] == "resolved-model"
+
+
+@pytest.mark.anyio
+async def test_run_agent_schedules_bridge_and_run_manager_cleanup():
+    run_manager = RunManager()
+    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    _disable_delayed_run_cleanup(run_manager)
+    bridge = SimpleNamespace(
+        publish=AsyncMock(),
+        publish_end=AsyncMock(),
+        cleanup=AsyncMock(),
+    )
+
+    class DummyAgent:
+        async def astream(self, graph_input, config=None, stream_mode=None, subgraphs=False):
+            yield {"messages": []}
+
+    def factory(*, config):
+        return DummyAgent()
+
+    await run_agent(
+        bridge,
+        run_manager,
+        record,
+        checkpointer=None,
+        agent_factory=factory,
+        graph_input={},
+        config={},
+    )
+    await asyncio.sleep(0)
+
+    bridge.cleanup.assert_awaited_once_with(record.run_id, delay=60)
+    run_manager.cleanup.assert_awaited_once_with(record.run_id, delay=300)
 
 
 @pytest.mark.anyio

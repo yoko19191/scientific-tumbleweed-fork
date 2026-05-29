@@ -120,7 +120,10 @@ class LangGraphRunStore(RunStore):
         user_id: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        items = await self._store.asearch(self._ns, limit=10_000)
+        filters: dict[str, Any] = {"thread_id": thread_id}
+        if user_id is not None:
+            filters["user_id"] = user_id
+        items = await self._store.asearch(self._ns, filter=filters, limit=10_000)
         rows = [
             dict(item.value)
             for item in items
@@ -167,7 +170,7 @@ class LangGraphRunStore(RunStore):
         await self._store.aput(self._ns, run_id, row)
 
     async def aggregate_tokens_by_thread(self, thread_id: str, *, include_active: bool = False) -> dict[str, Any]:
-        items = await self._store.asearch(self._ns, limit=10_000)
+        items = await self._store.asearch(self._ns, filter={"thread_id": thread_id}, limit=10_000)
         rows = [
             dict(item.value)
             for item in items

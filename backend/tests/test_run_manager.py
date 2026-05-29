@@ -136,6 +136,23 @@ async def test_has_inflight(manager: RunManager):
 
 
 @pytest.mark.anyio
+async def test_has_inflight_is_thread_scoped_and_terminal_statuses_clear_index(manager: RunManager):
+    """Inflight checks should only consult runs for the target thread."""
+    thread_1 = await manager.create("thread-1")
+    thread_2 = await manager.create("thread-2")
+
+    assert await manager.has_inflight("thread-1") is True
+    assert await manager.has_inflight("thread-2") is True
+
+    await manager.set_status(thread_1.run_id, RunStatus.success)
+    assert await manager.has_inflight("thread-1") is False
+    assert await manager.has_inflight("thread-2") is True
+
+    await manager.set_status(thread_2.run_id, RunStatus.error)
+    assert await manager.has_inflight("thread-2") is False
+
+
+@pytest.mark.anyio
 async def test_cleanup(manager: RunManager):
     """After cleanup, the run should be gone."""
     record = await manager.create("thread-1")
@@ -143,6 +160,24 @@ async def test_cleanup(manager: RunManager):
 
     await manager.cleanup(run_id, delay=0)
     assert await manager.get(run_id) is None
+
+
+@pytest.mark.anyio
+async def test_cleanup_removes_live_record_but_preserves_store_hydration():
+    """Runtime cleanup should not delete historical run rows from the store."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+    record = await manager.create_or_reject("thread-1", metadata={"user_id": "user-1"})
+    await manager.set_status(record.run_id, RunStatus.success)
+
+    await manager.cleanup(record.run_id, delay=0)
+
+    hydrated = await manager.get(record.run_id, user_id="user-1")
+    runs = await manager.list_by_thread("thread-1", user_id="user-1")
+    assert hydrated is not None
+    assert hydrated.store_only is True
+    assert [run.run_id for run in runs] == [record.run_id]
+    assert runs[0].store_only is True
 
 
 @pytest.mark.anyio
@@ -227,6 +262,39 @@ async def test_cancel_persists_interrupted_status_for_restarted_manager():
     assert hydrated is not None
     assert hydrated.status == RunStatus.interrupted
     assert hydrated.store_only is True
+
+
+@pytest.mark.anyio
+async def test_create_or_reject_rejects_only_same_thread_inflight():
+    """Reject strategy should not scan or conflict with other thread activity."""
+    manager = RunManager()
+    other = await manager.create_or_reject("thread-2")
+
+    created = await manager.create_or_reject("thread-1", multitask_strategy="reject")
+
+    assert created.thread_id == "thread-1"
+    assert other.status == RunStatus.pending
+
+
+@pytest.mark.anyio
+async def test_create_or_reject_interrupts_only_same_thread_inflight():
+    """Interrupt/rollback strategies should cancel only target-thread inflight runs."""
+    manager = RunManager()
+    same_thread = await manager.create_or_reject("thread-1")
+    other_thread = await manager.create_or_reject("thread-2")
+    await manager.set_status(same_thread.run_id, RunStatus.running)
+    await manager.set_status(other_thread.run_id, RunStatus.running)
+
+    created = await manager.create_or_reject("thread-1", multitask_strategy="rollback")
+
+    assert created.thread_id == "thread-1"
+    assert same_thread.status == RunStatus.interrupted
+    assert same_thread.abort_event.is_set()
+    assert same_thread.abort_action == "rollback"
+    assert other_thread.status == RunStatus.running
+    assert not other_thread.abort_event.is_set()
+    assert await manager.has_inflight("thread-1") is True
+    assert await manager.has_inflight("thread-2") is True
 
 
 @pytest.mark.anyio

@@ -285,6 +285,7 @@ async def run_agent(
     finally:
         await bridge.publish_end(run_id)
         asyncio.create_task(bridge.cleanup(run_id, delay=60))
+        asyncio.create_task(run_manager.cleanup(run_id, delay=300))
 
 
 # ---------------------------------------------------------------------------

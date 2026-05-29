@@ -503,7 +503,10 @@ async def search_threads(body: ThreadSearchRequest, request: Request) -> list[Th
     merged: dict[str, ThreadResponse] = {}
 
     try:
-        items = await store.asearch(threads_ns, limit=10_000)
+        search_kwargs: dict[str, Any] = {"limit": 10_000}
+        if body.status:
+            search_kwargs["filter"] = {"status": body.status}
+        items = await store.asearch(threads_ns, **search_kwargs)
     except Exception:
         logger.warning("Store search failed for user %s", user_id, exc_info=True)
         items = []

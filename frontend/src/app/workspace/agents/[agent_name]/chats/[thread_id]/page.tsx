@@ -5,16 +5,14 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { usePromptInputController } from "@/components/ai-elements/prompt-input/context";
 import { Button } from "@/components/ui/button";
 import { AgentWelcome } from "@/components/workspace/agent-welcome";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
 import { SandboxTrigger } from "@/components/workspace/artifacts/sandbox-trigger";
 import { ChatBox, useThreadChat } from "@/components/workspace/chats";
 import { ExportTrigger } from "@/components/workspace/export-trigger";
-import {
-  FollowupSuggestions,
-  useFollowupSuggestions,
-} from "@/components/workspace/followup-suggestions";
+import { useFollowupSuggestions } from "@/components/workspace/followup-suggestions";
 import { InputBox } from "@/components/workspace/input-box";
 import {
   MessageList,
@@ -112,17 +110,6 @@ export default function AgentChatPage() {
     [backendTokenUsage, pendingUsageMessages, thread.messages],
   );
 
-  const handleSubmit = useCallback(
-    (message: PromptInputMessage) => {
-      void sendMessage(threadId, message, { agent_name });
-    },
-    [sendMessage, threadId, agent_name],
-  );
-
-  const handleStop = useCallback(async () => {
-    await thread.stop();
-  }, [thread]);
-
   const threadStatus = thread.error
     ? ("error" as const)
     : thread.isLoading
@@ -140,16 +127,53 @@ export default function AgentChatPage() {
       messages: thread.messages,
     });
 
-  const handleFollowupSelect = useCallback(
-    (suggestion: string) => {
-      void sendMessage(
-        threadId,
-        { text: suggestion, files: [] },
-        { agent_name },
-      );
+  const handleSubmit = useCallback(
+    (message: PromptInputMessage) => {
+      // Hide previously-shown follow-ups now that a new turn is starting;
+      // the hook will resurface fresh suggestions after the next AI reply.
       setFollowupsHidden(true);
+      void sendMessage(threadId, message, { agent_name });
     },
     [sendMessage, threadId, agent_name, setFollowupsHidden],
+  );
+
+  const handleStop = useCallback(async () => {
+    await thread.stop();
+  }, [thread]);
+
+  const promptInputController = usePromptInputController();
+  const handleFollowupSelect = useCallback(
+    (suggestion: string) => {
+      promptInputController.textInput.setInput(suggestion);
+      requestAnimationFrame(() => {
+        const textarea = document.querySelector<HTMLTextAreaElement>(
+          "textarea[name='message']",
+        );
+        if (textarea) {
+          textarea.focus();
+          const len = textarea.value.length;
+          textarea.setSelectionRange(len, len);
+        }
+      });
+    },
+    [promptInputController],
+  );
+
+  const followupBlock = useMemo(
+    () => ({
+      followups,
+      followupsLoading,
+      showFollowups,
+      setFollowupsHidden,
+      onSelect: handleFollowupSelect,
+    }),
+    [
+      followups,
+      followupsLoading,
+      showFollowups,
+      setFollowupsHidden,
+      handleFollowupSelect,
+    ],
   );
 
   const handleClarificationSubmit = useCallback(
@@ -229,13 +253,14 @@ export default function AgentChatPage() {
                 paddingBottom={MESSAGE_LIST_DEFAULT_PADDING_BOTTOM}
                 tokenUsagePreset={tokenUsageEnabled ? tokenUsagePreset : "off"}
                 onClarificationSubmit={handleClarificationSubmit}
+                followupBlock={isWelcomeMode ? undefined : followupBlock}
               />
             </div>
 
             <div
               className={cn(
                 "right-0 bottom-0 left-0 z-30 flex justify-center px-4",
-                isWelcomeMode ? "absolute" : "relative shrink-0 pb-4",
+                isWelcomeMode ? "absolute" : "relative shrink-0",
               )}
             >
               <div
@@ -262,13 +287,6 @@ export default function AgentChatPage() {
                     {todos.length > 0 && (
                       <TodoList className="bg-background/5" todos={todos} />
                     )}
-                    <FollowupSuggestions
-                      followups={followups}
-                      followupsLoading={followupsLoading}
-                      showFollowups={showFollowups}
-                      setFollowupsHidden={setFollowupsHidden}
-                      onSelect={handleFollowupSelect}
-                    />
                   </div>
                 </div>
 

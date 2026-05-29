@@ -204,6 +204,7 @@ export interface Translations {
     surpriseMe: string;
     surpriseMePrompt: string;
     followupLoading: string;
+    followupHeader: string;
     followupConfirmTitle: string;
     followupConfirmDescription: string;
     followupConfirmAppend: string;

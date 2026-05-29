@@ -549,6 +549,8 @@ export function InputBox({
                 </DropdownMenuGroup>
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
+          </PromptInputTools>
+          <PromptInputTools>
             {supportReasoningEffort && (
               <PromptInputActionMenu>
                 <PromptInputActionMenuTrigger className="gap-1! px-2!">
@@ -628,8 +630,6 @@ export function InputBox({
                 </PromptInputActionMenuContent>
               </PromptInputActionMenu>
             )}
-          </PromptInputTools>
-          <PromptInputTools>
             <ModelSelector
               open={modelDialogOpen}
               onOpenChange={setModelDialogOpen}

@@ -5,7 +5,6 @@ import type { ChatStatus } from "ai";
 import { XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -16,6 +15,7 @@ import { fetchWithAuth } from "@/core/auth/fetcher";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
 import { textOfMessage } from "@/core/threads/utils";
+import { cn } from "@/lib/utils";
 
 export interface UseFollowupSuggestionsOptions {
   threadId: string;
@@ -130,19 +130,30 @@ export function useFollowupSuggestions({
   };
 }
 
+export interface FollowupSuggestionsProps {
+  followups: string[];
+  followupsLoading: boolean;
+  showFollowups: boolean;
+  setFollowupsHidden: (hidden: boolean) => void;
+  onSelect: (suggestion: string) => void;
+  className?: string;
+}
+
+/**
+ * Inline follow-up suggestions rendered under the last AI turn,
+ * left-aligned with the assistant response and Token Usage badge.
+ *
+ * Clicking a suggestion is expected to paste the text into the chat input
+ * (the parent's onSelect handler controls actual behavior).
+ */
 export function FollowupSuggestions({
   followups,
   followupsLoading,
   showFollowups,
   setFollowupsHidden,
   onSelect,
-}: {
-  followups: string[];
-  followupsLoading: boolean;
-  showFollowups: boolean;
-  setFollowupsHidden: (hidden: boolean) => void;
-  onSelect: (suggestion: string) => void;
-}) {
+  className,
+}: FollowupSuggestionsProps) {
   const { t } = useI18n();
 
   const handleClick = useCallback(
@@ -155,43 +166,49 @@ export function FollowupSuggestions({
   if (!showFollowups) return null;
 
   return (
-    <>
-      <div className="flex items-center justify-center pb-1">
-        <div className="flex items-center gap-2">
-          {followupsLoading ? (
-            <div className="text-muted-foreground bg-background/80 rounded-full border px-4 py-1.5 text-xs backdrop-blur-sm">
-              {t.inputBox.followupLoading}
-            </div>
-          ) : (
-            <Suggestions className="w-fit items-center">
-              {followups.map((s) => (
-                <Tooltip key={s}>
-                  <TooltipTrigger asChild>
-                    <Suggestion
-                      className="max-w-[min(22rem,calc(100vw-6rem))] overflow-hidden py-1.5 text-left whitespace-nowrap"
-                      suggestion={<span className="min-w-0 truncate">{s}</span>}
-                      onClick={() => handleClick(s)}
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-[min(28rem,calc(100vw-2rem))] text-left break-words whitespace-normal">
-                    {s}
-                  </TooltipContent>
-                </Tooltip>
-              ))}
-              <Button
-                aria-label={t.common.close}
-                className="text-muted-foreground h-auto cursor-pointer rounded-full px-2.5 py-1.5 text-xs font-normal"
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={() => setFollowupsHidden(true)}
-              >
-                <XIcon className="size-4" />
-              </Button>
-            </Suggestions>
-          )}
-        </div>
-      </div>
-    </>
+    <div
+      className={cn(
+        "text-muted-foreground mt-2 flex flex-col items-start gap-1.5",
+        className,
+      )}
+    >
+      {followupsLoading ? (
+        <span className="text-[11px]">{t.inputBox.followupLoading}</span>
+      ) : (
+        <>
+          <span className="text-[11px]">{t.inputBox.followupHeader}</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {followups.map((s) => (
+              <Tooltip key={s}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-muted-foreground bg-muted/40 hover:bg-muted h-auto max-w-[min(22rem,calc(100vw-6rem))] cursor-pointer rounded-full border-transparent px-2.5 py-1 text-left text-[11px] font-normal"
+                    onClick={() => handleClick(s)}
+                  >
+                    <span className="min-w-0 truncate">{s}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[min(28rem,calc(100vw-2rem))] text-left wrap-break-word whitespace-normal">
+                  {s}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+            <Button
+              aria-label={t.common.close}
+              className="text-muted-foreground hover:bg-muted h-auto cursor-pointer rounded-full px-1.5 py-1 text-[11px] font-normal"
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => setFollowupsHidden(true)}
+            >
+              <XIcon className="size-3.5" />
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -35,6 +35,7 @@ import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
+import { FollowupSuggestions } from "../followup-suggestions";
 import { StreamingIndicator } from "../streaming-indicator";
 
 import {
@@ -54,6 +55,14 @@ import { SubtaskCard } from "./subtask-card";
 export const MESSAGE_LIST_DEFAULT_PADDING_BOTTOM = 24;
 const VIRTUALIZED_TURN_THRESHOLD = 40;
 
+export interface FollowupBlock {
+  followups: string[];
+  followupsLoading: boolean;
+  showFollowups: boolean;
+  setFollowupsHidden: (hidden: boolean) => void;
+  onSelect: (suggestion: string) => void;
+}
+
 export function MessageList({
   className,
   threadId,
@@ -61,6 +70,7 @@ export function MessageList({
   paddingBottom = MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
   tokenUsagePreset = "off",
   onClarificationSubmit,
+  followupBlock,
 }: {
   className?: string;
   threadId: string;
@@ -68,6 +78,7 @@ export function MessageList({
   paddingBottom?: number;
   tokenUsagePreset?: TokenUsagePreset;
   onClarificationSubmit?: (response: ClarificationResponse) => void;
+  followupBlock?: FollowupBlock;
 }) {
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
@@ -329,6 +340,13 @@ export function MessageList({
   }
   flushTurn();
 
+  // Attach the follow-up suggestions block to the last turn so the pills
+  // render under the most recent AI response, left-aligned with it.
+  if (followupBlock && turnItems.length > 0) {
+    const lastTurn = turnItems[turnItems.length - 1]!;
+    turnItems[turnItems.length - 1] = { ...lastTurn, followupBlock };
+  }
+
   return (
     <Conversation
       className={cn("flex size-full flex-col justify-center", className)}
@@ -352,6 +370,7 @@ type TurnRender = {
   key: string;
   nodes: React.ReactNode[];
   usage: TokenUsage | null;
+  followupBlock?: FollowupBlock;
 };
 
 function TurnList({
@@ -448,6 +467,15 @@ function TurnContent({
       )}
       {showStepDebug && (
         <MessageTokenUsageDebugList enabled steps={item.debugSteps} />
+      )}
+      {item.followupBlock && (
+        <FollowupSuggestions
+          followups={item.followupBlock.followups}
+          followupsLoading={item.followupBlock.followupsLoading}
+          showFollowups={item.followupBlock.showFollowups}
+          setFollowupsHidden={item.followupBlock.setFollowupsHidden}
+          onSelect={item.followupBlock.onSelect}
+        />
       )}
     </div>
   );

@@ -166,10 +166,23 @@ def get_available_tools(
                         existing_registry = get_deferred_registry()
                         if existing_registry is None:
                             registry = DeferredToolRegistry()
+                            active_tool_names = {t.name for t in loaded_tools + builtin_tools}
+                            # ``tool_search`` is appended below, after the
+                            # registry is built. Reserve its name here so an
+                            # MCP server cannot accidentally hide the discovery
+                            # tool itself, and do not defer MCP tools that are
+                            # shadowed by higher-priority config/builtin tools.
+                            active_tool_names.add(tool_search_tool.name)
                             for t in mcp_tools:
+                                if t.name in active_tool_names:
+                                    logger.warning(
+                                        "MCP tool %r is shadowed by a config/builtin tool and will not be registered as deferred.",
+                                        t.name,
+                                    )
+                                    continue
                                 registry.register(t)
                             set_deferred_registry(registry)
-                            logger.info(f"Tool search active: {len(mcp_tools)} tools deferred")
+                            logger.info(f"Tool search active: {len(registry)} tools deferred")
                         else:
                             mcp_tool_names = {t.name for t in mcp_tools}
                             still_deferred = len(existing_registry)

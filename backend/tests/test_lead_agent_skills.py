@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from deerflow.agents.lead_agent.prompt import get_skills_prompt_section
 from deerflow.config.agents_config import AgentConfig
+from deerflow.skills.tool_policy import filter_tools_by_skill_allowed_tools
 from deerflow.skills.types import Skill
 
 
@@ -194,4 +195,28 @@ def test_make_lead_agent_all_legacy_skills_preserve_all_tools(monkeypatch):
 
     agent_kwargs = lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
 
-    assert [tool.name for tool in agent_kwargs["tools"]] == ["bash", "read_file"]
+    assert [tool.name for tool in agent_kwargs["tools"]] == ["bash", "read_file", "update_agent"]
+
+
+def test_skill_allowed_tools_all_unknown_falls_back_to_allow_all(caplog):
+    tools = [NamedTool("web_search"), NamedTool("read_file")]
+    skills = [_make_skill("humanizer", ["Read", "Edit"])]
+
+    with caplog.at_level("WARNING"):
+        filtered = filter_tools_by_skill_allowed_tools(tools, skills)
+
+    assert filtered == tools
+    assert "matches no available tool" in caplog.text
+    assert "humanizer" in caplog.text
+
+
+def test_skill_allowed_tools_partial_unknown_keeps_matching_tools(caplog):
+    tools = [NamedTool("web_search"), NamedTool("read_file"), NamedTool("bash")]
+    skills = [_make_skill("humanizer", ["web_search", "Read"])]
+
+    with caplog.at_level("WARNING"):
+        filtered = filter_tools_by_skill_allowed_tools(tools, skills)
+
+    assert [tool.name for tool in filtered] == ["web_search"]
+    assert "unknown tool name" in caplog.text
+    assert "Read" in caplog.text

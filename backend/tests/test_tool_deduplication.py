@@ -231,3 +231,49 @@ def test_tool_search_registry_preserves_promotions(mock_bash, mock_cfg):
         assert _tool_beta.name in registry.deferred_names
     finally:
         reset_deferred_registry()
+
+
+@patch("deerflow.tools.tools.get_app_config")
+@patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
+def test_mcp_duplicate_of_config_tool_does_not_hide_config_tool(mock_bash, mock_cfg):
+    """A deferred MCP duplicate must not hide the higher-priority config tool.
+
+    Regression guard for a subtle interaction between tool deduplication and
+    DeferredToolFilterMiddleware: config tools win in the final tool list, but
+    MCP tools were registered in the deferred registry before deduplication.
+    If an MCP server also exposed ``web_search``, the registry's name-based
+    filter stripped the real config ``web_search`` schema from bind_tools, so
+    the model genuinely saw no web-search interface.
+    """
+    from deerflow.tools.builtins.tool_search import get_deferred_registry, reset_deferred_registry
+
+    tool_cfg = MagicMock()
+    tool_cfg.name = _tool_alpha.name
+    tool_cfg.group = "web"
+    tool_cfg.use = "tests.fake:alpha"
+
+    config = _make_minimal_config([tool_cfg])
+    config.tool_search.enabled = True
+    mock_cfg.return_value = config
+
+    extensions = MagicMock()
+    extensions.get_enabled_mcp_servers.return_value = {"server": object()}
+
+    try:
+        with (
+            patch("deerflow.tools.tools.resolve_variable", return_value=_tool_alpha),
+            patch("deerflow.config.extensions_config.ExtensionsConfig.from_file", return_value=extensions),
+            patch("deerflow.mcp.cache.get_cached_mcp_tools", return_value=[_tool_alpha_dup, _tool_beta]),
+        ):
+            result = get_available_tools(include_mcp=True)
+
+        names = [tool.name for tool in result]
+        assert names.count(_tool_alpha.name) == 1
+        assert _tool_alpha.name in names
+
+        registry = get_deferred_registry()
+        assert registry is not None
+        assert _tool_alpha.name not in registry.deferred_names
+        assert _tool_beta.name in registry.deferred_names
+    finally:
+        reset_deferred_registry()

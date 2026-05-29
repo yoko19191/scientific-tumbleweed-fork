@@ -598,7 +598,8 @@ See [docs/plan_mode_usage.md](docs/plan_mode_usage.md) for details.
 Automatic conversation summarization when approaching token limits:
 - Configured in `config.yaml` under `summarization` key
 - Trigger types: tokens, messages, or fraction of max input
-- Keeps recent messages while summarizing older ones
+- Keeps recent messages while summarizing older ones into a structured five-field record by default
+- Custom `summarization.summary_prompt` preserves legacy free-text summary behavior
 
 See [docs/summarization.md](docs/summarization.md) for details.
 

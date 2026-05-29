@@ -10,7 +10,7 @@ The summarization feature uses LangChain's `SummarizationMiddleware` to monitor 
 2. Triggers summarization when thresholds are met
 3. Keeps recent messages intact while summarizing older exchanges
 4. Maintains AI/Tool message pairs together for context continuity
-5. Injects the summary back into the conversation
+5. Injects a five-field structured summary back into the conversation
 
 ## Configuration
 
@@ -129,8 +129,8 @@ keep:
 
 #### `summary_prompt`
 - **Type**: String or null
-- **Default**: `null` (uses LangChain's default prompt)
-- **Description**: Custom prompt template for generating summaries. The prompt should guide the model to extract the most important context.
+- **Default**: `null` (uses DeerFlow's structured summary prompt)
+- **Description**: Custom prompt template for generating summaries. When this is set, DeerFlow preserves the legacy free-text summary behavior for compatibility.
 
 #### `preserve_recent_skill_count`
 - **Type**: Integer (≥ 0)
@@ -153,11 +153,14 @@ keep:
 - **Description**: Tool names treated as skill file reads during summarization rescue. A tool call is only eligible for skill rescue when its name appears in this list and its target path is under `skills.container_path`.
 
 **Default Prompt Behavior:**
-The default LangChain prompt instructs the model to:
-- Extract highest quality/most relevant context
-- Focus on information critical to the overall goal
-- Avoid repeating completed actions
-- Return only the extracted context
+When `summary_prompt` is `null`, DeerFlow asks the summary model to return a JSON object with five string fields:
+- `task_overview` - User goal, constraints, and completion criteria
+- `current_state` - Completed actions and current code/runtime/investigation state
+- `important_discoveries` - Confirmed facts, files, configurations, and design decisions
+- `next_steps` - Most useful next actions
+- `context_to_preserve` - Paths, commands, user preferences, and open questions the next model turn must not lose
+
+The middleware tolerates fenced or lightly wrapped JSON output. If parsing fails, it still emits all five fields and stores the raw model output under `context_to_preserve`.
 
 ## How It Works
 
@@ -168,7 +171,7 @@ The default LangChain prompt instructs the model to:
 3. **Message Partitioning**: Messages are split into:
    - Messages to summarize (older messages beyond the `keep` threshold)
    - Messages to preserve (recent messages within the `keep` threshold)
-4. **Summary Generation**: The model generates a concise summary of the older messages
+4. **Summary Generation**: The model generates a structured five-field summary of the older messages, unless a custom `summary_prompt` requests legacy free text
 5. **Context Replacement**: The message history is updated:
    - All old messages are removed
    - A single summary message is added
@@ -193,7 +196,20 @@ The middleware intelligently preserves message context:
   ```
   Here is a summary of the conversation to date:
 
-  [Generated summary text]
+  task_overview:
+  [User goal, constraints, and completion criteria]
+
+  current_state:
+  [Completed actions and current state]
+
+  important_discoveries:
+  [Confirmed facts and decisions]
+
+  next_steps:
+  [Useful next actions]
+
+  context_to_preserve:
+  [Details that must not be lost]
   ```
 
 ## Best Practices

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from types import SimpleNamespace
 from unittest import mock
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
@@ -50,18 +52,23 @@ def _middleware(
     before_summarization=None,
     trigger=("messages", 4),
     keep=("messages", 2),
+    model_response_text: str = "compressed summary",
+    summary_prompt: str | None = None,
     skill_file_read_tool_names=None,
     preserve_recent_skill_count: int = 0,
     preserve_recent_skill_tokens: int = 0,
     preserve_recent_skill_tokens_per_skill: int = 0,
 ) -> DeerFlowSummarizationMiddleware:
     model = MagicMock()
-    model.invoke.return_value = SimpleNamespace(text="compressed summary")
+    model.invoke.return_value = SimpleNamespace(text=model_response_text)
+    model.ainvoke = AsyncMock(return_value=SimpleNamespace(text=model_response_text))
+    kwargs = {"summary_prompt": summary_prompt} if summary_prompt is not None else {}
     return DeerFlowSummarizationMiddleware(
         model=model,
         trigger=trigger,
         keep=keep,
         token_counter=len,
+        **kwargs,
         before_summarization=before_summarization,
         skill_file_read_tool_names=skill_file_read_tool_names,
         preserve_recent_skill_count=preserve_recent_skill_count,
@@ -97,6 +104,81 @@ def _raw_tool_call(tool_id: str, name: str = "read_file") -> dict:
         "type": "function",
         "function": {"name": name, "arguments": "{}"},
     }
+
+
+def _structured_summary_payload(**overrides: str) -> dict[str, str]:
+    payload = {
+        "task_overview": "Investigate summarization behavior.",
+        "current_state": "The middleware is under test.",
+        "important_discoveries": "Skill rescue preserves selected tool results.",
+        "next_steps": "Run the focused regression tests.",
+        "context_to_preserve": "Keep /mnt/skills paths and tool_call ids.",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _assert_structured_summary(content: str, payload: dict[str, str] | None = None) -> None:
+    expected = payload or _structured_summary_payload()
+    for field, value in expected.items():
+        assert f"{field}:" in content
+        assert value in content
+
+
+def test_default_summary_is_structured_five_field_record() -> None:
+    payload = _structured_summary_payload()
+    middleware = _middleware(model_response_text=json.dumps(payload))
+
+    result = middleware.before_model({"messages": _messages()}, _runtime())
+
+    summary_message = result["messages"][1]
+    assert summary_message.name == "summary"
+    assert summary_message.content.startswith("Here is a summary of the conversation to date:")
+    _assert_structured_summary(summary_message.content, payload)
+
+
+@pytest.mark.parametrize(
+    ("model_response_text", "expected"),
+    [
+        (f"```json\n{json.dumps(_structured_summary_payload(task_overview='Fenced JSON'))}\n```", "Fenced JSON"),
+        (f"Sure.\n{json.dumps(_structured_summary_payload(task_overview='Noisy JSON'))}\nDone.", "Noisy JSON"),
+        ("not valid json", "not valid json"),
+    ],
+)
+def test_default_summary_parses_tolerant_structured_outputs(model_response_text: str, expected: str) -> None:
+    middleware = _middleware(model_response_text=model_response_text)
+
+    result = middleware.before_model({"messages": _messages()}, _runtime())
+
+    content = result["messages"][1].content
+    for field in _structured_summary_payload():
+        assert f"{field}:" in content
+    assert expected in content
+
+
+def test_custom_summary_prompt_preserves_free_text_behavior() -> None:
+    middleware = _middleware(
+        model_response_text="plain free text summary",
+        summary_prompt="Custom summary prompt:\n{messages}",
+    )
+
+    result = middleware.before_model({"messages": _messages()}, _runtime())
+
+    content = result["messages"][1].content
+    assert content.endswith("plain free text summary")
+    assert "task_overview:" not in content
+    assert middleware.model.invoke.call_args.args[0].startswith("Custom summary prompt:")
+
+
+def test_async_default_summary_matches_structured_shape() -> None:
+    payload = _structured_summary_payload(current_state="Async path under test.")
+    middleware = _middleware(model_response_text=json.dumps(payload))
+
+    result = asyncio.run(middleware.abefore_model({"messages": _messages()}, _runtime()))
+
+    summary_message = result["messages"][1]
+    assert summary_message.name == "summary"
+    _assert_structured_summary(summary_message.content, payload)
 
 
 def test_before_summarization_hook_receives_messages_before_compression() -> None:

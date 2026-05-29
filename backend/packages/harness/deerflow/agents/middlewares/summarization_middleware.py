@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any, Protocol, override, runtime_checkable
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import SummarizationMiddleware
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, RemoveMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    RemoveMessage,
+    ToolMessage,
+    get_buffer_string,
+)
 from langgraph.config import get_config
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
@@ -18,6 +27,28 @@ from deerflow.agents.middlewares.dynamic_context_middleware import is_dynamic_co
 from deerflow.agents.middlewares.tool_call_metadata import clone_ai_message_with_tool_calls
 
 logger = logging.getLogger(__name__)
+
+_STRUCTURED_SUMMARY_FIELDS = (
+    "task_overview",
+    "current_state",
+    "important_discoveries",
+    "next_steps",
+    "context_to_preserve",
+)
+
+_STRUCTURED_SUMMARY_PROMPT = """Summarize the earlier conversation history into a structured continuation record.
+
+Return only a valid JSON object. Do not include markdown fences, commentary, or any text outside the JSON object.
+The JSON object must contain exactly these string fields:
+- task_overview: The user's goal, constraints, and completion criteria.
+- current_state: Actions already completed and the current code, runtime, or investigation state.
+- important_discoveries: Confirmed facts, files, configurations, and design decisions.
+- next_steps: The most useful next actions to continue the task.
+- context_to_preserve: Details the next model turn must not lose, including paths, commands, user preferences, and open questions.
+
+Earlier conversation history:
+{messages}
+"""
 
 
 @dataclass(frozen=True)
@@ -30,6 +61,28 @@ class SummarizationEvent:
     agent_name: str | None
     user_id: str | None
     runtime: Runtime
+
+
+@dataclass(frozen=True)
+class StructuredSummary:
+    task_overview: str = ""
+    current_state: str = ""
+    important_discoveries: str = ""
+    next_steps: str = ""
+    context_to_preserve: str = ""
+
+    @classmethod
+    def from_mapping(cls, value: dict[str, Any]) -> StructuredSummary:
+        fields = {field: _coerce_summary_field(value.get(field)) for field in _STRUCTURED_SUMMARY_FIELDS}
+        return cls(**fields)
+
+    @classmethod
+    def fallback(cls, raw_output: str) -> StructuredSummary:
+        preserved = raw_output.strip() or "No structured summary content was returned."
+        return cls(context_to_preserve=preserved)
+
+    def render(self) -> str:
+        return "\n\n".join(f"{field}:\n{getattr(self, field)}" for field in _STRUCTURED_SUMMARY_FIELDS)
 
 
 @runtime_checkable
@@ -94,6 +147,77 @@ def _clone_ai_message(
     return clone_ai_message_with_tool_calls(message, tool_calls, content=content)
 
 
+def _coerce_summary_field(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value).strip()
+
+
+def _json_candidates(text: str) -> list[str]:
+    stripped = text.strip()
+    candidates: list[str] = []
+    if stripped:
+        candidates.append(stripped)
+
+    fence_matches = re.findall(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
+    candidates.extend(match.strip() for match in fence_matches if match.strip())
+
+    for candidate in list(candidates):
+        balanced = _first_balanced_json_object(candidate)
+        if balanced and balanced not in candidates:
+            candidates.append(balanced)
+
+    balanced = _first_balanced_json_object(text)
+    if balanced and balanced not in candidates:
+        candidates.append(balanced)
+    return candidates
+
+
+def _first_balanced_json_object(text: str) -> str | None:
+    start = text.find("{")
+    if start == -1:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _parse_structured_summary(raw_output: str) -> StructuredSummary:
+    for candidate in _json_candidates(raw_output):
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return StructuredSummary.from_mapping(parsed)
+    return StructuredSummary.fallback(raw_output)
+
+
 @dataclass
 class _SkillBundle:
     """Skill-related tool calls and tool results associated with one AIMessage."""
@@ -119,6 +243,7 @@ class DeerFlowSummarizationMiddleware(SummarizationMiddleware):
         preserve_recent_skill_tokens_per_skill: int = 5_000,
         **kwargs,
     ) -> None:
+        self._uses_custom_summary_prompt = kwargs.get("summary_prompt") is not None
         super().__init__(*args, **kwargs)
         self._skills_container_path = skills_container_path or "/mnt/skills"
         self._skill_file_read_tool_names = frozenset(skill_file_read_tool_names or {"read_file", "read", "view", "cat"})
@@ -191,6 +316,50 @@ class DeerFlowSummarizationMiddleware(SummarizationMiddleware):
         And this message will be ignored to display in the frontend, but still can be used as context for the model.
         """
         return [HumanMessage(content=f"Here is a summary of the conversation to date:\n\n{summary}", name="summary")]
+
+    @override
+    def _create_summary(self, messages_to_summarize: list[AnyMessage]) -> str:
+        if self._uses_custom_summary_prompt:
+            return super()._create_summary(messages_to_summarize)
+        return self._create_structured_summary(messages_to_summarize)
+
+    @override
+    async def _acreate_summary(self, messages_to_summarize: list[AnyMessage]) -> str:
+        if self._uses_custom_summary_prompt:
+            return await super()._acreate_summary(messages_to_summarize)
+        return await self._acreate_structured_summary(messages_to_summarize)
+
+    def _create_structured_summary(self, messages_to_summarize: list[AnyMessage]) -> str:
+        if not messages_to_summarize:
+            return StructuredSummary.fallback("No previous conversation history.").render()
+
+        trimmed_messages = self._trim_messages_for_summary(messages_to_summarize)
+        if not trimmed_messages:
+            return StructuredSummary.fallback("Previous conversation was too long to summarize.").render()
+
+        formatted_messages = get_buffer_string(trimmed_messages)
+        try:
+            response = self.model.invoke(_STRUCTURED_SUMMARY_PROMPT.format(messages=formatted_messages))
+            raw_output = response.text.strip()
+        except Exception as exc:
+            raw_output = f"Error generating structured summary: {exc!s}"
+        return _parse_structured_summary(raw_output).render()
+
+    async def _acreate_structured_summary(self, messages_to_summarize: list[AnyMessage]) -> str:
+        if not messages_to_summarize:
+            return StructuredSummary.fallback("No previous conversation history.").render()
+
+        trimmed_messages = self._trim_messages_for_summary(messages_to_summarize)
+        if not trimmed_messages:
+            return StructuredSummary.fallback("Previous conversation was too long to summarize.").render()
+
+        formatted_messages = get_buffer_string(trimmed_messages)
+        try:
+            response = await self.model.ainvoke(_STRUCTURED_SUMMARY_PROMPT.format(messages=formatted_messages))
+            raw_output = response.text.strip()
+        except Exception as exc:
+            raw_output = f"Error generating structured summary: {exc!s}"
+        return _parse_structured_summary(raw_output).render()
 
     def _preserve_dynamic_context_reminders(
         self,

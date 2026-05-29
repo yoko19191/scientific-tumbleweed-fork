@@ -312,7 +312,7 @@ Key sections:
 - `sandbox` - Execution environment provider
 - `skills` - Skills directory paths
 - `title` - Auto-title generation settings
-- `summarization` - Context summarization settings
+- `summarization` - Context summarization settings; default summaries are structured five-field continuation records
 - `subagents` - Subagent system (enabled/disabled)
 - `memory` - Memory system settings (enabled, storage, debounce, facts limits)
 

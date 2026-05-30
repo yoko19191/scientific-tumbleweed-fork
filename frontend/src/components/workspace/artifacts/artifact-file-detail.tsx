@@ -36,7 +36,10 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CodeEditor } from "@/components/workspace/code-editor";
 import { useArtifactContent } from "@/core/artifacts/hooks";
-import { urlOfArtifact } from "@/core/artifacts/utils";
+import {
+  urlOfArtifact,
+  urlOfHtmlArtifactPreview,
+} from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { installSkill } from "@/core/skills/api";
 import { streamdownPlugins } from "@/core/streamdown";
@@ -89,10 +92,9 @@ export function ArtifactFileDetail({
   }, [filepath, isWriteFile, isSkillFile]);
   const isImageFile = useMemo(() => checkImageFile(filepath), [filepath]);
   const isSupportPreview = useMemo(() => {
-    return (
-      language === "html" || language === "markdown" || language === "csv"
-    );
+    return language === "html" || language === "markdown" || language === "csv";
   }, [language]);
+  const isHtmlArtifact = language === "html";
   const { content } = useArtifactContent({
     threadId,
     filepath: filepathFromProps,
@@ -245,7 +247,13 @@ export function ArtifactFileDetail({
                 tooltip={t.common.openInNewWindow}
                 onClick={() => {
                   const w = window.open(
-                    urlOfArtifact({ filepath, threadId, isMock }),
+                    isHtmlArtifact
+                      ? urlOfHtmlArtifactPreview({
+                          filepath,
+                          threadId,
+                          isMock,
+                        })
+                      : urlOfArtifact({ filepath, threadId, isMock }),
                     "_blank",
                     "noopener,noreferrer",
                   );

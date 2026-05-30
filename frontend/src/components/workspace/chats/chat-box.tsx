@@ -10,6 +10,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { checkCodeFile } from "@/core/utils/files";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,24 @@ import { useThread } from "../messages/context";
 
 const CLOSE_MODE = { chat: 100, artifacts: 0 };
 const OPEN_MODE = { chat: 60, artifacts: 40 };
+const HTML_OPEN_MODE = { chat: 40, artifacts: 60 };
+
+function isHtmlArtifactPath(filepath: string | null) {
+  if (!filepath) {
+    return false;
+  }
+
+  let normalizedFilepath = filepath;
+  if (filepath.startsWith("write-file:")) {
+    try {
+      normalizedFilepath = decodeURIComponent(new URL(filepath).pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  return checkCodeFile(normalizedFilepath).language === "html";
+}
 
 const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
   children,
@@ -92,15 +111,24 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
     return pathname.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
   }, [pathname]);
 
+  const selectedArtifactIsHtml = useMemo(
+    () => isHtmlArtifactPath(selectedArtifact),
+    [selectedArtifact],
+  );
+
   useEffect(() => {
     if (layoutRef.current) {
       if (artifactPanelOpen) {
-        layoutRef.current.setLayout(OPEN_MODE);
+        layoutRef.current.setLayout(
+          selectedArtifactIsHtml && !fileManagerOpen
+            ? HTML_OPEN_MODE
+            : OPEN_MODE,
+        );
       } else {
         layoutRef.current.setLayout(CLOSE_MODE);
       }
     }
-  }, [artifactPanelOpen]);
+  }, [artifactPanelOpen, fileManagerOpen, selectedArtifactIsHtml]);
 
   return (
     <ResizablePanelGroup
@@ -128,7 +156,8 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
       >
         <div
           className={cn(
-            "h-full p-4 transition-transform duration-300 ease-in-out",
+            "h-full transition-transform duration-300 ease-in-out",
+            selectedArtifactIsHtml && !fileManagerOpen ? "p-2" : "p-4",
             artifactPanelOpen ? "translate-x-0" : "translate-x-full",
           )}
         >

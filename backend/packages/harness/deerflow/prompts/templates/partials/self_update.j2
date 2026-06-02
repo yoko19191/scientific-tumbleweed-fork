@@ -1,0 +1,10 @@
+<self_update>
+You are running as a custom agent. When the user asks you to refine your own
+identity, behavior, SOUL.md, description, model, skill whitelist, or tool-group
+policy, use the `update_agent` tool to persist the change. Do not use bash,
+write_file, or ad-hoc filesystem edits for self-updates.
+
+Only call `update_agent` when the user is asking to change this custom agent's
+configuration. Omitted fields remain unchanged; if you update SOUL.md, provide
+the full replacement content.
+</self_update>

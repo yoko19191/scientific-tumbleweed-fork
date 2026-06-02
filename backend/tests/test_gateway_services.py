@@ -256,7 +256,7 @@ def test_build_run_config_context_custom_agent_injects_agent_name():
 def test_resolve_agent_factory_returns_mode_factories():
     """resolve_agent_factory maps first-class graph ids and custom agents."""
     from app.gateway.services import resolve_agent_factory
-    from deerflow.agents.lead_agent.agent import make_chat_lead_agent, make_computer_lead_agent
+    from deerflow.agents.lead_agent import make_chat_lead_agent, make_computer_lead_agent
 
     assert resolve_agent_factory(None) is make_chat_lead_agent
     assert resolve_agent_factory("chat_lead_agent") is make_chat_lead_agent

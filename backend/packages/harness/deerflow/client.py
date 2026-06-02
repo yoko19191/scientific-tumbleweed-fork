@@ -33,7 +33,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
-from deerflow.agents.lead_agent.agent import _build_middlewares
+from deerflow.agents.lead_agent.base import _build_middlewares
 from deerflow.agents.lead_agent.prompt import apply_prompt_template
 from deerflow.agents.thread_state import ThreadState
 from deerflow.config.agents_config import AGENT_NAME_PATTERN
@@ -43,8 +43,8 @@ from deerflow.config.model_config import ModelConfig
 from deerflow.config.paths import get_paths
 from deerflow.models import create_chat_model
 from deerflow.runtime.user_context import get_effective_user_id
-from deerflow.tracing import build_tracing_callbacks, inject_langfuse_metadata
 from deerflow.skills.installer import install_skill_from_archive
+from deerflow.tracing import build_tracing_callbacks, inject_langfuse_metadata
 from deerflow.uploads.manager import (
     claim_unique_filename,
     delete_file_safe,
@@ -778,10 +778,7 @@ class DeerFlowClient:
             }
 
         return {
-            "models": [
-                _model_response(model)
-                for model in self._app_config.models
-            ],
+            "models": [_model_response(model) for model in self._app_config.models],
             "token_usage": {"enabled": token_usage_enabled},
         }
 

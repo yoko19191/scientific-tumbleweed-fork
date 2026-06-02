@@ -1,0 +1,11 @@
+<git_safety>
+Git Safety Protocol:
+
+- NEVER update the git config.
+- NEVER run destructive/irreversible git commands (push --force, hard reset) unless the user explicitly requests them.
+- NEVER skip hooks (--no-verify, --no-gpg-sign) unless the user explicitly requests it.
+- NEVER force push to main/master — warn the user if they request it.
+- Avoid git commit --amend unless the HEAD commit was created by you and has NOT been pushed.
+- If a commit failed or was rejected by a hook, NEVER amend — fix the issue and create a NEW commit.
+- NEVER commit files that likely contain secrets (.env, credentials.json, etc.). Warn the user if they specifically request it.
+</git_safety>

@@ -1,0 +1,12 @@
+{%- set ns = namespace(blocks=[]) -%}
+{%- if subagent_enabled -%}
+{%- set agents = [] -%}
+{%- if has_explore %}{% set _ = agents.append("- **explore**: Fast read-only code exploration specialist") %}{% endif -%}
+{%- if has_plan %}{% set _ = agents.append("- **plan**: Read-only planning specialist for architecture decisions") %}{% endif -%}
+{%- if has_verification %}{% set _ = agents.append("- **verification**: Adversarial validation — tries to break the implementation") %}{% endif -%}
+{%- if agents %}{% set _ = ns.blocks.append("<specialized_agents>\nThe following specialist agents are available:\n" ~ agents|join("\n") ~ "\n</specialized_agents>") %}{% endif -%}
+{%- endif -%}
+{%- if has_verification -%}
+{%- set _ = ns.blocks.append("<verification_contract>\nAfter completing non-trivial implementations, you SHOULD delegate to the verification agent to validate the changes. The verification agent will run builds, tests, linters, and adversarial probes.\n</verification_contract>") -%}
+{%- endif -%}
+{{ ns.blocks|join("\n") }}

@@ -1,13 +1,13 @@
 """Middleware for automatic thread title generation."""
 
 import logging
-import re
 from typing import TYPE_CHECKING, NotRequired, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langgraph.runtime import Runtime
 
+from deerflow.agents import title_agent
 from deerflow.agents.middlewares.dynamic_context_middleware import is_dynamic_context_reminder
 from deerflow.config.title_config import get_title_config
 from deerflow.models import create_chat_model
@@ -43,27 +43,7 @@ class TitleMiddleware(AgentMiddleware[TitleMiddlewareState]):
         return get_title_config()
 
     def _normalize_content(self, content: object) -> str:
-        if isinstance(content, str):
-            return content
-
-        if isinstance(content, list):
-            parts = [self._normalize_content(item) for item in content]
-            return "\n".join(part for part in parts if part)
-
-        if isinstance(content, dict):
-            content_type = content.get("type")
-            if content_type in ("thinking", "reasoning"):
-                return ""
-
-            text_value = content.get("text")
-            if isinstance(text_value, str):
-                return text_value
-
-            nested_content = content.get("content")
-            if nested_content is not None:
-                return self._normalize_content(nested_content)
-
-        return ""
+        return title_agent.normalize_content(content)
 
     @staticmethod
     def _is_user_message_for_title(message: object) -> bool:
@@ -91,52 +71,41 @@ class TitleMiddleware(AgentMiddleware[TitleMiddlewareState]):
         # Generate title after first complete exchange
         return len(user_messages) == 1 and len(assistant_messages) >= 1
 
-    def _build_title_prompt(self, state: TitleMiddlewareState) -> tuple[str, str]:
-        """Extract user/assistant messages and build the title prompt.
-
-        Returns (prompt_string, user_msg) so callers can use user_msg as fallback.
-        """
-        config = self._get_title_config()
+    def _extract_title_messages(self, state: TitleMiddlewareState) -> tuple[str, str]:
         messages = state.get("messages", [])
 
         user_msg_content = next((m.content for m in messages if self._is_user_message_for_title(m)), "")
         assistant_msg_content = next((m.content for m in messages if m.type == "ai"), "")
 
         user_msg = self._normalize_content(user_msg_content)
-        assistant_msg = self._strip_think_tags(self._normalize_content(assistant_msg_content))
+        assistant_msg = self._normalize_content(assistant_msg_content)
+        return user_msg, assistant_msg
 
-        prompt = config.prompt_template.format(
-            max_words=config.max_words,
-            user_msg=user_msg[:500],
-            assistant_msg=assistant_msg[:500],
-        )
+    def _build_title_prompt(self, state: TitleMiddlewareState) -> tuple[str, str]:
+        """Extract user/assistant messages and build the title prompt.
+
+        Returns (prompt_string, user_msg) so callers can use user_msg as fallback.
+        """
+        config = self._get_title_config()
+        user_msg, assistant_msg = self._extract_title_messages(state)
+        prompt = title_agent.build_title_prompt(user_msg, assistant_msg, config)
         return prompt, user_msg
 
     def _strip_think_tags(self, text: str) -> str:
-        """Remove <think>...</think> blocks emitted by reasoning models (e.g. minimax, DeepSeek-R1)."""
-        return re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE).strip()
+        return title_agent.strip_think_tags(text)
 
     def _parse_title(self, content: object) -> str:
-        """Normalize model output into a clean title string."""
-        config = self._get_title_config()
-        title_content = self._normalize_content(content)
-        title_content = self._strip_think_tags(title_content)
-        title = title_content.strip().strip('"').strip("'")
-        return title[: config.max_chars] if len(title) > config.max_chars else title
+        return title_agent.parse_title(content, self._get_title_config())
 
     def _fallback_title(self, user_msg: str) -> str:
-        config = self._get_title_config()
-        fallback_chars = min(config.max_chars, 50)
-        if len(user_msg) > fallback_chars:
-            return user_msg[:fallback_chars].rstrip() + "..."
-        return user_msg if user_msg else "New Conversation"
+        return title_agent.fallback_title(user_msg, self._get_title_config())
 
     def _generate_title_result(self, state: TitleMiddlewareState) -> dict | None:
         """Generate a local fallback title without blocking on an LLM call."""
         if not self._should_generate_title(state):
             return None
 
-        _, user_msg = self._build_title_prompt(state)
+        user_msg, _ = self._extract_title_messages(state)
         return {"title": self._fallback_title(user_msg)}
 
     async def _agenerate_title_result(self, state: TitleMiddlewareState) -> dict | None:
@@ -145,23 +114,15 @@ class TitleMiddleware(AgentMiddleware[TitleMiddlewareState]):
             return None
 
         config = self._get_title_config()
-        prompt, user_msg = self._build_title_prompt(state)
-
-        try:
-            model_kwargs = {"thinking_enabled": False, "attach_tracing": False}
-            if self._app_config is not None:
-                model_kwargs["app_config"] = self._app_config
-            if config.model_name:
-                model = create_chat_model(name=config.model_name, **model_kwargs)
-            else:
-                model = create_chat_model(**model_kwargs)
-            response = await model.ainvoke(prompt, config={"run_name": "title_agent"})
-            title = self._parse_title(response.content)
-            if title:
-                return {"title": title}
-        except Exception:
-            logger.debug("Failed to generate async title; falling back to local title", exc_info=True)
-        return {"title": self._fallback_title(user_msg)}
+        user_msg, assistant_msg = self._extract_title_messages(state)
+        title = await title_agent.generate_title(
+            user_msg,
+            assistant_msg,
+            config,
+            app_config=self._app_config,
+            model_factory=create_chat_model,
+        )
+        return {"title": title}
 
     @override
     def after_model(self, state: TitleMiddlewareState, runtime: Runtime) -> dict | None:

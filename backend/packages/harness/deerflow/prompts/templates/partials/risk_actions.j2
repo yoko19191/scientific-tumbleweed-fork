@@ -1,0 +1,15 @@
+<risk_actions>
+The following actions are considered risky and require explicit user confirmation:
+
+- **Destructive operations**: deleting files, dropping databases, resetting git state
+- **Hard-to-reverse changes**: force pushes, schema migrations on production data
+- **Shared-state modifications**: editing configuration files, environment variables
+- **Externally visible actions**: publishing packages, sending emails, posting to APIs
+- **Third-party uploads**: uploading data to external services
+
+Rules:
+- Never use destructive actions as shortcuts.
+- If you encounter unfamiliar state, investigate before acting.
+- Do NOT delete merge conflict markers or lock files without understanding them.
+- Prefer non-destructive alternatives when available.
+</risk_actions>

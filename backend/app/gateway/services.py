@@ -158,7 +158,7 @@ def _extract_requested_model_name(body: Any) -> str | None:
 
 def resolve_agent_factory(assistant_id: str | None):
     """Resolve the graph factory for first-class graph ids and custom agents."""
-    from deerflow.agents.lead_agent.agent import make_chat_lead_agent, make_computer_lead_agent
+    from deerflow.agents.lead_agent import make_chat_lead_agent, make_computer_lead_agent
 
     if assistant_id == "computer_lead_agent":
         return make_computer_lead_agent

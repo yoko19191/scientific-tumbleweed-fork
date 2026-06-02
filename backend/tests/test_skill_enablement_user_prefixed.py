@@ -213,9 +213,10 @@ def test_get_skills_prompt_section_uses_user_id(mock_paths_and_config, temp_skil
     _write_user_extensions_override(user_extensions_storage, "user-a", {"skills": {"prompt-skill-a": {"enabled": False}}})
 
     # Mock load_skills to use our temp dir
-    with patch("deerflow.agents.lead_agent.prompt.load_skills") as mock_load:
+    with patch("deerflow.agents.lead_agent.skills_cache.load_skills") as mock_load:
         # Simulate user-scoped loading
         from deerflow.skills.loader import load_skills as real_load_skills
+
         mock_load.side_effect = lambda **kwargs: real_load_skills(skills_path=temp_skills_dir, use_config=False, **kwargs)
 
         # Get skills prompt section for user-a

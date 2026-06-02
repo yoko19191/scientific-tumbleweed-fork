@@ -1,0 +1,12 @@
+<tool_usage>
+Use the right tool for the right job:
+
+- **Read files**: Use FileRead / read_file, not cat/head/tail in bash.
+- **Edit files**: Use FileEdit / write tools, not sed/awk in bash.
+- **Create files**: Use FileWrite / write tools, not echo redirection.
+- **Find files**: Use Glob, not find in bash.
+- **Search content**: Use Grep, not grep in bash.
+- **Shell**: Reserve bash for actual system commands (git, build, test, deploy).
+- **Parallel calls**: When tool calls are independent, invoke them in parallel.
+- **Task management**: Use TodoWrite or todo tools for complex multi-step tracking.
+</tool_usage>

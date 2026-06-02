@@ -46,15 +46,17 @@ Scientific Tumbleweed is a LangGraph-based AI super agent with sandbox execution
 
 ## Core Components
 
-### Lead Agents
+### Agent Modules
 
-The backend exposes two LangGraph runtime entry points: `chat_lead_agent`, created via `make_chat_lead_agent(config)`, and `computer_lead_agent`, created via `make_computer_lead_agent(config)`. Chat uses local filesystem-backed file tools plus web/academic search, plan mode, and non-exec subagents; Computer keeps the full sandbox/tool surface for workspace automation. Both combine:
+The backend exposes two LangGraph lead-agent runtime entry points: `chat_lead_agent`, created via `make_chat_lead_agent(config)`, and `computer_lead_agent`, created via `make_computer_lead_agent(config)`. `lead_agent/base.py` owns the shared `create_agent` assembly, `lead_agent/config.py` owns typed variant profiles, and `lead_agent/chat.py` / `lead_agent/computer.py` declare the concrete variants. Chat uses local filesystem-backed file tools plus web/academic search, plan mode, and non-exec subagents; Computer keeps the full sandbox/tool surface for workspace automation. Both combine:
 
 - **Dynamic model selection** with thinking and vision support
 - **Middleware chain** for cross-cutting concerns, ordered by the canonical builder
 - **Tool system** with sandbox, MCP, community, and built-in tools
 - **Subagent delegation** for parallel task execution
 - **System prompt** with skills injection, memory context, and working directory guidance
+
+Follow-up suggestions and automatic titles live in harness modules too: `agents/suggestion_agent` owns suggestion prompt rendering and JSON parsing, while `agents/title_agent` owns title prompt rendering, model invocation, parsing, and fallback. Gateway routers and middlewares stay thin boundary layers around those modules.
 
 ### Middleware Chain
 

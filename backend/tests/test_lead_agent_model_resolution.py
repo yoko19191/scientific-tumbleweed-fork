@@ -6,7 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from deerflow.agents.lead_agent import agent as lead_agent_module
+from deerflow.agents.lead_agent import base as lead_agent_module
+from deerflow.agents.lead_agent.config import CHAT_PROFILE, COMPUTER_PROFILE
 from deerflow.agents.middlewares.loop_detection_middleware import LoopDetectionMiddleware
 from deerflow.config.app_config import AppConfig
 from deerflow.config.loop_detection_config import LoopDetectionConfig
@@ -41,6 +42,14 @@ def _disable_optional_middleware_factories(monkeypatch):
     monkeypatch.setattr(lead_agent_module, "_create_permission_middleware", lambda: None)
     monkeypatch.setattr(lead_agent_module, "_create_hook_middleware", lambda: None)
     monkeypatch.setattr(lead_agent_module, "_create_compaction_middleware", lambda: None)
+
+
+def _make_chat_lead_agent(config):
+    return lead_agent_module.build_lead_agent(CHAT_PROFILE, config)
+
+
+def _make_computer_lead_agent(config):
+    return lead_agent_module.build_lead_agent(COMPUTER_PROFILE, config)
 
 
 def test_resolve_model_name_falls_back_to_default(monkeypatch, caplog):
@@ -108,7 +117,7 @@ def test_make_computer_lead_agent_disables_thinking_when_model_does_not_support_
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
 
-    result = lead_agent_module.make_computer_lead_agent(
+    result = _make_computer_lead_agent(
         {
             "configurable": {
                 "model_name": "safe-model",
@@ -152,7 +161,7 @@ def test_make_computer_lead_agent_reads_runtime_options_from_context(monkeypatch
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
 
-    result = lead_agent_module.make_computer_lead_agent(
+    result = _make_computer_lead_agent(
         {
             "context": {
                 "model_name": "context-model",
@@ -189,7 +198,7 @@ def test_make_chat_lead_agent_uses_chat_defaults_and_file_tools(monkeypatch):
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
 
     config = {"configurable": {"model_name": "safe-model"}}
-    result = lead_agent_module.make_chat_lead_agent(config)
+    result = _make_chat_lead_agent(config)
 
     assert config["context"]["agent_variant"] == "chat"
     assert config["context"]["sandbox_provider_variant"] == "chat"
@@ -218,7 +227,7 @@ def test_make_computer_lead_agent_uses_computer_defaults(monkeypatch):
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
 
     config = {"configurable": {"model_name": "safe-model"}}
-    lead_agent_module.make_computer_lead_agent(config)
+    _make_computer_lead_agent(config)
 
     assert config["context"]["agent_variant"] == "computer"
     assert config["context"]["sandbox_provider_variant"] == "computer"
@@ -264,7 +273,7 @@ def test_make_computer_lead_agent_attaches_tracing_callbacks_at_graph_root(monke
         },
     }
 
-    lead_agent_module.make_computer_lead_agent(config)
+    _make_computer_lead_agent(config)
 
     assert config["callbacks"] == [existing_callback, sentinel_callback]
     assert create_model_calls
@@ -277,7 +286,7 @@ def test_make_computer_lead_agent_rejects_invalid_bootstrap_agent_name(monkeypat
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
 
     with pytest.raises(ValueError, match="Invalid agent name"):
-        lead_agent_module.make_computer_lead_agent(
+        _make_computer_lead_agent(
             {
                 "configurable": {
                     "model_name": "safe-model",

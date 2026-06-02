@@ -32,3 +32,60 @@ export function splitUnsupportedUploadFiles(fileList: File[] | FileList) {
     message: rejected.length > 0 ? MACOS_APP_BUNDLE_UPLOAD_MESSAGE : undefined,
   };
 }
+
+export const DEFAULT_UPLOAD_MAX_BODY_BYTES = 100 * 1024 * 1024;
+
+export function formatUploadSize(bytes: number | null | undefined) {
+  if (!bytes || bytes <= 0) {
+    return "unlimited";
+  }
+
+  const units = ["B", "KiB", "MiB", "GiB"] as const;
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const formatted =
+    Number.isInteger(value) || value >= 10 ? value.toFixed(0) : value.toFixed(1);
+  return `${formatted} ${units[unitIndex]}`;
+}
+
+export function splitUploadFilesBySize(
+  fileList: File[] | FileList,
+  options: {
+    maxBodyBytes: number | null | undefined;
+    currentBytes?: number;
+  },
+) {
+  const incoming = Array.from(fileList);
+  const maxBodyBytes = options.maxBodyBytes;
+  if (!maxBodyBytes || maxBodyBytes <= 0) {
+    return {
+      accepted: incoming,
+      rejected: [] as File[],
+    };
+  }
+
+  const accepted: File[] = [];
+  const rejected: File[] = [];
+  let usedBytes = options.currentBytes ?? 0;
+
+  for (const file of incoming) {
+    if (file.size > maxBodyBytes || usedBytes + file.size > maxBodyBytes) {
+      rejected.push(file);
+      continue;
+    }
+
+    accepted.push(file);
+    usedBytes += file.size;
+  }
+
+  return {
+    accepted,
+    rejected,
+  };
+}

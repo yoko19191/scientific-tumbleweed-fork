@@ -5,8 +5,15 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { InputGroup } from "@/components/ui/input-group";
-import type { PromptInputFilePart } from "@/core/uploads";
-import { splitUnsupportedUploadFiles } from "@/core/uploads";
+import { useI18n } from "@/core/i18n/hooks";
+import {
+  DEFAULT_UPLOAD_MAX_BODY_BYTES,
+  formatUploadSize,
+  splitUnsupportedUploadFiles,
+  splitUploadFilesBySize,
+  type PromptInputFilePart,
+  useUploadConfig,
+} from "@/core/uploads";
 import { cn } from "@/lib/utils";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -261,6 +268,8 @@ export const PromptInput = ({
   // Try to use a provider controller if present
   const controller = useOptionalPromptInputController();
   const usingProvider = !!controller;
+  const { t } = useI18n();
+  const uploadConfig = useUploadConfig();
 
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -385,6 +394,12 @@ export const PromptInput = ({
   const openFileDialog = usingProvider
     ? controller.attachments.openFileDialog
     : openFileDialogLocal;
+  const maxUploadBodyBytes = uploadConfig.data
+    ? uploadConfig.data.max_body_bytes
+    : DEFAULT_UPLOAD_MAX_BODY_BYTES;
+  const uploadLimitLabel = formatUploadSize(
+    maxUploadBodyBytes ?? DEFAULT_UPLOAD_MAX_BODY_BYTES,
+  );
 
   const sanitizeIncomingFiles = useCallback(
     (fileList: File[] | FileList) => {
@@ -398,9 +413,24 @@ export const PromptInput = ({
           toast.error(message);
         }
       }
-      return accepted;
+
+      const currentBytes = files.reduce(
+        (total, item) => total + (item.file?.size ?? 0),
+        0,
+      );
+      const { accepted: sized, rejected } = splitUploadFilesBySize(accepted, {
+        maxBodyBytes: maxUploadBodyBytes,
+        currentBytes,
+      });
+      if (rejected.length > 0 && maxUploadBodyBytes) {
+        toast.warning(
+          t.uploads.fileTooLargeWarning(rejected.length, uploadLimitLabel),
+        );
+      }
+
+      return sized;
     },
-    [onError],
+    [files, maxUploadBodyBytes, onError, t.uploads, uploadLimitLabel],
   );
 
   // Let provider know about our hidden file input so external menus can call openFileDialog()
@@ -625,4 +655,3 @@ export const PromptInput = ({
     </LocalAttachmentsContext.Provider>
   );
 };
-

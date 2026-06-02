@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   MACOS_APP_BUNDLE_UPLOAD_MESSAGE,
+  formatUploadSize,
   isLikelyMacOSAppBundle,
+  splitUploadFilesBySize,
   splitUnsupportedUploadFiles,
 } from "./file-validation.ts";
 
@@ -52,4 +54,48 @@ test("returns no message when every file is supported", () => {
   assert.equal(result.accepted.length, 1);
   assert.equal(result.rejected.length, 0);
   assert.equal(result.message, undefined);
+});
+
+test("rejects files larger than the configured upload body limit", () => {
+  const small = new File(["small"], "small.txt", { type: "text/plain" });
+  const large = new File(["larger-content"], "large.txt", {
+    type: "text/plain",
+  });
+
+  const result = splitUploadFilesBySize([small, large], {
+    maxBodyBytes: small.size + 1,
+  });
+
+  assert.deepEqual(
+    result.accepted.map((file) => file.name),
+    ["small.txt"],
+  );
+  assert.deepEqual(
+    result.rejected.map((file) => file.name),
+    ["large.txt"],
+  );
+});
+
+test("rejects files that would push the upload request over the limit", () => {
+  const first = new File(["aaaa"], "first.txt", { type: "text/plain" });
+  const second = new File(["bbbb"], "second.txt", { type: "text/plain" });
+
+  const result = splitUploadFilesBySize([first, second], {
+    maxBodyBytes: 6,
+    currentBytes: 2,
+  });
+
+  assert.deepEqual(
+    result.accepted.map((file) => file.name),
+    ["first.txt"],
+  );
+  assert.deepEqual(
+    result.rejected.map((file) => file.name),
+    ["second.txt"],
+  );
+});
+
+test("formats upload limits for display", () => {
+  assert.equal(formatUploadSize(100 * 1024 * 1024), "100 MiB");
+  assert.equal(formatUploadSize(null), "unlimited");
 });

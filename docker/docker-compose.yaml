@@ -107,6 +107,7 @@ services:
       - ${DEER_FLOW_CONFIG_PATH}:/app/backend/config.yaml:ro
       - ${DEER_FLOW_EXTENSIONS_CONFIG_PATH}:/app/backend/extensions_config.json:ro
       - ../skills:/app/skills:ro
+      - ../docker/nginx:/app/docker/nginx:ro
       - ${DEER_FLOW_HOME}:/app/backend/.deer-flow
       # DooD: AioSandboxProvider starts sandbox containers via host Docker daemon
       - ${DEER_FLOW_DOCKER_SOCKET}:/var/run/docker.sock
@@ -134,6 +135,7 @@ services:
       # DooD path/network translation
       - DEER_FLOW_HOST_BASE_DIR=${DEER_FLOW_HOME}
       - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_REPO_ROOT}/skills
+      - DEER_FLOW_NGINX_CONFIG_PATH=/app/docker/nginx/nginx.conf
       - DEER_FLOW_SANDBOX_HOST=host.docker.internal
     env_file:
       - ../.env

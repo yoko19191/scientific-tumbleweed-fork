@@ -31,6 +31,11 @@ export interface ListFilesResponse {
   count: number;
 }
 
+export interface UploadConfigResponse {
+  max_body_bytes: number | null;
+  max_body_size: string | null;
+}
+
 async function readErrorDetail(
   response: Response,
   fallback: string,
@@ -62,6 +67,23 @@ export async function uploadFiles(
 
   if (!response.ok) {
     throw new Error(await readErrorDetail(response, "Upload failed"));
+  }
+
+  return response.json();
+}
+
+/**
+ * Get upload limits exposed by the Gateway from nginx configuration
+ */
+export async function getUploadConfig(): Promise<UploadConfigResponse> {
+  const response = await fetchWithAuth(
+    `${getBackendBaseURL()}/api/uploads/config`,
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readErrorDetail(response, "Failed to load upload configuration"),
+    );
   }
 
   return response.json();

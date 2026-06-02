@@ -653,6 +653,10 @@ export const enUS: Translations = {
   uploads: {
     uploading: "Uploading...",
     uploadingFiles: "Uploading files, please wait...",
+    fileTooLargeWarning: (count: number, limit: string) =>
+      count === 1
+        ? `This file is larger than the upload limit (${limit}) and was not added.`
+        : `${count} files are larger than the upload limit (${limit}) and were not added.`,
   },
 
   subtasks: {

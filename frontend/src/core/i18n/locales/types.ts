@@ -350,6 +350,7 @@ export interface Translations {
   uploads: {
     uploading: string;
     uploadingFiles: string;
+    fileTooLargeWarning: (count: number, limit: string) => string;
   };
 
   // Subtasks

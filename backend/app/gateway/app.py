@@ -23,6 +23,7 @@ from app.gateway.routers import (
     suggestions,
     thread_runs,
     threads,
+    upload_config,
     uploads,
 )
 from deerflow.config.app_config import apply_logging_level, get_app_config
@@ -370,6 +371,9 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
 
     # Uploads API is mounted at /api/threads/{thread_id}/uploads
     app.include_router(uploads.router)
+
+    # Upload configuration API is mounted at /api/uploads
+    app.include_router(upload_config.router)
 
     # Thread cleanup API is mounted at /api/threads/{thread_id}
     app.include_router(threads.router)

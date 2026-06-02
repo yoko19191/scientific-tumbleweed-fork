@@ -638,6 +638,10 @@ export const zhCN: Translations = {
   uploads: {
     uploading: "上传中...",
     uploadingFiles: "文件上传中，请稍候...",
+    fileTooLargeWarning: (count: number, limit: string) =>
+      count === 1
+        ? `这个文件超过上传限制（${limit}），没有加入附件。`
+        : `${count} 个文件超过上传限制（${limit}），没有加入附件。`,
   },
 
   subtasks: {

@@ -7,8 +7,10 @@ import { useCallback } from "react";
 
 import {
   deleteUploadedFile,
+  getUploadConfig,
   listUploadedFiles,
   uploadFiles,
+  type UploadConfigResponse,
   type UploadedFileInfo,
   type UploadResponse,
 } from "./api";
@@ -27,6 +29,17 @@ export function useUploadFiles(threadId: string) {
         queryKey: ["uploads", "list", threadId],
       });
     },
+  });
+}
+
+/**
+ * Hook to read upload limits from Gateway/nginx configuration
+ */
+export function useUploadConfig() {
+  return useQuery<UploadConfigResponse, Error>({
+    queryKey: ["uploads", "config"],
+    queryFn: getUploadConfig,
+    staleTime: 30_000,
   });
 }
 

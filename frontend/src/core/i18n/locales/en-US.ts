@@ -426,10 +426,10 @@ export const enUS: Translations = {
     mode: "Mode",
     chatMode: "Chat",
     chatModeDescription:
-      "Lightweight conversation with files and subagents, no shell sandbox",
+      "Chat responds faster and is best for literature lookup, simple Q&A, and lightweight conversation.",
     computerMode: "Computer",
     computerModeDescription:
-      "Full workspace with shell sandbox, file tools, planning, and subagents",
+      "Computer is best for substantial code writing, bioinformatics data analysis, slides, and spreadsheets.",
     reasoningEffort: "Reasoning Effort",
     reasoningEffortNone: "None",
     reasoningEffortNoneDescription:

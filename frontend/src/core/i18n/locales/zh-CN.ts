@@ -420,11 +420,11 @@ export const zhCN: Translations = {
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
     mode: "模式",
-    chatMode: "对话",
-    chatModeDescription: "轻量对话，保留文件和子代理，不启动命令沙盒",
-    computerMode: "电脑",
+    chatMode: "Chat",
+    chatModeDescription: "Chat 响应更快，适合查阅文献、简单问答和轻量对话。",
+    computerMode: "Computer",
     computerModeDescription:
-      "完整工作区，包含命令沙盒、文件工具、计划模式和子代理",
+      "Computer 适合需要大量代码编写、生信数据分析、PPT 或表格制作的场景。",
     reasoningEffort: "推理深度",
     reasoningEffortNone: "关闭",
     reasoningEffortNoneDescription:

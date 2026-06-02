@@ -13,6 +13,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
 } from "react";
@@ -132,6 +133,26 @@ export function InputBox({
   const sandboxCapacityUnavailableForMode =
     sandboxCapacitySaturated && context.mode === "computer";
   const showWelcomeMode = isWelcomeMode ?? isNewThread;
+  const resolvedMode = getResolvedMode(context.mode);
+  const [computerIgniting, setComputerIgniting] = useState(false);
+  const previousModeRef = useRef<InputMode>(resolvedMode);
+
+  useEffect(() => {
+    const previousMode = previousModeRef.current;
+    previousModeRef.current = resolvedMode;
+
+    if (previousMode !== "computer" && resolvedMode === "computer") {
+      setComputerIgniting(true);
+      const timeout = window.setTimeout(() => {
+        setComputerIgniting(false);
+      }, 900);
+      return () => window.clearTimeout(timeout);
+    }
+
+    if (resolvedMode !== "computer") {
+      setComputerIgniting(false);
+    }
+  }, [resolvedMode]);
 
   useEffect(() => {
     if (models.length === 0) {
@@ -332,6 +353,12 @@ export function InputBox({
       <PromptInput
         className={cn(
           "bg-background/85 rounded-2xl backdrop-blur-sm transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-2xl",
+          resolvedMode === "computer" &&
+            !sandboxCapacityUnavailableForMode &&
+            "computer-input-active",
+          computerIgniting &&
+            !sandboxCapacityUnavailableForMode &&
+            "computer-input-ignite",
           sandboxCapacityUnavailableForMode &&
             "border-muted bg-muted/55 shadow-none grayscale-[0.15] *:data-[slot='input-group']:bg-muted/55",
           className,
@@ -608,7 +635,14 @@ export function InputBox({
           </PromptInputTools>
         </PromptInputFooter>
         {!showWelcomeMode && (
-          <div className="bg-background absolute right-0 -bottom-[17px] left-0 z-0 h-4"></div>
+          <div
+            className={cn(
+              "pointer-events-none absolute right-0 -bottom-[17px] left-0 z-0 h-4",
+              resolvedMode === "computer" && !sandboxCapacityUnavailableForMode
+                ? "bg-transparent"
+                : "bg-background",
+            )}
+          />
         )}
       </PromptInput>
 

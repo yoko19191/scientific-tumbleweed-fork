@@ -23,13 +23,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_LANGGRAPH_URL = "http://localhost:2024"
 DEFAULT_GATEWAY_URL = "http://localhost:8001"
-DEFAULT_ASSISTANT_ID = "lead_agent"
+DEFAULT_ASSISTANT_ID = "computer_lead_agent"
+KNOWN_GRAPH_IDS = {"chat_lead_agent", "computer_lead_agent"}
 
 DEFAULT_RUN_CONFIG: dict[str, Any] = {"recursion_limit": 100}
 DEFAULT_RUN_CONTEXT: dict[str, Any] = {
     "thinking_enabled": True,
-    "is_plan_mode": False,
-    "subagent_enabled": False,
+    "is_plan_mode": True,
+    "subagent_enabled": True,
 }
 STREAM_UPDATE_MIN_INTERVAL_SECONDS = 0.35
 THREAD_BUSY_MESSAGE = "This conversation is already processing another request. Please wait for it to finish and try again."
@@ -128,12 +129,12 @@ def _normalize_custom_agent_name(raw_value: str) -> str:
     """Normalize legacy channel assistant IDs into valid custom agent names."""
     candidate = raw_value.strip().replace("_", "-")
     if not candidate:
-        raise InvalidChannelSessionConfigError("Channel session assistant_id is empty. Use 'lead_agent' or a valid custom agent name.")
+        raise InvalidChannelSessionConfigError("Channel session assistant_id is empty. Use 'chat_lead_agent', 'computer_lead_agent', or a valid custom agent name.")
     try:
         return normalize_agent_name(candidate)
     except ValueError as exc:
         raise InvalidChannelSessionConfigError(
-            f"Invalid channel session assistant_id {raw_value!r}. Use 'lead_agent' or a custom agent name containing only letters, digits, and hyphens."
+            f"Invalid channel session assistant_id {raw_value!r}. Use 'chat_lead_agent', 'computer_lead_agent', or a custom agent name containing only letters, digits, and hyphens."
         ) from exc
 
 
@@ -590,10 +591,10 @@ class ChannelManager:
             {"thread_id": thread_id},
         )
 
-        # Custom agents are implemented as lead_agent + agent_name context.
+        # Custom agents are implemented as computer_lead_agent + agent_name context.
         # Keep backward compatibility for channel configs that set
-        # assistant_id: <custom-agent-name> by routing through lead_agent.
-        if assistant_id != DEFAULT_ASSISTANT_ID:
+        # assistant_id: <custom-agent-name> by routing through computer mode.
+        if assistant_id not in KNOWN_GRAPH_IDS:
             run_context.setdefault("agent_name", _normalize_custom_agent_name(assistant_id))
             assistant_id = DEFAULT_ASSISTANT_ID
 

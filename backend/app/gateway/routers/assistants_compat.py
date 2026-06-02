@@ -13,7 +13,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.gateway.deps import get_current_user_id
@@ -42,16 +42,16 @@ class AssistantSearchRequest(BaseModel):
     offset: int = 0
 
 
-def _get_default_assistant() -> AssistantResponse:
-    """Return the default lead_agent assistant."""
+def _get_graph_assistant(assistant_id: str, description: str) -> AssistantResponse:
+    """Return a first-class graph assistant."""
     now = datetime.now(UTC).isoformat()
     return AssistantResponse(
-        assistant_id="lead_agent",
-        graph_id="lead_agent",
-        name="lead_agent",
+        assistant_id=assistant_id,
+        graph_id=assistant_id,
+        name=assistant_id,
         config={},
         metadata={"created_by": "system"},
-        description="Scientific Tumbleweed lead agent",
+        description=description,
         created_at=now,
         updated_at=now,
         version=1,
@@ -60,7 +60,10 @@ def _get_default_assistant() -> AssistantResponse:
 
 def _list_assistants(user_id: str | None = None) -> list[AssistantResponse]:
     """List all available assistants from config."""
-    assistants = [_get_default_assistant()]
+    assistants = [
+        _get_graph_assistant("chat_lead_agent", "Scientific Tumbleweed chat lead agent"),
+        _get_graph_assistant("computer_lead_agent", "Scientific Tumbleweed computer lead agent"),
+    ]
 
     # Also include custom agents from config.yaml agents directory
     try:
@@ -71,7 +74,7 @@ def _list_assistants(user_id: str | None = None) -> list[AssistantResponse]:
             assistants.append(
                 AssistantResponse(
                     assistant_id=agent_cfg.name,
-                    graph_id="lead_agent",  # All agents use the same graph
+                    graph_id="computer_lead_agent",
                     name=agent_cfg.name,
                     config={},
                     metadata={"created_by": "user"},
@@ -91,7 +94,7 @@ def _list_assistants(user_id: str | None = None) -> list[AssistantResponse]:
 async def search_assistants(body: AssistantSearchRequest | None = None, user_id: str = Depends(get_current_user_id)) -> list[AssistantResponse]:
     """Search assistants.
 
-    Returns all registered assistants (lead_agent + custom agents from config).
+    Returns all registered assistants (chat/computer lead graphs + custom agents from config).
     """
     assistants = _list_assistants(user_id)
 
@@ -126,7 +129,7 @@ async def get_assistant_graph(assistant_id: str, user_id: str = Depends(get_curr
         raise HTTPException(status_code=404, detail=f"Assistant {assistant_id} not found")
 
     return {
-        "graph_id": "lead_agent",
+        "graph_id": assistant_id if assistant_id in {"chat_lead_agent", "computer_lead_agent"} else "computer_lead_agent",
         "nodes": [],
         "edges": [],
     }
@@ -143,7 +146,7 @@ async def get_assistant_schemas(assistant_id: str, user_id: str = Depends(get_cu
         raise HTTPException(status_code=404, detail=f"Assistant {assistant_id} not found")
 
     return {
-        "graph_id": "lead_agent",
+        "graph_id": assistant_id if assistant_id in {"chat_lead_agent", "computer_lead_agent"} else "computer_lead_agent",
         "input_schema": {},
         "output_schema": {},
         "state_schema": {},

@@ -143,10 +143,18 @@ export function useThreadStream({
       context.tone_style,
     ],
   );
+  const assistantId = useMemo(() => {
+    if (context.agent_name) {
+      return "computer_lead_agent";
+    }
+    return context.mode === "computer"
+      ? "computer_lead_agent"
+      : "chat_lead_agent";
+  }, [context.agent_name, context.mode]);
 
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
-    assistantId: "lead_agent",
+    assistantId,
     threadId: onStreamThreadId,
     reconnectOnMount: runMetadataStorageRef.current
       ? () => runMetadataStorageRef.current!
@@ -508,19 +516,8 @@ export function useThreadStream({
             context: {
               ...extraContext,
               ...context,
-              thinking_enabled: true,
-              is_plan_mode:
-                context.mode === "agent" || context.mode === "swarm",
-              subagent_enabled: context.mode === "swarm",
-              max_concurrent_subagents:
-                context.mode === "swarm" ? 5 : undefined,
-              reasoning_effort:
-                context.reasoning_effort ??
-                (context.mode === "swarm"
-                  ? "high"
-                  : context.mode === "agent"
-                    ? "high"
-                    : "medium"),
+              thinking_enabled: context.reasoning_effort !== "none",
+              reasoning_effort: context.reasoning_effort,
               thread_id: threadId,
             },
           },

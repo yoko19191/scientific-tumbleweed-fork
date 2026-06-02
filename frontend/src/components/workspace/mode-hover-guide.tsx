@@ -5,21 +5,19 @@ import type { Translations } from "@/core/i18n/locales/types";
 
 import { Tooltip } from "./tooltip";
 
-export type AgentMode = "chat" | "agent" | "swarm";
+export type AgentMode = "chat" | "computer";
 
 function getModeLabelKey(
   mode: AgentMode,
 ): keyof Pick<
   Translations["inputBox"],
-  "chatMode" | "agentMode" | "swarmMode"
+  "chatMode" | "computerMode"
 > {
   switch (mode) {
     case "chat":
       return "chatMode";
-    case "agent":
-      return "agentMode";
-    case "swarm":
-      return "swarmMode";
+    case "computer":
+      return "computerMode";
   }
 }
 
@@ -27,15 +25,13 @@ function getModeDescriptionKey(
   mode: AgentMode,
 ): keyof Pick<
   Translations["inputBox"],
-  "chatModeDescription" | "agentModeDescription" | "swarmModeDescription"
+  "chatModeDescription" | "computerModeDescription"
 > {
   switch (mode) {
     case "chat":
       return "chatModeDescription";
-    case "agent":
-      return "agentModeDescription";
-    case "swarm":
-      return "swarmModeDescription";
+    case "computer":
+      return "computerModeDescription";
   }
 }
 

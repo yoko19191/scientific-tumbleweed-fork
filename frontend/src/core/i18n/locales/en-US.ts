@@ -426,13 +426,10 @@ export const enUS: Translations = {
     mode: "Mode",
     chatMode: "Chat",
     chatModeDescription:
-      "Simple conversations and quick queries, works with all models",
-    agentMode: "Agent",
-    agentModeDescription:
-      "Reasoning, planning and executing; best for code, analysis, and longer tasks",
-    swarmMode: "Swarm",
-    swarmModeDescription:
-      "Up to 5 subagents working in parallel; best for research and complex multi-step tasks",
+      "Lightweight conversation with files and subagents, no shell sandbox",
+    computerMode: "Computer",
+    computerModeDescription:
+      "Full workspace with shell sandbox, file tools, planning, and subagents",
     reasoningEffort: "Reasoning Effort",
     reasoningEffortNone: "None",
     reasoningEffortNoneDescription:

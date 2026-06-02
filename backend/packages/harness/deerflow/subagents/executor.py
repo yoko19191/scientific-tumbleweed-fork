@@ -21,6 +21,7 @@ from langchain_core.runnables import RunnableConfig
 
 from deerflow.agents.thread_state import SandboxState, ThreadDataState, ThreadState
 from deerflow.models import create_chat_model
+from deerflow.prompts import PromptContext, build_prompt
 from deerflow.skills.tool_policy import filter_tools_by_skill_allowed_tools
 from deerflow.skills.types import Skill
 from deerflow.subagents.config import SubagentConfig
@@ -305,6 +306,7 @@ class SubagentExecutor:
         thread_data: ThreadDataState | None = None,
         thread_id: str | None = None,
         trace_id: str | None = None,
+        sandbox_provider_variant: str | None = None,
         app_config: "AppConfig | None" = None,
     ):
         """Initialize the executor.
@@ -323,6 +325,7 @@ class SubagentExecutor:
         self.sandbox_state = sandbox_state
         self.thread_data = thread_data
         self.thread_id = thread_id
+        self.sandbox_provider_variant = sandbox_provider_variant
         self.app_config = app_config
         # Generate trace_id if not provided (for top-level calls)
         self.trace_id = trace_id or str(uuid.uuid4())[:8]
@@ -430,18 +433,24 @@ class SubagentExecutor:
         filtered_tools = self._apply_skill_allowed_tools(skills)
         skill_messages = await self._load_skill_messages(skills)
 
-        # Combine system_prompt and skills into a single SystemMessage.
+        # Combine the factory-rendered prompt and skills into a single
+        # SystemMessage. Some LLM APIs reject multiple SystemMessages with
+        # "System message must be at the beginning."
+        skill_messages_text = "\n\n".join(str(skill_msg.content) for skill_msg in skill_messages)
+        system_prompt = build_prompt(
+            self.config.name,
+            PromptContext(
+                custom_prompt=self.config.system_prompt or "",
+                skill_messages=skill_messages_text,
+            ),
+        )
+
+        # Combine system prompt and skills into a single SystemMessage.
         # Some LLM APIs reject multiple SystemMessages with
         # "System message must be at the beginning."
-        system_parts: list[str] = []
-        if self.config.system_prompt:
-            system_parts.append(self.config.system_prompt)
-        for skill_msg in skill_messages:
-            system_parts.append(skill_msg.content)
-
         messages: list[Any] = []
-        if system_parts:
-            messages.append(SystemMessage(content="\n\n".join(system_parts)))
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
 
         # Then the actual task
         messages.append(HumanMessage(content=task))
@@ -494,6 +503,9 @@ class SubagentExecutor:
             if self.thread_id:
                 run_config["configurable"] = {"thread_id": self.thread_id}
                 context["thread_id"] = self.thread_id
+            if self.sandbox_provider_variant:
+                context["agent_variant"] = self.sandbox_provider_variant
+                context["sandbox_provider_variant"] = self.sandbox_provider_variant
             if self.app_config is not None:
                 context["app_config"] = self.app_config
 

@@ -13,4 +13,4 @@ def resolve_root_run_name(config: Mapping[str, Any], assistant_id: str | None) -
             agent_name = container.get("agent_name")
             if isinstance(agent_name, str) and agent_name.strip():
                 return agent_name
-    return assistant_id or "lead_agent"
+    return assistant_id or "chat_lead_agent"

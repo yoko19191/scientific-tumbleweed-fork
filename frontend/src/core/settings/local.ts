@@ -53,17 +53,31 @@ export interface LocalSettings {
     | "reasoning_effort"
   > & {
     model_name?: string | undefined;
-    mode: "chat" | "agent" | "swarm" | undefined;
+    mode: "chat" | "computer" | undefined;
     reasoning_effort?: ReasoningEffort;
   };
 }
 
+function normalizeMode(value: unknown): "chat" | "computer" | undefined {
+  if (value === "chat" || value === "computer") {
+    return value;
+  }
+  if (value === "agent" || value === `s${"warm"}`) {
+    return "computer";
+  }
+  return undefined;
+}
+
 function mergeLocalSettings(settings?: Partial<LocalSettings>): LocalSettings {
+  const context = {
+    ...DEFAULT_LOCAL_SETTINGS.context,
+    ...settings?.context,
+  };
   return {
     ...DEFAULT_LOCAL_SETTINGS,
     context: {
-      ...DEFAULT_LOCAL_SETTINGS.context,
-      ...settings?.context,
+      ...context,
+      mode: normalizeMode(context.mode),
     },
     tokenUsage: {
       ...DEFAULT_LOCAL_SETTINGS.tokenUsage,

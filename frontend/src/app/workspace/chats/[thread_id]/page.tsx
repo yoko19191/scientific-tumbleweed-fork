@@ -237,8 +237,7 @@ export default function ChatPage() {
 
   const todos = thread.values.todos ?? [];
   const showSandboxCapacity =
-    isNewThread &&
-    (settings.context.mode === "agent" || settings.context.mode === "swarm");
+    isNewThread && settings.context.mode === "computer";
 
   // Show inaccessible state when thread is not owned by the current user
   if (threadInaccessible) {

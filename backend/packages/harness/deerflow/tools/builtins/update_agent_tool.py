@@ -33,11 +33,13 @@ def update_agent(
     skills: list[str] | None = None,
     tool_groups: list[str] | None = None,
     model: str | None = None,
+    variant: str | None = None,
 ) -> Command:
     """Persist updates to the current custom agent's SOUL.md and config.yaml.
 
     Use this when the user asks to refine the current custom agent's identity,
-    description, skill whitelist, tool-group whitelist, or default model. Only
+    description, skill whitelist, tool-group whitelist, default model, or
+    chat/computer variant. Only
     fields explicitly passed are updated; omitted fields keep their existing
     values. Pass soul as the full replacement SOUL.md content.
 
@@ -47,9 +49,10 @@ def update_agent(
         skills: Optional skill whitelist. [] means no skills; omit means unchanged.
         tool_groups: Optional tool-group whitelist. [] means empty; omit means unchanged.
         model: Optional model override, which must exist in config.yaml models.
+        variant: Optional runtime variant, either "chat" or "computer".
     """
-    if soul is None and description is None and skills is None and tool_groups is None and model is None:
-        return _error("No fields provided. Pass at least one of: soul, description, skills, tool_groups, model.", runtime)
+    if soul is None and description is None and skills is None and tool_groups is None and model is None and variant is None:
+        return _error("No fields provided. Pass at least one of: soul, description, skills, tool_groups, model, variant.", runtime)
 
     agent_name_raw = runtime.context.get("agent_name") if runtime.context else None
     try:
@@ -64,6 +67,8 @@ def update_agent(
 
     if model is not None and get_app_config().get_model_config(model) is None:
         return _error(f"Unknown model '{model}'. Pass a model name that exists in config.yaml.", runtime)
+    if variant is not None and variant not in {"chat", "computer"}:
+        return _error("Invalid variant. Expected 'chat' or 'computer'.", runtime)
 
     store = CustomAgentStore()
     try:
@@ -91,6 +96,12 @@ def update_agent(
     if model is not None and model != existing_cfg.model:
         updated_fields.append("model")
 
+    new_variant = variant if variant is not None else existing_cfg.variant
+    if new_variant is not None:
+        config_data["variant"] = new_variant
+    if variant is not None and variant != existing_cfg.variant:
+        updated_fields.append("variant")
+
     new_tool_groups = tool_groups if tool_groups is not None else existing_cfg.tool_groups
     if new_tool_groups is not None:
         config_data["tool_groups"] = new_tool_groups
@@ -112,7 +123,7 @@ def update_agent(
         return _message(f"No changes applied to agent '{agent_name}'. The provided values matched the existing configuration.", runtime)
 
     try:
-        if any(field in updated_fields for field in ("description", "model", "tool_groups", "skills")):
+        if any(field in updated_fields for field in ("description", "model", "variant", "tool_groups", "skills")):
             store.write_config(AgentConfig(**config_data), user_id=user_id)
         if soul_changed and soul is not None:
             store.write_soul(agent_name, soul, user_id=user_id)

@@ -181,10 +181,8 @@ export interface Translations {
     mode: string;
     chatMode: string;
     chatModeDescription: string;
-    agentMode: string;
-    agentModeDescription: string;
-    swarmMode: string;
-    swarmModeDescription: string;
+    computerMode: string;
+    computerModeDescription: string;
     reasoningEffort: string;
     reasoningEffortNone: string;
     reasoningEffortNoneDescription: string;

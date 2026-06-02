@@ -87,7 +87,7 @@ def test_resolve_model_name_raises_when_no_models_configured(monkeypatch):
         lead_agent_module._resolve_model_name("missing-model")
 
 
-def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkeypatch):
+def test_make_computer_lead_agent_disables_thinking_when_model_does_not_support_it(monkeypatch):
     app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
 
     import deerflow.tools as tools_module
@@ -108,7 +108,7 @@ def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkey
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
 
-    result = lead_agent_module.make_lead_agent(
+    result = lead_agent_module.make_computer_lead_agent(
         {
             "configurable": {
                 "model_name": "safe-model",
@@ -125,7 +125,7 @@ def test_make_lead_agent_disables_thinking_when_model_does_not_support_it(monkey
     assert result["model"] is not None
 
 
-def test_make_lead_agent_reads_runtime_options_from_context(monkeypatch):
+def test_make_computer_lead_agent_reads_runtime_options_from_context(monkeypatch):
     app_config = _make_app_config(
         [
             _make_model("default-model", supports_thinking=False),
@@ -152,7 +152,7 @@ def test_make_lead_agent_reads_runtime_options_from_context(monkeypatch):
     monkeypatch.setattr(lead_agent_module, "create_chat_model", _fake_create_chat_model)
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
 
-    result = lead_agent_module.make_lead_agent(
+    result = lead_agent_module.make_computer_lead_agent(
         {
             "context": {
                 "model_name": "context-model",
@@ -175,7 +175,64 @@ def test_make_lead_agent_reads_runtime_options_from_context(monkeypatch):
     assert result["model"] is not None
 
 
-def test_make_lead_agent_attaches_tracing_callbacks_at_graph_root(monkeypatch):
+def test_make_chat_lead_agent_uses_chat_defaults_and_file_tools(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    import deerflow.tools as tools_module
+
+    get_available_tools = MagicMock(return_value=[])
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", get_available_tools)
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "_load_enabled_skills_for_tool_policy", lambda available_skills, *, app_config: [])
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: object())
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+
+    config = {"configurable": {"model_name": "safe-model"}}
+    result = lead_agent_module.make_chat_lead_agent(config)
+
+    assert config["context"]["agent_variant"] == "chat"
+    assert config["context"]["sandbox_provider_variant"] == "chat"
+    assert config["context"]["is_plan_mode"] is True
+    assert config["context"]["subagent_enabled"] is True
+    assert config["context"]["max_concurrent_subagents"] == 3
+    get_available_tools.assert_called_once_with(
+        model_name="safe-model",
+        groups=lead_agent_module.CHAT_TOOL_GROUPS,
+        subagent_enabled=True,
+    )
+    assert "Not available in the current sandbox configuration" in result["system_prompt"]
+
+
+def test_make_computer_lead_agent_uses_computer_defaults(monkeypatch):
+    app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
+
+    import deerflow.tools as tools_module
+
+    get_available_tools = MagicMock(return_value=[])
+    monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
+    monkeypatch.setattr(tools_module, "get_available_tools", get_available_tools)
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "_load_enabled_skills_for_tool_policy", lambda available_skills, *, app_config: [])
+    monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: object())
+    monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
+
+    config = {"configurable": {"model_name": "safe-model"}}
+    lead_agent_module.make_computer_lead_agent(config)
+
+    assert config["context"]["agent_variant"] == "computer"
+    assert config["context"]["sandbox_provider_variant"] == "computer"
+    assert config["context"]["is_plan_mode"] is True
+    assert config["context"]["subagent_enabled"] is True
+    assert config["context"]["max_concurrent_subagents"] == 5
+    get_available_tools.assert_called_once_with(
+        model_name="safe-model",
+        groups=None,
+        subagent_enabled=True,
+    )
+
+
+def test_make_computer_lead_agent_attaches_tracing_callbacks_at_graph_root(monkeypatch):
     app_config = _make_app_config([_make_model("trace-model", supports_thinking=False)])
 
     import deerflow.tools as tools_module
@@ -207,20 +264,20 @@ def test_make_lead_agent_attaches_tracing_callbacks_at_graph_root(monkeypatch):
         },
     }
 
-    lead_agent_module.make_lead_agent(config)
+    lead_agent_module.make_computer_lead_agent(config)
 
     assert config["callbacks"] == [existing_callback, sentinel_callback]
     assert create_model_calls
     assert all(call["attach_tracing"] is False for call in create_model_calls)
 
 
-def test_make_lead_agent_rejects_invalid_bootstrap_agent_name(monkeypatch):
+def test_make_computer_lead_agent_rejects_invalid_bootstrap_agent_name(monkeypatch):
     app_config = _make_app_config([_make_model("safe-model", supports_thinking=False)])
 
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
 
     with pytest.raises(ValueError, match="Invalid agent name"):
-        lead_agent_module.make_lead_agent(
+        lead_agent_module.make_computer_lead_agent(
             {
                 "configurable": {
                     "model_name": "safe-model",

@@ -1,6 +1,6 @@
 import type { Model, ReasoningEffort } from "@/core/models/types";
 
-export type InputMode = "chat" | "agent" | "swarm";
+export type InputMode = "chat" | "computer";
 export type { ReasoningEffort };
 
 export const REASONING_EFFORT_VALUES = [
@@ -22,27 +22,19 @@ export const DEFAULT_REASONING_EFFORT_LEVELS: ReasoningEffort[] = [
 
 export function getResolvedMode(
   mode: InputMode | undefined,
-  supportsThinking: boolean,
 ): InputMode {
-  const validModes = new Set<InputMode>(["chat", "agent", "swarm"]);
+  const validModes = new Set<InputMode>(["chat", "computer"]);
   const effectiveMode =
     mode && validModes.has(mode) ? mode : undefined;
 
-  if (!supportsThinking && effectiveMode !== "chat") {
-    return "chat";
-  }
   if (effectiveMode) {
     return effectiveMode;
   }
-  return supportsThinking ? "agent" : "chat";
+  return "chat";
 }
 
 export function isReasoningEffort(value: string | undefined | null): value is ReasoningEffort {
   return REASONING_EFFORT_VALUES.includes(value as ReasoningEffort);
-}
-
-export function getModeDefaultReasoningEffort(mode: InputMode | undefined): ReasoningEffort {
-  return mode === "swarm" ? "high" : mode === "agent" ? "high" : "medium";
 }
 
 export function getReasoningEffortLevels(model: Model | undefined): ReasoningEffort[] {
@@ -57,8 +49,6 @@ export function getReasoningEffortLevels(model: Model | undefined): ReasoningEff
 export function resolveReasoningEffort(
   current: ReasoningEffort | undefined,
   model: Model | undefined,
-  mode: InputMode | undefined,
-  preferModeDefault = false,
 ): ReasoningEffort | undefined {
   if (!model?.supports_reasoning_effort) {
     return undefined;
@@ -67,10 +57,7 @@ export function resolveReasoningEffort(
   const modelDefault = isReasoningEffort(model.default_reasoning_effort)
     ? model.default_reasoning_effort
     : undefined;
-  const modeDefault = getModeDefaultReasoningEffort(mode);
-  const candidates = preferModeDefault
-    ? [modeDefault, modelDefault, current, levels[0]]
-    : [current, modelDefault, modeDefault, levels[0]];
+  const candidates = [current, modelDefault, levels[0]];
   return candidates.find((effort): effort is ReasoningEffort =>
     Boolean(effort && levels.includes(effort)),
   );

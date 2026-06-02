@@ -1,7 +1,7 @@
 """Canonical middleware builder — single source of truth for chain assembly.
 
-Both ``make_lead_agent`` (config-driven) and ``create_deerflow_agent``
-(SDK-driven) delegate to this builder so the middleware order is consistent.
+The config-driven LangGraph factories and ``create_deerflow_agent`` (SDK-driven)
+delegate to this builder so the middleware order is consistent.
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ def build_ordered_middleware_chain(
     summarization: MiddlewareSlot = None,
     compaction: MiddlewareSlot = None,
     plan_mode: MiddlewareSlot = None,
+    prompt_format: MiddlewareSlot = None,
     token_usage: MiddlewareSlot = None,
     title: MiddlewareSlot = None,
     memory: MiddlewareSlot = None,
@@ -70,6 +71,7 @@ def build_ordered_middleware_chain(
         summarization,
         compaction,
         plan_mode,
+        prompt_format,
         token_usage,
         title,
         memory,

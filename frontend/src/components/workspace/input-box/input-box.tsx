@@ -7,7 +7,6 @@ import {
   CheckIcon,
   EyeIcon,
   MessageCircleIcon,
-  NetworkIcon,
 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -97,7 +96,7 @@ export function InputBox({
     AgentThreadContext,
     "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
   > & {
-    mode: "chat" | "agent" | "swarm" | undefined;
+    mode: "chat" | "computer" | undefined;
     reasoning_effort?: ReasoningEffort;
     tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
   };
@@ -111,7 +110,7 @@ export function InputBox({
       AgentThreadContext,
       "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
     > & {
-      mode: "chat" | "agent" | "swarm" | undefined;
+      mode: "chat" | "computer" | undefined;
       reasoning_effort?: ReasoningEffort;
       tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
     },
@@ -131,8 +130,7 @@ export function InputBox({
   const sandboxCapacitySaturated =
     sandboxCapacity?.enabled === true && sandboxCapacity.saturated;
   const sandboxCapacityUnavailableForMode =
-    sandboxCapacitySaturated &&
-    (context.mode === "agent" || context.mode === "swarm");
+    sandboxCapacitySaturated && context.mode === "computer";
   const showWelcomeMode = isWelcomeMode ?? isNewThread;
 
   useEffect(() => {
@@ -141,13 +139,11 @@ export function InputBox({
     }
     const currentModel = models.find((m) => m.name === context.model_name);
     const fallbackModel = currentModel ?? models[0]!;
-    const supportsThinking = fallbackModel.supports_thinking ?? false;
     const nextModelName = fallbackModel.name;
-    const nextMode = getResolvedMode(context.mode, supportsThinking);
+    const nextMode = getResolvedMode(context.mode);
     const nextEffort = resolveReasoningEffort(
       context.reasoning_effort,
       fallbackModel,
-      nextMode,
     );
 
     if (
@@ -175,11 +171,6 @@ export function InputBox({
 
   const resolvedModelName = selectedModel?.name;
 
-  const supportThinking = useMemo(
-    () => selectedModel?.supports_thinking ?? false,
-    [selectedModel],
-  );
-
   const supportReasoningEffort = useMemo(
     () => selectedModel?.supports_reasoning_effort ?? false,
     [selectedModel],
@@ -196,11 +187,10 @@ export function InputBox({
       if (!model) {
         return;
       }
-      const nextMode = getResolvedMode(context.mode, model.supports_thinking ?? false);
+      const nextMode = getResolvedMode(context.mode);
       const nextEffort = resolveReasoningEffort(
         context.reasoning_effort,
         model,
-        nextMode,
       );
       onContextChange?.({
         ...context,
@@ -215,42 +205,26 @@ export function InputBox({
 
   const handleModeSelect = useCallback(
     (mode: InputMode) => {
-      const nextMode = getResolvedMode(mode, supportThinking);
+      const nextMode = getResolvedMode(mode);
       if (
         sandboxCapacitySaturated &&
-        (nextMode === "agent" || nextMode === "swarm")
+        nextMode === "computer"
       ) {
-        const nextEffort = resolveReasoningEffort(
-          context.reasoning_effort,
-          selectedModel,
-          "chat",
-          true,
-        );
         onContextChange?.({
           ...context,
           mode: "chat",
-          reasoning_effort: nextEffort,
         });
         setSandboxCapacityWarningOpen(true);
         return;
       }
-      const nextEffort = resolveReasoningEffort(
-        context.reasoning_effort,
-        selectedModel,
-        nextMode,
-        true,
-      );
       onContextChange?.({
         ...context,
         mode: nextMode,
-        reasoning_effort: nextEffort,
       });
     },
     [
       onContextChange,
       context,
-      supportThinking,
-      selectedModel,
       sandboxCapacitySaturated,
     ],
   );
@@ -293,17 +267,11 @@ export function InputBox({
       }
       if (
         sandboxCapacitySaturated &&
-        (context.mode === "agent" || context.mode === "swarm")
+        context.mode === "computer"
       ) {
-        const nextEffort = resolveReasoningEffort(
-          context.reasoning_effort,
-          selectedModel,
-          "chat",
-        );
         onContextChange?.({
           ...context,
           mode: "chat",
-          reasoning_effort: nextEffort,
         });
         setSandboxCapacityWarningOpen(true);
         return;
@@ -317,15 +285,10 @@ export function InputBox({
           model_name: resolvedModelName,
           mode: getResolvedMode(
             context.mode,
-            selectedModel?.supports_thinking ?? false,
           ),
           reasoning_effort: resolveReasoningEffort(
             context.reasoning_effort,
             selectedModel,
-            getResolvedMode(
-              context.mode,
-              selectedModel?.supports_thinking ?? false,
-            ),
           ),
         });
         setTimeout(() => onSubmit?.(message), 0);
@@ -335,7 +298,6 @@ export function InputBox({
       const nextEffort = resolveReasoningEffort(
         context.reasoning_effort,
         selectedModel,
-        context.mode,
       );
       if (context.reasoning_effort !== nextEffort) {
         onContextChange?.({
@@ -422,9 +384,7 @@ export function InputBox({
             <PromptInputActionMenu>
               <ModeHoverGuide
                 mode={
-                  context.mode === "chat" ||
-                  context.mode === "agent" ||
-                  context.mode === "swarm"
+                  context.mode === "chat" || context.mode === "computer"
                     ? context.mode
                     : "chat"
                 }
@@ -434,17 +394,13 @@ export function InputBox({
                     {context.mode === "chat" && (
                       <MessageCircleIcon className="size-3" />
                     )}
-                    {context.mode === "agent" && (
+                    {context.mode === "computer" && (
                       <BotIcon className="size-3" />
-                    )}
-                    {context.mode === "swarm" && (
-                      <NetworkIcon className="size-3" />
                     )}
                   </div>
                   <div className="text-xs font-normal">
                     {(context.mode === "chat" && t.inputBox.chatMode) ||
-                      (context.mode === "agent" && t.inputBox.agentMode) ||
-                      (context.mode === "swarm" && t.inputBox.swarmMode)}
+                      (context.mode === "computer" && t.inputBox.computerMode)}
                   </div>
                 </PromptInputActionMenuTrigger>
               </ModeHoverGuide>
@@ -483,68 +439,35 @@ export function InputBox({
                         <div className="ml-auto size-4" />
                       )}
                     </PromptInputActionMenuItem>
-                    {supportThinking && (
-                      <PromptInputActionMenuItem
-                        className={cn(
-                          context.mode === "agent"
-                            ? "text-accent-foreground"
-                            : "text-muted-foreground/65",
-                        )}
-                        onSelect={() => handleModeSelect("agent")}
-                      >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-1 font-bold">
-                            <BotIcon
-                              className={cn(
-                                "mr-2 size-4",
-                                context.mode === "agent" &&
-                                  "text-accent-foreground",
-                              )}
-                            />
-                            {t.inputBox.agentMode}
-                          </div>
-                          <div className="pl-7 text-xs">
-                            {t.inputBox.agentModeDescription}
-                          </div>
+                    <PromptInputActionMenuItem
+                      className={cn(
+                        context.mode === "computer"
+                          ? "text-accent-foreground"
+                          : "text-muted-foreground/65",
+                      )}
+                      onSelect={() => handleModeSelect("computer")}
+                    >
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-1 font-bold">
+                          <BotIcon
+                            className={cn(
+                              "mr-2 size-4",
+                              context.mode === "computer" &&
+                                "text-accent-foreground",
+                            )}
+                          />
+                          {t.inputBox.computerMode}
                         </div>
-                        {context.mode === "agent" ? (
-                          <CheckIcon className="ml-auto size-4" />
-                        ) : (
-                          <div className="ml-auto size-4" />
-                        )}
-                      </PromptInputActionMenuItem>
-                    )}
-                    {supportThinking && (
-                      <PromptInputActionMenuItem
-                        className={cn(
-                          context.mode === "swarm"
-                            ? "text-accent-foreground"
-                            : "text-muted-foreground/65",
-                        )}
-                        onSelect={() => handleModeSelect("swarm")}
-                      >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-1 font-bold">
-                            <NetworkIcon
-                              className={cn(
-                                "mr-2 size-4",
-                                context.mode === "swarm" &&
-                                  "text-accent-foreground",
-                              )}
-                            />
-                            {t.inputBox.swarmMode}
-                          </div>
-                          <div className="pl-7 text-xs">
-                            {t.inputBox.swarmModeDescription}
-                          </div>
+                        <div className="pl-7 text-xs">
+                          {t.inputBox.computerModeDescription}
                         </div>
-                        {context.mode === "swarm" ? (
-                          <CheckIcon className="ml-auto size-4" />
-                        ) : (
-                          <div className="ml-auto size-4" />
-                        )}
-                      </PromptInputActionMenuItem>
-                    )}
+                      </div>
+                      {context.mode === "computer" ? (
+                        <CheckIcon className="ml-auto size-4" />
+                      ) : (
+                        <div className="ml-auto size-4" />
+                      )}
+                    </PromptInputActionMenuItem>
                   </PromptInputActionMenu>
                 </DropdownMenuGroup>
               </PromptInputActionMenuContent>
@@ -703,7 +626,7 @@ export function InputBox({
           <DialogHeader>
             <DialogTitle>沙盒容量告急</DialogTitle>
             <DialogDescription>
-              当前服务器沙盒容量已满，Agent 和 Swarm
+              当前服务器沙盒容量已满，Computer
               模式暂时无法创建新的沙盒。请切换到 Chat
               模式后继续对话，稍后再尝试需要沙盒的任务。
             </DialogDescription>

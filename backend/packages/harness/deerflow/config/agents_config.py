@@ -9,7 +9,7 @@ is unchanged; only the read/write transport changed.
 
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 import opendal.exceptions as opendal_exc
 import yaml
@@ -54,6 +54,7 @@ class AgentConfig(BaseModel):
     name: str
     description: str = ""
     model: str | None = None
+    variant: Literal["chat", "computer"] | None = None
     tool_groups: list[str] | None = None
     skills: list[str] | None = None
 
@@ -175,6 +176,8 @@ class CustomAgentStore:
             data["description"] = config.description
         if config.model is not None:
             data["model"] = config.model
+        if config.variant is not None:
+            data["variant"] = config.variant
         if config.tool_groups is not None:
             data["tool_groups"] = config.tool_groups
         if config.skills is not None:

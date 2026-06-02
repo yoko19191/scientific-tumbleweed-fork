@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from abc import ABC, abstractmethod
 
 from deerflow.config import get_app_config
@@ -59,24 +60,48 @@ class SandboxProvider(ABC):
         pass
 
 
+_LOCAL_SANDBOX_PROVIDER_USE = "deerflow.sandbox.local:LocalSandboxProvider"
 _default_sandbox_provider: SandboxProvider | None = None
+_sandbox_providers_by_key: dict[str, SandboxProvider] = {}
+_sandbox_provider_lock = threading.Lock()
 
 
-def get_sandbox_provider(**kwargs) -> SandboxProvider:
-    """Get the sandbox provider singleton.
+def _resolve_provider_use(variant: str | None = None) -> str:
+    if variant in {"chat", "local"}:
+        return _LOCAL_SANDBOX_PROVIDER_USE
+    config = get_app_config()
+    return config.sandbox.use
 
-    Returns a cached singleton instance. Use `reset_sandbox_provider()` to clear
-    the cache, or `shutdown_sandbox_provider()` to properly shutdown and clear.
+
+def get_sandbox_provider(*, variant: str | None = None, provider_use: str | None = None, **kwargs) -> SandboxProvider:
+    """Get a sandbox provider singleton.
+
+    The default provider remains process-wide for compatibility. Passing
+    ``variant="chat"`` returns a separate LocalSandboxProvider instance so chat
+    and computer graphs can coexist in the same process.
 
     Returns:
         A sandbox provider instance.
     """
     global _default_sandbox_provider
-    if _default_sandbox_provider is None:
-        config = get_app_config()
-        cls = resolve_class(config.sandbox.use, SandboxProvider)
-        _default_sandbox_provider = cls(**kwargs)
-    return _default_sandbox_provider
+    use = provider_use or _resolve_provider_use(variant)
+
+    if provider_use is None and variant in {None, "computer", "default"}:
+        with _sandbox_provider_lock:
+            if _default_sandbox_provider is None:
+                cls = resolve_class(use, SandboxProvider)
+                _default_sandbox_provider = cls(**kwargs)
+                _sandbox_providers_by_key[use] = _default_sandbox_provider
+            return _default_sandbox_provider
+
+    key = use
+    with _sandbox_provider_lock:
+        provider = _sandbox_providers_by_key.get(key)
+        if provider is None:
+            cls = resolve_class(use, SandboxProvider)
+            provider = cls(**kwargs)
+            _sandbox_providers_by_key[key] = provider
+        return provider
 
 
 def reset_sandbox_provider() -> None:
@@ -95,8 +120,13 @@ def reset_sandbox_provider() -> None:
     Use `shutdown_sandbox_provider()` for proper cleanup.
     """
     global _default_sandbox_provider
-    if _default_sandbox_provider is not None:
-        _default_sandbox_provider.reset()
+    with _sandbox_provider_lock:
+        providers = set(_sandbox_providers_by_key.values())
+        if _default_sandbox_provider is not None:
+            providers.add(_default_sandbox_provider)
+        for provider in providers:
+            provider.reset()
+        _sandbox_providers_by_key.clear()
         _default_sandbox_provider = None
 
 
@@ -108,9 +138,14 @@ def shutdown_sandbox_provider() -> None:
     is shutting down or when you need to completely reset the sandbox system.
     """
     global _default_sandbox_provider
-    if _default_sandbox_provider is not None:
-        if hasattr(_default_sandbox_provider, "shutdown"):
-            _default_sandbox_provider.shutdown()
+    with _sandbox_provider_lock:
+        providers = set(_sandbox_providers_by_key.values())
+        if _default_sandbox_provider is not None:
+            providers.add(_default_sandbox_provider)
+        for provider in providers:
+            if hasattr(provider, "shutdown"):
+                provider.shutdown()
+        _sandbox_providers_by_key.clear()
         _default_sandbox_provider = None
 
 
@@ -123,4 +158,5 @@ def set_sandbox_provider(provider: SandboxProvider) -> None:
         provider: The SandboxProvider instance to use.
     """
     global _default_sandbox_provider
-    _default_sandbox_provider = provider
+    with _sandbox_provider_lock:
+        _default_sandbox_provider = provider

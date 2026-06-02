@@ -23,7 +23,7 @@ def _disable_delayed_run_cleanup(run_manager: RunManager) -> None:
 @pytest.mark.anyio
 async def test_run_agent_defaults_root_run_name_from_assistant_id():
     run_manager = RunManager()
-    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent")
     _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
@@ -51,14 +51,14 @@ async def test_run_agent_defaults_root_run_name_from_assistant_id():
         config={},
     )
 
-    assert captured["factory_run_name"] == "lead_agent"
-    assert captured["astream_run_name"] == "lead_agent"
+    assert captured["factory_run_name"] == "chat_lead_agent"
+    assert captured["astream_run_name"] == "chat_lead_agent"
 
 
 @pytest.mark.anyio
 async def test_run_agent_defaults_root_run_name_from_context_agent_name():
     run_manager = RunManager()
-    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent")
     _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
@@ -93,7 +93,7 @@ async def test_run_agent_defaults_root_run_name_from_context_agent_name():
 @pytest.mark.anyio
 async def test_run_agent_defaults_root_run_name_from_configurable_agent_name():
     run_manager = RunManager()
-    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent")
     _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
@@ -128,7 +128,7 @@ async def test_run_agent_defaults_root_run_name_from_configurable_agent_name():
 @pytest.mark.anyio
 async def test_run_agent_threads_app_config_into_runtime_context():
     run_manager = RunManager()
-    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent")
     _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
@@ -169,7 +169,7 @@ async def test_run_agent_threads_app_config_into_runtime_context():
 @pytest.mark.anyio
 async def test_run_agent_runtime_context_overrides_reserved_context_keys():
     run_manager = RunManager()
-    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent")
     _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
@@ -213,7 +213,7 @@ async def test_run_agent_runtime_context_overrides_reserved_context_keys():
 async def test_run_agent_persists_effective_model_name_from_agent_metadata():
     store = MemoryRunStore()
     run_manager = RunManager(store=store)
-    record = await run_manager.create("thread-1", assistant_id="lead_agent", metadata={"user_id": "user-1"})
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent", metadata={"user_id": "user-1"})
     _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),
@@ -249,7 +249,7 @@ async def test_run_agent_persists_effective_model_name_from_agent_metadata():
 @pytest.mark.anyio
 async def test_run_agent_schedules_bridge_and_run_manager_cleanup():
     run_manager = RunManager()
-    record = await run_manager.create("thread-1", assistant_id="lead_agent")
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent")
     _disable_delayed_run_cleanup(run_manager)
     bridge = SimpleNamespace(
         publish=AsyncMock(),

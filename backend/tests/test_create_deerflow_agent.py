@@ -787,7 +787,7 @@ def test_guardrail_default_off(mock_create_agent):
 
 
 # ---------------------------------------------------------------------------
-# 36. Full chain order matches make_lead_agent (all features on)
+# 36. Full chain order matches the config-driven graph factories (all features on)
 # ---------------------------------------------------------------------------
 @patch("deerflow.agents.factory.create_agent")
 def test_full_chain_order(mock_create_agent):

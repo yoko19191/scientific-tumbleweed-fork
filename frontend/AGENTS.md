@@ -26,7 +26,7 @@ Scientific Tumbleweed is built on a sophisticated agent-based architecture using
                               │
                               ▼
 ┌────────────────────────────────────────────────────────┐
-│              LangGraph Backend (lead_agent)            │
+│       LangGraph Backend (chat/computer lead agents)    │
 │  ┌────────────┐  ┌──────────┐  ┌───────────────────┐   │
 │  │Main Agent  │─▶│Sub-Agents│─▶│  Tools & Skills   │   │
 │  └────────────┘  └──────────┘  └───────────────────┘   │

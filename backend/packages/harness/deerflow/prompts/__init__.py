@@ -6,6 +6,7 @@ optimization.
 """
 
 from deerflow.prompts.builder import SystemPromptBuilder
+from deerflow.prompts.factory import PromptContext, build_prompt
 from deerflow.prompts.sections import SYSTEM_PROMPT_DYNAMIC_BOUNDARY
 
 
@@ -24,4 +25,4 @@ def split_prompt_for_caching(prompt: str) -> tuple[str, str]:
     return prompt, ""
 
 
-__all__ = ["SystemPromptBuilder", "split_prompt_for_caching"]
+__all__ = ["PromptContext", "SystemPromptBuilder", "build_prompt", "split_prompt_for_caching"]

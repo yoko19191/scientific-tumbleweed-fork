@@ -14,7 +14,7 @@ from deerflow.tracing import metadata as tracing_metadata
 async def test_run_agent_injects_langfuse_metadata(monkeypatch):
     monkeypatch.setattr(tracing_metadata, "get_enabled_tracing_providers", lambda: ["langfuse"])
     run_manager = RunManager()
-    record = await run_manager.create("thread-1", assistant_id="lead_agent", metadata={"user_id": "user-1"})
+    record = await run_manager.create("thread-1", assistant_id="chat_lead_agent", metadata={"user_id": "user-1"})
     run_manager.cleanup = AsyncMock()  # type: ignore[method-assign]
     record.model_name = "deepseek-v3"
     bridge = SimpleNamespace(publish=AsyncMock(), publish_end=AsyncMock(), cleanup=AsyncMock())
@@ -43,5 +43,5 @@ async def test_run_agent_injects_langfuse_metadata(monkeypatch):
 
     assert captured["factory_metadata"]["langfuse_session_id"] == "thread-1"
     assert captured["factory_metadata"]["langfuse_user_id"] == "user-1"
-    assert captured["metadata"]["langfuse_trace_name"] == "lead_agent"
+    assert captured["metadata"]["langfuse_trace_name"] == "chat_lead_agent"
     assert "model:deepseek-v3" in captured["metadata"]["langfuse_tags"]

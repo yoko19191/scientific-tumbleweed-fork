@@ -1,0 +1,25 @@
+<ground_truth>
+Identity:
+- Agent: {{ ground_truth.identity.agent_name }}
+- Platform: {{ ground_truth.identity.platform }}
+- Developer: {{ ground_truth.identity.developer }}
+- Purpose: {{ ground_truth.identity.purpose }}
+
+Canonical rules:
+{% for rule in ground_truth.rules -%}
+- {{ rule }}
+{% endfor %}
+
+Scientific method:
+{% for item in ground_truth.scientific_method -%}
+- {{ item }}
+{% endfor %}
+
+Safety:
+{% for item in ground_truth.safety.git -%}
+- {{ item }}
+{% endfor %}
+{% for item in ground_truth.safety.tools -%}
+- {{ item }}
+{% endfor %}
+</ground_truth>

@@ -25,7 +25,9 @@ No test framework is configured.
 ## Architecture
 
 ```
-Frontend (Next.js) ──▶ LangGraph SDK ──▶ LangGraph Backend (lead_agent)
+Frontend (Next.js) ──▶ LangGraph SDK ──▶ LangGraph Backend
+                                              ├── chat_lead_agent
+                                              ├── computer_lead_agent
                                               ├── Sub-Agents
                                               └── Tools & Skills
 ```

@@ -43,6 +43,22 @@ def _token_usage_cache_enabled(app_config: "AppConfig | None") -> bool:
     return bool(getattr(getattr(app_config, "token_usage", None), "enabled", False))
 
 
+def _get_runtime_variant(runtime: Any) -> str | None:
+    context = getattr(runtime, "context", None)
+    if isinstance(context, dict):
+        variant = context.get("agent_variant") or context.get("sandbox_provider_variant")
+        if isinstance(variant, str):
+            return variant
+    config = getattr(runtime, "config", None)
+    if isinstance(config, dict):
+        configurable = config.get("configurable", {})
+        if isinstance(configurable, dict):
+            variant = configurable.get("agent_variant") or configurable.get("sandbox_provider_variant")
+            if isinstance(variant, str):
+                return variant
+    return None
+
+
 def _cache_subagent_usage(tool_call_id: str, usage: dict[str, int] | None, *, enabled: bool = True) -> None:
     if enabled and usage:
         _subagent_usage_cache[tool_call_id] = usage
@@ -120,14 +136,20 @@ async def task_tool(
         subagent_type: The type of subagent to use. ALWAYS PROVIDE THIS PARAMETER THIRD.
     """
     runtime_app_config = _get_runtime_app_config(runtime)
+    runtime_variant = _get_runtime_variant(runtime)
     cache_token_usage = _token_usage_cache_enabled(runtime_app_config)
     available_subagent_names = get_available_subagent_names(app_config=runtime_app_config) if runtime_app_config is not None else get_available_subagent_names()
+    if runtime_variant == "chat":
+        available_subagent_names = [name for name in available_subagent_names if name != "bash"]
 
     # Get subagent configuration
     config = get_subagent_config(subagent_type, app_config=runtime_app_config) if runtime_app_config is not None else get_subagent_config(subagent_type)
     if config is None:
         available = ", ".join(available_subagent_names)
         return f"Error: Unknown subagent type '{subagent_type}'. Available: {available}"
+    if subagent_type == "bash" and runtime_variant == "chat":
+        available = ", ".join(available_subagent_names)
+        return f"Error: Subagent type 'bash' is not available in chat mode. Available: {available}"
     if subagent_type == "bash":
         host_bash_allowed = is_host_bash_allowed(runtime_app_config) if runtime_app_config is not None else is_host_bash_allowed()
         if not host_bash_allowed:
@@ -138,7 +160,8 @@ async def task_tool(
 
     skills_section = get_skills_prompt_section()
     if skills_section:
-        overrides["system_prompt"] = config.system_prompt + "\n\n" + skills_section
+        base_prompt = config.system_prompt or ""
+        overrides["system_prompt"] = f"{base_prompt}\n\n{skills_section}".strip()
 
     # Extract parent context from runtime
     sandbox_state = None
@@ -195,6 +218,7 @@ async def task_tool(
         "thread_data": thread_data,
         "thread_id": thread_id,
         "trace_id": trace_id,
+        "sandbox_provider_variant": runtime_variant,
     }
     if runtime_app_config is not None:
         executor_kwargs["app_config"] = runtime_app_config

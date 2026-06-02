@@ -22,7 +22,7 @@ Scientific Tumbleweed is a LangGraph-based AI super agent with sandbox execution
                │ Artifacts, Threads, Runs, Streaming          │
                │                                              │
                │ ┌────────────────┐                           │
-               │ │  Lead Agent    │                           │
+               │ │  Lead Agents   │                           │
                │ │  ┌──────────┐  │                           │
                │ │  │Middleware│  │                           │
                │ │  │  Chain   │  │                           │
@@ -46,9 +46,9 @@ Scientific Tumbleweed is a LangGraph-based AI super agent with sandbox execution
 
 ## Core Components
 
-### Lead Agent
+### Lead Agents
 
-The single LangGraph agent (`lead_agent`) is the runtime entry point, created via `make_lead_agent(config)`. It combines:
+The backend exposes two LangGraph runtime entry points: `chat_lead_agent`, created via `make_chat_lead_agent(config)`, and `computer_lead_agent`, created via `make_computer_lead_agent(config)`. Chat uses local filesystem-backed file tools plus web/academic search, plan mode, and non-exec subagents; Computer keeps the full sandbox/tool surface for workspace automation. Both combine:
 
 - **Dynamic model selection** with thinking and vision support
 - **Middleware chain** for cross-cutting concerns, ordered by the canonical builder
@@ -172,8 +172,9 @@ HTTP response models.
 
 Agent middleware entry points resolve concrete middleware instances locally, then
 delegate final ordering to `deerflow.agents.middleware_builder`. This keeps
-`make_lead_agent()` and the SDK `create_deerflow_agent()` aligned on ordering,
-extra middleware insertion, and the clarification-last invariant.
+`make_chat_lead_agent()`, `make_computer_lead_agent()`, and the SDK
+`create_deerflow_agent()` aligned on ordering, extra middleware insertion, and
+the clarification-last invariant.
 
 ### IM Channels
 

@@ -1,9 +1,10 @@
 """Lead agent factory.
 
 Tracing callbacks are attached at the graph invocation root in
-``make_lead_agent``. In-graph model calls in this module, and in middleware
-reached by this graph, should pass ``attach_tracing=False`` so Langfuse can lift
-reserved metadata onto the root trace without duplicate model-level spans.
+``make_chat_lead_agent`` and ``make_computer_lead_agent``. In-graph model calls
+in this module, and in middleware reached by these graphs, should pass
+``attach_tracing=False`` so Langfuse can lift reserved metadata onto the root
+trace without duplicate model-level spans.
 """
 
 import logging
@@ -51,6 +52,26 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+CHAT_TOOL_GROUPS = ["web", "academic_search", "file:read", "file:write"]
+VARIANT_DEFAULTS = {
+    "chat": {
+        "is_plan_mode": True,
+        "subagent_enabled": True,
+        "max_concurrent_subagents": 3,
+        "tool_groups": CHAT_TOOL_GROUPS,
+        "sandbox_provider_variant": "chat",
+        "agent_key": "chat_lead",
+    },
+    "computer": {
+        "is_plan_mode": True,
+        "subagent_enabled": True,
+        "max_concurrent_subagents": 5,
+        "tool_groups": None,
+        "sandbox_provider_variant": "computer",
+        "agent_key": "computer_lead",
+    },
+}
 
 
 def _get_runtime_config(config: RunnableConfig) -> dict:
@@ -402,11 +423,12 @@ def _build_middlewares(
     """
     resolved_app_config = app_config or get_app_config()
     cfg = _get_runtime_config(config)
+    agent_variant = cfg.get("agent_variant") or cfg.get("sandbox_provider_variant")
 
     summarization_middleware = _call_with_optional_app_config(_create_summarization_middleware, app_config=resolved_app_config)
 
     # Add ViewImageMiddleware only if the current model supports vision.
-    # Use the resolved runtime model_name from make_lead_agent to avoid stale config values.
+    # Use the resolved runtime model_name from the graph factory to avoid stale config values.
     model_config = resolved_app_config.get_model_config(model_name) if model_name else None
     vision_middleware = ViewImageMiddleware() if model_config is not None and model_config.supports_vision else None
 
@@ -432,11 +454,13 @@ def _build_middlewares(
     if safety_config.enabled:
         safety_finish_reason_middleware = SafetyFinishReasonMiddleware.from_config(safety_config)
 
+    from langchain_dev_utils.agents.middleware import FormatPromptMiddleware
+
     return build_ordered_middleware_chain(
         sandbox=[
             ThreadDataMiddleware(lazy_init=True),
             UploadsMiddleware(),
-            SandboxMiddleware(lazy_init=True),
+            SandboxMiddleware(lazy_init=True, provider_variant=agent_variant),
         ],
         dangling_tool_call_patch=[DanglingToolCallMiddleware()],
         llm_error_handling=[LLMErrorHandlingMiddleware()],
@@ -449,6 +473,7 @@ def _build_middlewares(
         summarization=summarization_middleware,
         compaction=_create_compaction_middleware(),
         plan_mode=_create_todo_list_middleware(cfg.get("is_plan_mode", False)),
+        prompt_format=[FormatPromptMiddleware(template_format="jinja2")],
         token_usage=[TokenUsageMiddleware()] if resolved_app_config.token_usage.enabled else None,
         title=[TitleMiddleware(app_config=resolved_app_config)],
         memory=[MemoryMiddleware(agent_name=agent_name, memory_config=resolved_app_config.memory)],
@@ -484,10 +509,46 @@ def _load_enabled_skills_for_tool_policy(available_skills: set[str] | None, *, a
     return [skill for skill in skills if skill.name in available_skills]
 
 
-def make_lead_agent(config: RunnableConfig):
+def _resolve_effective_tool_groups(agent_config, variant: str) -> list[str] | None:
+    defaults = VARIANT_DEFAULTS[variant]
+    groups = agent_config.tool_groups if agent_config and agent_config.tool_groups is not None else defaults["tool_groups"]
+    if variant != "chat":
+        return groups
+    source_groups = groups if groups is not None else CHAT_TOOL_GROUPS
+    return [group for group in source_groups if group != "bash"]
+
+
+def _write_effective_runtime_context(
+    config: RunnableConfig,
+    *,
+    variant: str,
+    is_plan_mode: bool,
+    subagent_enabled: bool,
+    max_concurrent_subagents: int,
+    sandbox_provider_variant: str,
+) -> None:
+    context = config.setdefault("context", {})
+    if not isinstance(context, dict):
+        context = {}
+        config["context"] = context
+    context.update(
+        {
+            "agent_variant": variant,
+            "sandbox_provider_variant": sandbox_provider_variant,
+            "is_plan_mode": is_plan_mode,
+            "subagent_enabled": subagent_enabled,
+            "max_concurrent_subagents": max_concurrent_subagents,
+        }
+    )
+
+
+def _make_variant_lead_agent(config: RunnableConfig, *, variant: str):
     # Lazy import to avoid circular dependency
     from deerflow.tools import get_available_tools
     from deerflow.tools.builtins import setup_agent, update_agent
+
+    if variant not in VARIANT_DEFAULTS:
+        raise ValueError(f"Unknown lead agent variant: {variant}")
 
     cfg = _get_runtime_config(config)
     runtime_app_config = cfg.get("app_config")
@@ -498,9 +559,6 @@ def make_lead_agent(config: RunnableConfig):
     thinking_enabled = cfg.get("thinking_enabled", True)
     reasoning_effort = cfg.get("reasoning_effort", None)
     requested_model_name: str | None = cfg.get("model_name") or cfg.get("model")
-    is_plan_mode = cfg.get("is_plan_mode", False)
-    subagent_enabled = cfg.get("subagent_enabled", False)
-    max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
     is_bootstrap = cfg.get("is_bootstrap", False)
     agent_name = validate_agent_name(cfg.get("agent_name"))
     user_id = config.get("metadata", {}).get("user_id")
@@ -511,6 +569,25 @@ def make_lead_agent(config: RunnableConfig):
         agent_config = load_agent_config(agent_name)
     else:
         agent_config = load_agent_config(agent_name, user_id=user_id)
+
+    effective_variant = "computer" if is_bootstrap else variant
+    if not is_bootstrap and agent_config is not None and getattr(agent_config, "variant", None):
+        effective_variant = agent_config.variant
+    defaults = VARIANT_DEFAULTS[effective_variant]
+    is_plan_mode = cfg.get("is_plan_mode", defaults["is_plan_mode"])
+    subagent_enabled = cfg.get("subagent_enabled", defaults["subagent_enabled"])
+    max_concurrent_subagents = cfg.get("max_concurrent_subagents", defaults["max_concurrent_subagents"])
+    sandbox_provider_variant = defaults["sandbox_provider_variant"]
+    tool_groups = _resolve_effective_tool_groups(agent_config, effective_variant)
+    _write_effective_runtime_context(
+        config,
+        variant=effective_variant,
+        is_plan_mode=is_plan_mode,
+        subagent_enabled=subagent_enabled,
+        max_concurrent_subagents=max_concurrent_subagents,
+        sandbox_provider_variant=sandbox_provider_variant,
+    )
+
     available_skills = _available_skill_names(agent_config, is_bootstrap)
     # Custom agent model from agent config (if any), or None to let _resolve_model_name pick the default
     agent_model_name = agent_config.model if agent_config and agent_config.model else None
@@ -526,8 +603,9 @@ def make_lead_agent(config: RunnableConfig):
         thinking_enabled = False
 
     logger.info(
-        "Create Agent(%s) -> thinking_enabled: %s, reasoning_effort: %s, model_name: %s, is_plan_mode: %s, subagent_enabled: %s, max_concurrent_subagents: %s",
+        "Create Agent(%s, variant=%s) -> thinking_enabled: %s, reasoning_effort: %s, model_name: %s, is_plan_mode: %s, subagent_enabled: %s, max_concurrent_subagents: %s",
         agent_name or "default",
+        effective_variant,
         thinking_enabled,
         reasoning_effort,
         model_name,
@@ -551,7 +629,9 @@ def make_lead_agent(config: RunnableConfig):
             "reasoning_effort": reasoning_effort,
             "is_plan_mode": is_plan_mode,
             "subagent_enabled": subagent_enabled,
-            "tool_groups": agent_config.tool_groups if agent_config else None,
+            "agent_variant": effective_variant,
+            "sandbox_provider_variant": sandbox_provider_variant,
+            "tool_groups": tool_groups,
             "available_skills": sorted(available_skills) if available_skills is not None else None,
         }
     )
@@ -560,7 +640,7 @@ def make_lead_agent(config: RunnableConfig):
 
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
-        available_tools_kwargs = {"model_name": model_name, "subagent_enabled": subagent_enabled}
+        available_tools_kwargs = {"model_name": model_name, "groups": tool_groups, "subagent_enabled": subagent_enabled}
         if has_runtime_app_config:
             available_tools_kwargs["app_config"] = app_config
         tools = get_available_tools(**available_tools_kwargs) + [setup_agent]
@@ -571,6 +651,7 @@ def make_lead_agent(config: RunnableConfig):
             system_prompt=apply_prompt_template(
                 subagent_enabled=subagent_enabled,
                 max_concurrent_subagents=max_concurrent_subagents,
+                agent_key=defaults["agent_key"],
                 user_id=user_id,
                 available_skills=set(["bootstrap"]),
                 app_config=app_config_for_child_calls,
@@ -578,10 +659,10 @@ def make_lead_agent(config: RunnableConfig):
             state_schema=ThreadState,
         )
 
-    # Default lead agent (unchanged behavior)
+    # Default lead agent
     available_tools_kwargs = {
         "model_name": model_name,
-        "groups": agent_config.tool_groups if agent_config else None,
+        "groups": tool_groups,
         "subagent_enabled": subagent_enabled,
     }
     if has_runtime_app_config:
@@ -596,6 +677,7 @@ def make_lead_agent(config: RunnableConfig):
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
+            agent_key=defaults["agent_key"],
             agent_name=agent_name,
             user_id=user_id,
             available_skills=available_skills,
@@ -603,3 +685,11 @@ def make_lead_agent(config: RunnableConfig):
         ),
         state_schema=ThreadState,
     )
+
+
+def make_chat_lead_agent(config: RunnableConfig):
+    return _make_variant_lead_agent(config, variant="chat")
+
+
+def make_computer_lead_agent(config: RunnableConfig):
+    return _make_variant_lead_agent(config, variant="computer")

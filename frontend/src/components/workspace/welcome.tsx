@@ -70,21 +70,15 @@ function getTimeGreeting(locale: string): string {
 
 export function Welcome({
   className,
-  mode,
+  mode: _mode,
 }: {
   className?: string;
-  mode?: "chat" | "agent" | "swarm";
+  mode?: "chat" | "computer";
 }) {
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const searchParams = useSearchParams();
-  const isSwarm = useMemo(() => mode === "swarm", [mode]);
-  const colors = useMemo(() => {
-    if (isSwarm) {
-      return ["#efefbb", "#e9c665", "#e3a812"];
-    }
-    return ["var(--color-foreground)"];
-  }, [isSwarm]);
+  const colors = useMemo(() => ["var(--color-foreground)"], []);
 
   const greeting = useMemo(() => {
     const timeGreeting = getTimeGreeting(locale);
@@ -168,7 +162,7 @@ export function Welcome({
           onClick={replayWave}
           aria-label="Wave"
         >
-          {isSwarm ? "🐝" : "👋"}
+          👋
         </button>
         <AuroraText colors={colors}>{greeting}</AuroraText>
       </div>

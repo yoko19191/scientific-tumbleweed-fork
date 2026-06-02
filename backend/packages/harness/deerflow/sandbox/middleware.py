@@ -32,31 +32,34 @@ class SandboxMiddleware(AgentMiddleware[SandboxMiddlewareState]):
 
     state_schema = SandboxMiddlewareState
 
-    def __init__(self, lazy_init: bool = True):
+    def __init__(self, lazy_init: bool = True, *, provider_variant: str | None = None):
         """Initialize sandbox middleware.
 
         Args:
             lazy_init: If True, defer sandbox acquisition until first tool call.
                       If False, acquire sandbox eagerly in before_agent().
                       Default is True for optimal performance.
+            provider_variant: Optional agent variant used to select the sandbox
+                      provider. ``chat`` maps to LocalSandboxProvider.
         """
         super().__init__()
         self._lazy_init = lazy_init
+        self._provider_variant = provider_variant
 
     def _acquire_sandbox(self, thread_id: str, user_id: str | None = None) -> str:
-        provider = get_sandbox_provider()
+        provider = get_sandbox_provider(variant=self._provider_variant)
         sandbox_id = provider.acquire(thread_id, user_id)
         logger.info(f"Acquiring sandbox {sandbox_id}")
         return sandbox_id
 
     async def _acquire_sandbox_async(self, thread_id: str) -> str:
-        provider = get_sandbox_provider()
+        provider = get_sandbox_provider(variant=self._provider_variant)
         sandbox_id = await provider.acquire_async(thread_id)
         logger.info(f"Acquiring sandbox {sandbox_id}")
         return sandbox_id
 
     async def _release_sandbox_async(self, sandbox_id: str) -> None:
-        await asyncio.to_thread(get_sandbox_provider().release, sandbox_id)
+        await asyncio.to_thread(get_sandbox_provider(variant=self._provider_variant).release, sandbox_id)
 
     @override
     def before_agent(self, state: SandboxMiddlewareState, runtime: Runtime) -> dict | None:

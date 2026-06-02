@@ -106,7 +106,8 @@ def normalize_input(raw_input: dict[str, Any] | None) -> dict[str, Any]:
     return raw_input
 
 
-_DEFAULT_ASSISTANT_ID = "lead_agent"
+_DEFAULT_ASSISTANT_ID = "chat_lead_agent"
+_KNOWN_GRAPH_IDS = {"chat_lead_agent", "computer_lead_agent"}
 _MAX_MODEL_NAME_LEN = 128
 _RUNTIME_CONTEXT_CONFIG_KEYS = frozenset(
     {
@@ -156,17 +157,14 @@ def _extract_requested_model_name(body: Any) -> str | None:
 
 
 def resolve_agent_factory(assistant_id: str | None):
-    """Resolve the agent factory callable from config.
+    """Resolve the graph factory for first-class graph ids and custom agents."""
+    from deerflow.agents.lead_agent.agent import make_chat_lead_agent, make_computer_lead_agent
 
-    Custom agents are implemented as ``lead_agent`` + an ``agent_name``
-    injected into ``configurable`` or ``context`` — see
-    :func:`build_run_config`.  All ``assistant_id`` values therefore map to the
-    same factory; the routing happens inside ``make_lead_agent`` when it reads
-    ``cfg["agent_name"]``.
-    """
-    from deerflow.agents.lead_agent.agent import make_lead_agent
-
-    return make_lead_agent
+    if assistant_id == "computer_lead_agent":
+        return make_computer_lead_agent
+    if assistant_id == "chat_lead_agent" or assistant_id is None:
+        return make_chat_lead_agent
+    return make_computer_lead_agent
 
 
 def build_run_config(
@@ -178,11 +176,11 @@ def build_run_config(
 ) -> dict[str, Any]:
     """Build a RunnableConfig dict for the agent.
 
-    When *assistant_id* refers to a custom agent (anything other than
-    ``"lead_agent"`` / ``None``), the name is forwarded as ``agent_name`` in
+    When *assistant_id* refers to a custom agent (anything other than a known
+    graph id / ``None``), the name is forwarded as ``agent_name`` in
     whichever runtime options container is active: ``context`` for
     LangGraph >= 0.6.0 requests, otherwise ``configurable``.
-    ``make_lead_agent`` reads this key to load the matching
+    the computer lead factory reads this key to load the matching
     ``agents/<name>/SOUL.md`` and per-agent config — without it the agent
     silently runs as the default lead agent.
 
@@ -225,7 +223,7 @@ def build_run_config(
 
     # Inject custom agent name when the caller specified a non-default assistant.
     # Honour an explicit agent_name in the active runtime options container.
-    if assistant_id and assistant_id != _DEFAULT_ASSISTANT_ID:
+    if assistant_id and assistant_id not in _KNOWN_GRAPH_IDS:
         normalized = assistant_id.strip().lower().replace("_", "-")
         if not normalized or not re.fullmatch(r"[a-z0-9-]+", normalized):
             raise ValueError(f"Invalid assistant_id {assistant_id!r}: must contain only letters, digits, and hyphens after normalization.")

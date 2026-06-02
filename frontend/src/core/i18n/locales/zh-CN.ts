@@ -421,13 +421,10 @@ export const zhCN: Translations = {
     addAttachments: "添加附件",
     mode: "模式",
     chatMode: "对话",
-    chatModeDescription: "简单对话和快速查询，支持所有模型",
-    agentMode: "Agent",
-    agentModeDescription:
-      "思考、计划再执行，适合代码编写、数据分析等较长任务",
-    swarmMode: "Swarm",
-    swarmModeDescription:
-      "最多 5 个子代理并行协作，适合文献综述等需要大量资料搜集的场景",
+    chatModeDescription: "轻量对话，保留文件和子代理，不启动命令沙盒",
+    computerMode: "电脑",
+    computerModeDescription:
+      "完整工作区，包含命令沙盒、文件工具、计划模式和子代理",
     reasoningEffort: "推理深度",
     reasoningEffortNone: "关闭",
     reasoningEffortNoneDescription:

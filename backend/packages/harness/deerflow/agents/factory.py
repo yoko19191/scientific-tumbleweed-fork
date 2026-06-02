@@ -3,7 +3,7 @@
 ``create_deerflow_agent`` accepts plain Python arguments — no YAML files, no
 global singletons.  It is the SDK-level entry point sitting between the raw
 ``langchain.agents.create_agent`` primitive and the config-driven
-``make_lead_agent`` application factory.
+config-driven LangGraph application factories.
 
 Note: the factory assembly itself is config-free, but some injected runtime
 components (e.g. ``task_tool`` for subagent) may still read global config at
@@ -162,7 +162,7 @@ def _assemble_from_features(
 ) -> tuple[list[AgentMiddleware], list[BaseTool]]:
     """Build an ordered middleware chain + extra tools from *feat*.
 
-    Middleware order matches ``make_lead_agent`` (14 middlewares):
+    Middleware order matches the config-driven LangGraph factories:
 
       0-2. Sandbox infrastructure (ThreadData → Uploads → Sandbox)
       3.   DanglingToolCallMiddleware (always)

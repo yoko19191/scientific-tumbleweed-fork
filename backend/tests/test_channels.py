@@ -568,7 +568,7 @@ class TestChannelManager:
             mock_client.runs.wait.assert_called_once()
             call_args = mock_client.runs.wait.call_args
             assert call_args[0][0] == "test-thread-123"  # thread_id
-            assert call_args[0][1] == "lead_agent"  # assistant_id
+            assert call_args[0][1] == "computer_lead_agent"  # assistant_id
             assert call_args[1]["input"]["messages"][0]["content"] == "hi"
             assert call_args[1]["config"]["configurable"]["checkpoint_ns"] == ""
             assert call_args[1]["config"]["configurable"]["thread_id"] == "test-thread-123"
@@ -618,7 +618,7 @@ class TestChannelManager:
 
             mock_client.runs.wait.assert_called_once()
             call_args = mock_client.runs.wait.call_args
-            assert call_args[0][1] == "lead_agent"
+            assert call_args[0][1] == "computer_lead_agent"
             assert call_args[1]["config"]["recursion_limit"] == 55
             assert call_args[1]["config"]["configurable"]["checkpoint_ns"] == ""
             assert call_args[1]["config"]["configurable"]["thread_id"] == "test-thread-123"
@@ -800,7 +800,7 @@ class TestChannelManager:
 
             mock_client.runs.wait.assert_called_once()
             call_args = mock_client.runs.wait.call_args
-            assert call_args[0][1] == "lead_agent"
+            assert call_args[0][1] == "computer_lead_agent"
             assert call_args[1]["config"]["recursion_limit"] == 77
             assert call_args[1]["context"]["thinking_enabled"] is True
             assert call_args[1]["context"]["subagent_enabled"] is True
@@ -843,7 +843,7 @@ class TestChannelManager:
             await manager.stop()
 
             mock_client.runs.wait.assert_not_called()
-            assert outbound_received[0].text == ("Invalid channel session assistant_id 'bad agent!'. Use 'lead_agent' or a custom agent name containing only letters, digits, and hyphens.")
+            assert outbound_received[0].text == ("Invalid channel session assistant_id 'bad agent!'. Use 'chat_lead_agent', 'computer_lead_agent', or a custom agent name containing only letters, digits, and hyphens.")
 
         _run(go())
 

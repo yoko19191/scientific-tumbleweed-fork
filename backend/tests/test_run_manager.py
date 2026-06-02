@@ -46,14 +46,14 @@ async def test_create_and_get(manager: RunManager):
     """Created run should be retrievable with new fields."""
     record = await manager.create(
         "thread-1",
-        "lead_agent",
+        "chat_lead_agent",
         metadata={"key": "val"},
         kwargs={"input": {}},
         multitask_strategy="reject",
     )
     assert record.status == RunStatus.pending
     assert record.thread_id == "thread-1"
-    assert record.assistant_id == "lead_agent"
+    assert record.assistant_id == "chat_lead_agent"
     assert record.metadata == {"key": "val"}
     assert record.kwargs == {"input": {}}
     assert record.multitask_strategy == "reject"
@@ -212,7 +212,7 @@ async def test_get_hydrates_store_only_record():
     manager = RunManager(store=store)
     record = await manager.create_or_reject(
         "thread-1",
-        "lead_agent",
+        "chat_lead_agent",
         metadata={"user_id": "user-1"},
         kwargs={"input": {"messages": []}},
     )

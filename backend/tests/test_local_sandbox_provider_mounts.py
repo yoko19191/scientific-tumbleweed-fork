@@ -872,3 +872,26 @@ class TestLocalSandboxProviderResetClearsSingleton:
             assert lsp_module._singleton is None
         finally:
             lsp_module._singleton = None
+
+
+class TestVariantSandboxProvider:
+    def test_chat_variant_uses_local_provider_without_reading_configured_use(self, tmp_path):
+        from deerflow.config.sandbox_config import SandboxConfig
+        from deerflow.sandbox.local.local_sandbox_provider import LocalSandboxProvider
+        from deerflow.sandbox.sandbox_provider import get_sandbox_provider, reset_sandbox_provider
+
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        config = SimpleNamespace(
+            skills=SimpleNamespace(container_path="/mnt/skills", get_skills_path=lambda: skills_dir),
+            sandbox=SandboxConfig(use="not.a.real.Provider", mounts=[]),
+        )
+
+        reset_sandbox_provider()
+        try:
+            with patch("deerflow.sandbox.sandbox_provider.get_app_config", side_effect=AssertionError("chat variant must not read sandbox.use")), patch("deerflow.config.get_app_config", return_value=config):
+                provider = get_sandbox_provider(variant="chat")
+
+            assert isinstance(provider, LocalSandboxProvider)
+        finally:
+            reset_sandbox_provider()

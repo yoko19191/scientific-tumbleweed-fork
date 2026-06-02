@@ -4,6 +4,7 @@ import threading
 from functools import lru_cache
 
 from deerflow.config.agents_config import load_agent_soul
+from deerflow.prompts.factory import PromptContext, build_prompt
 from deerflow.prompts.sections import (
     DEFAULT_AGENT_NAME,
     PLATFORM_DEVELOPER,
@@ -199,7 +200,7 @@ def _call_with_optional_app_config(func, *args, app_config=None, **kwargs):
         return func(*args, **kwargs)
 
 
-def _build_subagent_section(max_concurrent: int, *, app_config=None) -> str:
+def _build_subagent_section(max_concurrent: int, *, app_config=None, bash_available: bool | None = None) -> str:
     """Build the subagent system prompt section with dynamic concurrency limit.
 
     Args:
@@ -209,7 +210,8 @@ def _build_subagent_section(max_concurrent: int, *, app_config=None) -> str:
         Formatted subagent section string.
     """
     n = max_concurrent
-    bash_available = "bash" in get_available_subagent_names(app_config=app_config)
+    if bash_available is None:
+        bash_available = "bash" in get_available_subagent_names(app_config=app_config)
     available_subagents = (
         "- **general-purpose**: For complex multi-step tasks — web research, literature synthesis, data analysis, code implementation, etc.\n"
         "- **explore**: For investigation with optional workspace actions — codebase exploration, literature survey, command execution, file notes/artifacts\n"
@@ -626,64 +628,71 @@ def _apply_prompt_via_builder(
     subagent_enabled: bool = False,
     max_concurrent_subagents: int = 3,
     *,
+    agent_key: str = "computer_lead",
     agent_name: str | None = None,
     user_id: str | None = None,
     available_skills: set[str] | None = None,
     tone_style: str = "normal",
     app_config=None,
 ) -> str:
-    """Build system prompt using the modular SystemPromptBuilder.
-
-    This produces a prompt with a clear static/dynamic boundary for LLM API
-    prompt caching, while including all the same content as the legacy template.
-    """
-    from deerflow.prompts import SystemPromptBuilder
-
-    name = agent_name or DEFAULT_AGENT_NAME
-    builder = SystemPromptBuilder(agent_name=name)
-
-    # Tone style
-    builder.with_tone_style(tone_style)
+    """Build system prompt using the unified Jinja2 prompt factory."""
 
     # Soul
     soul = get_agent_soul(agent_name, user_id=user_id)
-    if soul:
-        builder.with_soul(soul)
 
     # Skills
     skills = _call_with_optional_app_config(get_skills_prompt_section, available_skills, user_id=user_id, app_config=app_config)
-    if skills:
-        builder.with_skills(skills)
 
     # Deferred tools
     deferred = _call_with_optional_app_config(get_deferred_tools_prompt_section, app_config=app_config)
-    if deferred:
-        builder.with_deferred_tools(deferred)
 
     # Subagent section
+    subagent_section = ""
+    has_specialized_agents = False
     if subagent_enabled:
         n = max_concurrent_subagents
-        subagent_section = _call_with_optional_app_config(_build_subagent_section, n, app_config=app_config)
-        builder.with_subagent(subagent_section, enabled=True)
-        builder.with_specialized_agents(verification=True, explore=True, plan=True)
+        subagent_section = _call_with_optional_app_config(
+            _build_subagent_section,
+            n,
+            app_config=app_config,
+            bash_available=agent_key != "chat_lead",
+        )
+        has_specialized_agents = True
 
     # Clarification system (included as a dynamic section)
-    builder.with_clarification(_build_clarification_section())
+    clarification_section = _build_clarification_section()
 
     # Working directory
     acp_section = _call_with_optional_app_config(_build_acp_section, app_config=app_config)
     custom_mounts_section = _call_with_optional_app_config(_build_custom_mounts_section, app_config=app_config)
     acp_and_mounts = "\n".join(s for s in (acp_section, custom_mounts_section) if s)
-    builder.with_working_directory(_build_working_directory_section(acp_and_mounts))
+    working_directory_section = _build_working_directory_section(acp_and_mounts)
 
     # Citations
-    builder.with_citations(_build_citations_section())
+    citations_section = _build_citations_section()
 
     self_update_section = _build_self_update_section(agent_name)
-    if self_update_section:
-        builder.add_dynamic_section(self_update_section)
 
-    return builder.build()
+    return build_prompt(
+        agent_key,
+        PromptContext(
+            variant=agent_key.removesuffix("_lead"),
+            agent_name=agent_name,
+            tone_style=tone_style,  # type: ignore[arg-type]
+            soul=soul,
+            skills_section=skills,
+            deferred_tools_section=deferred,
+            subagent_section=subagent_section,
+            subagent_enabled=subagent_enabled,
+            clarification_section=clarification_section,
+            working_directory_section=working_directory_section,
+            citations_section=citations_section,
+            self_update_section=self_update_section,
+            has_verification=has_specialized_agents,
+            has_explore=has_specialized_agents,
+            has_plan=has_specialized_agents,
+        ),
+    )
 
 
 def _build_clarification_section() -> str:
@@ -837,6 +846,7 @@ def apply_prompt_template(
     subagent_enabled: bool = False,
     max_concurrent_subagents: int = 3,
     *,
+    agent_key: str = "computer_lead",
     agent_name: str | None = None,
     user_id: str | None = None,
     available_skills: set[str] | None = None,
@@ -852,6 +862,7 @@ def apply_prompt_template(
         return _apply_prompt_via_builder(
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
+            agent_key=agent_key,
             agent_name=agent_name,
             user_id=user_id,
             available_skills=available_skills,

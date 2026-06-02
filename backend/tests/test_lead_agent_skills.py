@@ -107,7 +107,7 @@ def test_get_skills_prompt_section_cache_respects_skill_evolution_toggle(monkeyp
     assert "Skill Self-Evolution" not in disabled_result
 
 
-def test_make_lead_agent_empty_skills_passed_correctly(monkeypatch):
+def test_make_computer_lead_agent_empty_skills_passed_correctly(monkeypatch):
     from unittest.mock import MagicMock
 
     from deerflow.agents.lead_agent import agent as lead_agent_module
@@ -138,21 +138,21 @@ def test_make_lead_agent_empty_skills_passed_correctly(monkeypatch):
 
     # Case 1: Empty skills list
     monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x, user_id=None: AgentConfig(name="test", skills=[]))
-    lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
+    lead_agent_module.make_computer_lead_agent({"configurable": {"agent_name": "test"}})
     assert captured_skills[-1] == set()
 
     # Case 2: None skills list
     monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x, user_id=None: AgentConfig(name="test", skills=None))
-    lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
+    lead_agent_module.make_computer_lead_agent({"configurable": {"agent_name": "test"}})
     assert captured_skills[-1] is None
 
     # Case 3: Some skills list
     monkeypatch.setattr(lead_agent_module, "load_agent_config", lambda x, user_id=None: AgentConfig(name="test", skills=["skill1"]))
-    lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
+    lead_agent_module.make_computer_lead_agent({"configurable": {"agent_name": "test"}})
     assert captured_skills[-1] == {"skill1"}
 
 
-def test_make_lead_agent_filters_tools_from_available_skills(monkeypatch):
+def test_make_computer_lead_agent_filters_tools_from_available_skills(monkeypatch):
     from unittest.mock import MagicMock
 
     from deerflow.agents.lead_agent import agent as lead_agent_module
@@ -170,12 +170,12 @@ def test_make_lead_agent_filters_tools_from_available_skills(monkeypatch):
     mock_app_config.get_model_config.return_value = SimpleNamespace(supports_thinking=False, supports_vision=False)
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: mock_app_config)
 
-    agent_kwargs = lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
+    agent_kwargs = lead_agent_module.make_computer_lead_agent({"configurable": {"agent_name": "test"}})
 
     assert [tool.name for tool in agent_kwargs["tools"]] == ["read_file"]
 
 
-def test_make_lead_agent_all_legacy_skills_preserve_all_tools(monkeypatch):
+def test_make_computer_lead_agent_all_legacy_skills_preserve_all_tools(monkeypatch):
     from unittest.mock import MagicMock
 
     from deerflow.agents.lead_agent import agent as lead_agent_module
@@ -193,7 +193,7 @@ def test_make_lead_agent_all_legacy_skills_preserve_all_tools(monkeypatch):
     mock_app_config.get_model_config.return_value = SimpleNamespace(supports_thinking=False, supports_vision=False)
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: mock_app_config)
 
-    agent_kwargs = lead_agent_module.make_lead_agent({"configurable": {"agent_name": "test"}})
+    agent_kwargs = lead_agent_module.make_computer_lead_agent({"configurable": {"agent_name": "test"}})
 
     assert [tool.name for tool in agent_kwargs["tools"]] == ["bash", "read_file", "update_agent"]
 

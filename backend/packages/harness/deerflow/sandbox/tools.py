@@ -1061,6 +1061,21 @@ def is_local_sandbox(runtime: Runtime | None) -> bool:
     return sandbox_id == "local" or sandbox_id.startswith("local:")
 
 
+def _get_sandbox_provider_for_runtime(runtime: Runtime | None = None):
+    variant = None
+    if runtime is not None:
+        context = getattr(runtime, "context", None)
+        if isinstance(context, dict):
+            variant = context.get("sandbox_provider_variant") or context.get("agent_variant")
+        if variant is None:
+            config = getattr(runtime, "config", None)
+            if isinstance(config, dict):
+                configurable = config.get("configurable", {})
+                if isinstance(configurable, dict):
+                    variant = configurable.get("sandbox_provider_variant") or configurable.get("agent_variant")
+    return get_sandbox_provider(variant=variant)
+
+
 def sandbox_from_runtime(runtime: Runtime | None = None) -> Sandbox:
     """Extract sandbox instance from tool runtime.
 
@@ -1081,7 +1096,7 @@ def sandbox_from_runtime(runtime: Runtime | None = None) -> Sandbox:
     sandbox_id = sandbox_state.get("sandbox_id")
     if sandbox_id is None:
         raise SandboxRuntimeError("Sandbox ID not found in state")
-    sandbox = get_sandbox_provider().get(sandbox_id)
+    sandbox = _get_sandbox_provider_for_runtime(runtime).get(sandbox_id)
     if sandbox is None:
         raise SandboxNotFoundError(f"Sandbox with ID '{sandbox_id}' not found", sandbox_id=sandbox_id)
 
@@ -1119,7 +1134,7 @@ def ensure_sandbox_initialized(runtime: Runtime | None = None) -> Sandbox:
     if sandbox_state is not None:
         sandbox_id = sandbox_state.get("sandbox_id")
         if sandbox_id is not None:
-            sandbox = get_sandbox_provider().get(sandbox_id)
+            sandbox = _get_sandbox_provider_for_runtime(runtime).get(sandbox_id)
             if sandbox is not None:
                 if runtime.context is not None:
                     runtime.context["sandbox_id"] = sandbox_id  # Ensure sandbox_id is in context for releasing in after_agent
@@ -1138,7 +1153,7 @@ def ensure_sandbox_initialized(runtime: Runtime | None = None) -> Sandbox:
     if user_id is None:
         user_id = runtime.config.get("metadata", {}).get("user_id") if runtime.config else None
 
-    provider = get_sandbox_provider()
+    provider = _get_sandbox_provider_for_runtime(runtime)
     sandbox_id = provider.acquire(thread_id, user_id)
 
     # Update runtime state - this persists across tool calls
@@ -1171,7 +1186,7 @@ async def ensure_sandbox_initialized_async(runtime: Runtime | None = None) -> Sa
     if sandbox_state is not None:
         sandbox_id = sandbox_state.get("sandbox_id")
         if sandbox_id is not None:
-            sandbox = get_sandbox_provider().get(sandbox_id)
+            sandbox = _get_sandbox_provider_for_runtime(runtime).get(sandbox_id)
             if sandbox is not None:
                 if runtime.context is not None:
                     runtime.context["sandbox_id"] = sandbox_id
@@ -1187,7 +1202,7 @@ async def ensure_sandbox_initialized_async(runtime: Runtime | None = None) -> Sa
     if user_id is None:
         user_id = runtime.config.get("metadata", {}).get("user_id") if runtime.config else None
 
-    provider = get_sandbox_provider()
+    provider = _get_sandbox_provider_for_runtime(runtime)
     sandbox_id = await provider.acquire_async(thread_id, user_id)
 
     runtime.state["sandbox"] = {"sandbox_id": sandbox_id}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Debug script for lead_agent.
+Debug script for computer_lead_agent.
 Run this file directly in VS Code with breakpoints.
 
 Requirements:
@@ -19,10 +19,6 @@ import asyncio
 import logging
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
-from langgraph.runtime import Runtime
-
-from deerflow.agents import make_lead_agent
 
 load_dotenv()
 
@@ -74,9 +70,8 @@ async def main():
     from langchain_core.messages import HumanMessage
     from langgraph.runtime import Runtime
 
-    from deerflow.agents import make_lead_agent
+    from deerflow.agents import make_computer_lead_agent
     from deerflow.config.paths import get_paths
-    from deerflow.mcp import initialize_mcp_tools
     from deerflow.runtime.user_context import get_effective_user_id
 
     # Initialize MCP tools at startup
@@ -101,10 +96,10 @@ async def main():
     runtime = Runtime(context={"thread_id": config["configurable"]["thread_id"]})
     config["configurable"]["__pregel_runtime"] = runtime
 
-    agent = make_lead_agent(config)
+    agent = make_computer_lead_agent(config)
 
     print("=" * 50)
-    print("Lead Agent Debug Mode")
+    print("Computer Lead Agent Debug Mode")
     print("Type 'quit' or 'exit' to stop")
     print("=" * 50)
 

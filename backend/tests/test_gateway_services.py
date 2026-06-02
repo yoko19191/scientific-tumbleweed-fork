@@ -205,13 +205,14 @@ def test_build_run_config_custom_agent_injects_agent_name():
     assert config["run_name"] == "finalis"
 
 
-def test_build_run_config_lead_agent_no_agent_name():
-    """'lead_agent' assistant_id must NOT inject configurable['agent_name']."""
+def test_build_run_config_known_graphs_do_not_inject_agent_name():
+    """Known graph assistant ids must NOT inject configurable['agent_name']."""
     from app.gateway.services import build_run_config
 
-    config = build_run_config("thread-1", None, None, assistant_id="lead_agent")
-    assert "agent_name" not in config["configurable"]
-    assert "run_name" not in config
+    for assistant_id in ("chat_lead_agent", "computer_lead_agent"):
+        config = build_run_config("thread-1", None, None, assistant_id=assistant_id)
+        assert "agent_name" not in config["configurable"]
+        assert "run_name" not in config
 
 
 def test_build_run_config_none_assistant_id_no_agent_name():
@@ -252,15 +253,16 @@ def test_build_run_config_context_custom_agent_injects_agent_name():
     assert "configurable" not in config
 
 
-def test_resolve_agent_factory_returns_make_lead_agent():
-    """resolve_agent_factory always returns make_lead_agent regardless of assistant_id."""
+def test_resolve_agent_factory_returns_mode_factories():
+    """resolve_agent_factory maps first-class graph ids and custom agents."""
     from app.gateway.services import resolve_agent_factory
-    from deerflow.agents.lead_agent.agent import make_lead_agent
+    from deerflow.agents.lead_agent.agent import make_chat_lead_agent, make_computer_lead_agent
 
-    assert resolve_agent_factory(None) is make_lead_agent
-    assert resolve_agent_factory("lead_agent") is make_lead_agent
-    assert resolve_agent_factory("finalis") is make_lead_agent
-    assert resolve_agent_factory("custom-agent-123") is make_lead_agent
+    assert resolve_agent_factory(None) is make_chat_lead_agent
+    assert resolve_agent_factory("chat_lead_agent") is make_chat_lead_agent
+    assert resolve_agent_factory("computer_lead_agent") is make_computer_lead_agent
+    assert resolve_agent_factory("finalis") is make_computer_lead_agent
+    assert resolve_agent_factory("custom-agent-123") is make_computer_lead_agent
 
 
 # ---------------------------------------------------------------------------

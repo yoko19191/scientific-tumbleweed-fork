@@ -17,7 +17,7 @@ def test_run_worker_publishes_structured_sandbox_capacity_error():
 
     bridge = SimpleNamespace(publish=AsyncMock(), publish_end=AsyncMock(), cleanup=cleanup)
     run_manager = SimpleNamespace(set_status=AsyncMock(), cleanup=cleanup)
-    record = SimpleNamespace(run_id="run-1", thread_id="thread-1", abort_action=None, assistant_id="lead_agent", model_name=None)
+    record = SimpleNamespace(run_id="run-1", thread_id="thread-1", abort_action=None, assistant_id="computer_lead_agent", model_name=None)
     capacity = {
         "enabled": True,
         "backend": "local",

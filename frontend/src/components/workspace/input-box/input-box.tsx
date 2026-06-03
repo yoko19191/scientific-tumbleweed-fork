@@ -62,7 +62,6 @@ import {
   ModelSelectorName,
   ModelSelectorTrigger,
 } from "../../ai-elements/model-selector";
-import { ModeHoverGuide } from "../mode-hover-guide";
 
 import {
   type InputMode,
@@ -99,7 +98,12 @@ export function InputBox({
   > & {
     mode: "chat" | "computer" | undefined;
     reasoning_effort?: ReasoningEffort;
-    tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
+    tone_style?:
+      | "normal"
+      | "formal"
+      | "concise"
+      | "explanatory"
+      | "encouraging";
   };
   extraHeader?: React.ReactNode;
   isWelcomeMode?: boolean;
@@ -113,7 +117,12 @@ export function InputBox({
     > & {
       mode: "chat" | "computer" | undefined;
       reasoning_effort?: ReasoningEffort;
-      tone_style?: "normal" | "formal" | "concise" | "explanatory" | "encouraging";
+      tone_style?:
+        | "normal"
+        | "formal"
+        | "concise"
+        | "explanatory"
+        | "encouraging";
     },
   ) => void;
   onSubmit?: (message: PromptInputMessage) => void;
@@ -135,11 +144,60 @@ export function InputBox({
   const showWelcomeMode = isWelcomeMode ?? isNewThread;
   const resolvedMode = getResolvedMode(context.mode);
   const [computerIgniting, setComputerIgniting] = useState(false);
+  const [modeBanner, setModeBanner] = useState<{
+    message: string;
+    visible: boolean;
+  } | null>(null);
   const previousModeRef = useRef<InputMode>(resolvedMode);
+  const modeBannerFadeTimeoutRef = useRef<number | null>(null);
+  const modeBannerRemoveTimeoutRef = useRef<number | null>(null);
+
+  const clearModeBannerTimers = useCallback(() => {
+    if (modeBannerFadeTimeoutRef.current !== null) {
+      window.clearTimeout(modeBannerFadeTimeoutRef.current);
+      modeBannerFadeTimeoutRef.current = null;
+    }
+    if (modeBannerRemoveTimeoutRef.current !== null) {
+      window.clearTimeout(modeBannerRemoveTimeoutRef.current);
+      modeBannerRemoveTimeoutRef.current = null;
+    }
+  }, []);
+
+  const showModeBanner = useCallback(
+    (message: string) => {
+      clearModeBannerTimers();
+      setModeBanner({ message, visible: true });
+      modeBannerFadeTimeoutRef.current = window.setTimeout(() => {
+        setModeBanner((current) =>
+          current ? { ...current, visible: false } : current,
+        );
+        modeBannerFadeTimeoutRef.current = null;
+      }, 3000);
+      modeBannerRemoveTimeoutRef.current = window.setTimeout(() => {
+        setModeBanner(null);
+        modeBannerRemoveTimeoutRef.current = null;
+      }, 3450);
+    },
+    [clearModeBannerTimers],
+  );
+
+  const getModeDescription = useCallback(
+    (mode: InputMode) =>
+      mode === "computer"
+        ? t.inputBox.computerModeDescription
+        : t.inputBox.chatModeDescription,
+    [t.inputBox.chatModeDescription, t.inputBox.computerModeDescription],
+  );
+
+  useEffect(() => clearModeBannerTimers, [clearModeBannerTimers]);
 
   useEffect(() => {
     const previousMode = previousModeRef.current;
     previousModeRef.current = resolvedMode;
+
+    if (previousMode !== resolvedMode) {
+      showModeBanner(getModeDescription(resolvedMode));
+    }
 
     if (previousMode !== "computer" && resolvedMode === "computer") {
       setComputerIgniting(true);
@@ -152,7 +210,7 @@ export function InputBox({
     if (resolvedMode !== "computer") {
       setComputerIgniting(false);
     }
-  }, [resolvedMode]);
+  }, [getModeDescription, resolvedMode, showModeBanner]);
 
   useEffect(() => {
     if (models.length === 0) {
@@ -227,10 +285,7 @@ export function InputBox({
   const handleModeSelect = useCallback(
     (mode: InputMode) => {
       const nextMode = getResolvedMode(mode);
-      if (
-        sandboxCapacitySaturated &&
-        nextMode === "computer"
-      ) {
+      if (sandboxCapacitySaturated && nextMode === "computer") {
         onContextChange?.({
           ...context,
           mode: "chat",
@@ -243,11 +298,7 @@ export function InputBox({
         mode: nextMode,
       });
     },
-    [
-      onContextChange,
-      context,
-      sandboxCapacitySaturated,
-    ],
+    [onContextChange, context, sandboxCapacitySaturated],
   );
 
   const handleReasoningEffortSelect = useCallback(
@@ -286,10 +337,7 @@ export function InputBox({
       if (!message.text) {
         return;
       }
-      if (
-        sandboxCapacitySaturated &&
-        context.mode === "computer"
-      ) {
+      if (sandboxCapacitySaturated && context.mode === "computer") {
         onContextChange?.({
           ...context,
           mode: "chat",
@@ -304,9 +352,7 @@ export function InputBox({
         onContextChange?.({
           ...context,
           model_name: resolvedModelName,
-          mode: getResolvedMode(
-            context.mode,
-          ),
+          mode: getResolvedMode(context.mode),
           reasoning_effort: resolveReasoningEffort(
             context.reasoning_effort,
             selectedModel,
@@ -343,6 +389,12 @@ export function InputBox({
     ],
   );
 
+  const modeBannerContent = modeBanner && (
+    <div className="max-w-[min(42rem,calc(100%-1rem))] truncate rounded-lg bg-neutral-800 px-3 py-2 text-center text-xs leading-relaxed text-white shadow-md">
+      {modeBanner.message}
+    </div>
+  );
+
   return (
     <div
       className={cn(
@@ -350,6 +402,19 @@ export function InputBox({
         showWelcomeMode ? "gap-3" : "gap-2",
       )}
     >
+      {!showWelcomeMode && modeBannerContent && (
+        <div
+          className={cn(
+            "pointer-events-none right-0 left-0 z-30 flex justify-center px-2 transition-all duration-500 ease-out",
+            "absolute -top-20 sm:-top-24",
+            modeBanner.visible
+              ? "translate-y-0 opacity-100"
+              : "-translate-y-1 opacity-0",
+          )}
+        >
+          {modeBannerContent}
+        </div>
+      )}
       <PromptInput
         className={cn(
           "bg-background/85 rounded-2xl backdrop-blur-sm transition-all duration-300 ease-out *:data-[slot='input-group']:rounded-2xl",
@@ -360,7 +425,7 @@ export function InputBox({
             !sandboxCapacityUnavailableForMode &&
             "computer-input-ignite",
           sandboxCapacityUnavailableForMode &&
-            "border-muted bg-muted/55 shadow-none grayscale-[0.15] *:data-[slot='input-group']:bg-muted/55",
+            "border-muted bg-muted/55 *:data-[slot='input-group']:bg-muted/55 shadow-none grayscale-[0.15]",
           className,
         )}
         disabled={disabled}
@@ -371,7 +436,24 @@ export function InputBox({
       >
         {extraHeader && (
           <div className="absolute top-0 right-0 left-0 z-10">
-            <div className="absolute right-0 bottom-0 left-0 flex items-center justify-center">
+            <div
+              className={cn(
+                "absolute right-0 bottom-0 left-0 flex items-center justify-center",
+                showWelcomeMode && "flex-col gap-8",
+              )}
+            >
+              {showWelcomeMode && modeBannerContent && (
+                <div
+                  className={cn(
+                    "pointer-events-none flex justify-center px-2 transition-all duration-500 ease-out",
+                    modeBanner.visible
+                      ? "translate-y-0 opacity-100"
+                      : "-translate-y-1 opacity-0",
+                  )}
+                >
+                  {modeBannerContent}
+                </div>
+              )}
               {extraHeader}
             </div>
           </div>
@@ -409,28 +491,20 @@ export function InputBox({
               onToneStyleSelect={handleToneStyleSelect}
             />
             <PromptInputActionMenu>
-              <ModeHoverGuide
-                mode={
-                  context.mode === "chat" || context.mode === "computer"
-                    ? context.mode
-                    : "chat"
-                }
-              >
-                <PromptInputActionMenuTrigger className="gap-1! px-2!">
-                  <div>
-                    {context.mode === "chat" && (
-                      <MessageCircleIcon className="size-3" />
-                    )}
-                    {context.mode === "computer" && (
-                      <BotIcon className="size-3" />
-                    )}
-                  </div>
-                  <div className="text-xs font-normal">
-                    {(context.mode === "chat" && t.inputBox.chatMode) ||
-                      (context.mode === "computer" && t.inputBox.computerMode)}
-                  </div>
-                </PromptInputActionMenuTrigger>
-              </ModeHoverGuide>
+              <PromptInputActionMenuTrigger className="gap-1! px-2!">
+                <div>
+                  {context.mode === "chat" && (
+                    <MessageCircleIcon className="size-3" />
+                  )}
+                  {context.mode === "computer" && (
+                    <BotIcon className="size-3" />
+                  )}
+                </div>
+                <div className="text-xs font-normal">
+                  {(context.mode === "chat" && t.inputBox.chatMode) ||
+                    (context.mode === "computer" && t.inputBox.computerMode)}
+                </div>
+              </PromptInputActionMenuTrigger>
               <PromptInputActionMenuContent className="w-80">
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="text-muted-foreground text-xs">
@@ -603,9 +677,7 @@ export function InputBox({
                       onSelect={() => handleModelSelect(m.name)}
                     >
                       <div className="flex min-w-0 flex-1 flex-col">
-                        <ModelSelectorName>
-                          {m.display_name}
-                        </ModelSelectorName>
+                        <ModelSelectorName>{m.display_name}</ModelSelectorName>
                         <span className="text-muted-foreground truncate text-[10px]">
                           {m.description ?? m.model}
                         </span>

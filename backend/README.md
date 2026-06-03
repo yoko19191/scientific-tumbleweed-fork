@@ -118,6 +118,13 @@ checks, prefix deletion, and create-time cleanup. Gateway routes and
 `setup_agent` / `update_agent` tools use that store instead of hand-editing
 agent objects.
 
+### Workspace Apps
+
+Workspace apps are registered through the harness-level `deerflow.apps`
+registry and exposed by Gateway at `GET /api/apps`. The registry starts empty;
+each real app should live in its own module and register an `AppDefinition`
+instead of relying on frontend placeholder cards.
+
 ### Memory System
 
 LLM-powered persistent context retention across conversations:
@@ -145,6 +152,7 @@ FastAPI application providing REST endpoints for frontend integration:
 | Route | Purpose |
 |-------|---------|
 | `GET /api/models` | List available LLM models |
+| `GET /api/apps` | List registered workspace app modules |
 | `GET/PUT /api/mcp/config` | Manage MCP server configurations |
 | `GET/PUT /api/skills` | List and manage skills |
 | `POST /api/skills/install` | Install skill from `.skill` archive |

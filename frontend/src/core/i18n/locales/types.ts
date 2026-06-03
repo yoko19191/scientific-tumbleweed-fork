@@ -243,6 +243,7 @@ export interface Translations {
     chats: string;
     demoChats: string;
     agents: string;
+    apps: string;
   };
 
   // Agents
@@ -279,6 +280,29 @@ export interface Translations {
     agentCreated: string;
     startChatting: string;
     backToGallery: string;
+  };
+
+  // Apps
+  apps: {
+    title: string;
+    description: string;
+    searchPlaceholder: string;
+    categoryFilterLabel: string;
+    allCategories: string;
+    featured: string;
+    comingSoon: string;
+    openApp: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    noResultsTitle: string;
+    noResultsDescription: string;
+    errorTitle: string;
+    errorDescription: string;
+    stats: {
+      registered: string;
+      categories: string;
+      featured: string;
+    };
   };
 
   // Breadcrumb

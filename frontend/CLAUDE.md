@@ -36,7 +36,7 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 
 ### Source Layout (`src/`)
 
-- **`app/`** — Next.js App Router. Routes: `/` (landing), `/workspace/chats/[thread_id]` (chat).
+- **`app/`** — Next.js App Router. Routes: `/` (landing), `/workspace/chats/[thread_id]` (chat), `/workspace/apps` (registered app launcher).
 - **`components/`** — React components split into:
   - `ui/` — Shadcn UI primitives (auto-generated, ESLint-ignored)
   - `ai-elements/` — AI interaction components:
@@ -58,6 +58,7 @@ The frontend is a stateful chat application. Users create **threads** (conversat
   - `settings/` — User preferences in localStorage
   - `memory/` — Persistent user memory system
   - `skills/` — Skills installation and management
+  - `apps/` — Workspace app metadata API client and React Query hook; app cards must come from `/api/apps`, not local placeholder arrays
   - `messages/` — Message processing:
     - `grouping.ts` — Message grouping logic (human, assistant, processing groups)
     - `extraction.ts` — Content extraction, reasoning, tool calls, file parsing

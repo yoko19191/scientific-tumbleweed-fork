@@ -532,6 +532,7 @@ export const enUS: Translations = {
     recentChats: "Recent chats",
     demoChats: "Demo chats",
     agents: "Agents",
+    apps: "Apps",
   },
 
   // Agents
@@ -581,6 +582,32 @@ export const enUS: Translations = {
     agentCreated: "Agent created!",
     startChatting: "Start chatting",
     backToGallery: "Back to Gallery",
+  },
+
+  // Apps
+  apps: {
+    title: "Apps",
+    description:
+      "Registered workflow apps appear here. Each app should provide its own metadata and launch behavior from a dedicated module.",
+    searchPlaceholder: "Search apps",
+    categoryFilterLabel: "Apps categories",
+    allCategories: "All",
+    featured: "Featured",
+    comingSoon: "Soon",
+    openApp: "Open",
+    emptyTitle: "No apps registered yet",
+    emptyDescription:
+      "There are no real app modules to show. Add an app by registering a backend module and the frontend will read it from /api/apps.",
+    noResultsTitle: "No apps match this view",
+    noResultsDescription: "Try another search term or category.",
+    errorTitle: "Could not load apps",
+    errorDescription:
+      "Make sure the Gateway API is running and /api/apps is reachable.",
+    stats: {
+      registered: "Registered",
+      categories: "Categories",
+      featured: "Featured",
+    },
   },
 
   // Breadcrumb

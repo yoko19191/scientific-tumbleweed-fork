@@ -63,7 +63,8 @@ pnpm start
 ├── /                    # Landing page
 ├── /chats               # Chat list
 ├── /chats/new           # New chat page
-└── /chats/[thread_id]   # A specific chat page
+├── /chats/[thread_id]   # A specific chat page
+└── /workspace/apps      # Registered workspace apps launcher
 ```
 
 ## Configuration
@@ -94,6 +95,7 @@ src/
 │   └── ai-elements/        # AI-related UI elements
 ├── core/                   # Core business logic
 │   ├── api/                # API client & data fetching
+│   ├── apps/               # Workspace app API client, types, and hooks
 │   ├── artifacts/          # Artifact management
 │   ├── config/              # App configuration
 │   ├── i18n/               # Internationalization

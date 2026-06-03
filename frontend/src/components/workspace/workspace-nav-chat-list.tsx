@@ -1,6 +1,11 @@
 "use client";
 
-import { BotIcon, BriefcaseIcon, MessagesSquare } from "lucide-react";
+import {
+  BotIcon,
+  BriefcaseIcon,
+  LayoutGridIcon,
+  MessagesSquare,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -31,7 +36,10 @@ export function WorkspaceNavChatList() {
             isActive={pathname.startsWith("/workspace/preferences")}
             asChild
           >
-            <Link className="text-muted-foreground" href="/workspace/preferences">
+            <Link
+              className="text-muted-foreground"
+              href="/workspace/preferences"
+            >
               <BriefcaseIcon />
               <span>{t.preferences.title}</span>
             </Link>
@@ -45,6 +53,17 @@ export function WorkspaceNavChatList() {
             <Link className="text-muted-foreground" href="/workspace/agents">
               <BotIcon />
               <span>{t.sidebar.agents}</span>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            isActive={pathname.startsWith("/workspace/apps")}
+            asChild
+          >
+            <Link className="text-muted-foreground" href="/workspace/apps">
+              <LayoutGridIcon />
+              <span>{t.sidebar.apps}</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>

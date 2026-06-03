@@ -525,6 +525,7 @@ export const zhCN: Translations = {
     recentChats: "最近的对话",
     demoChats: "演示对话",
     agents: "智能体",
+    apps: "Apps",
   },
 
   // Agents
@@ -568,6 +569,31 @@ export const zhCN: Translations = {
     agentCreated: "智能体已创建！",
     startChatting: "开始对话",
     backToGallery: "返回 Gallery",
+  },
+
+  // Apps
+  apps: {
+    title: "Apps",
+    description:
+      "这里会展示后端注册的真实工作流 Apps。每个 App 都应由独立模块提供元数据和启动方式。",
+    searchPlaceholder: "搜索 Apps",
+    categoryFilterLabel: "Apps 分类",
+    allCategories: "全部",
+    featured: "精选",
+    comingSoon: "即将推出",
+    openApp: "打开",
+    emptyTitle: "还没有注册 Apps",
+    emptyDescription:
+      "当前没有真实 App 模块可展示。新增 App 时，请在后端注册模块，并由前端通过 /api/apps 自动读取。",
+    noResultsTitle: "没有匹配的 App",
+    noResultsDescription: "换一个关键词或分类试试。",
+    errorTitle: "无法加载 Apps",
+    errorDescription: "请确认 Gateway API 已启动，并且 /api/apps 可以访问。",
+    stats: {
+      registered: "已注册",
+      categories: "分类",
+      featured: "精选",
+    },
   },
 
   // Breadcrumb

@@ -623,6 +623,7 @@ export const zhCN: Translations = {
 
   // Chats
   chats: {
+    description: "查看、搜索和继续你在工作区中的历史对话。",
     searchChats: "搜索对话",
   },
 
@@ -892,6 +893,7 @@ export const zhCN: Translations = {
 
   preferences: {
     title: "个性化",
+    description: "管理记忆、工具和技能设置，让工作区更贴合你的研究习惯。",
     tabs: {
       memory: "记忆",
       tools: "工具",

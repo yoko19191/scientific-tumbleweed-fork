@@ -637,6 +637,7 @@ export const enUS: Translations = {
 
   // Chats
   chats: {
+    description: "Review, search, and continue workspace conversations.",
     searchChats: "Search chats",
   },
 
@@ -913,6 +914,8 @@ export const enUS: Translations = {
 
   preferences: {
     title: "Preferences",
+    description:
+      "Manage memory, tools, and skills so the workspace fits your research habits.",
     tabs: {
       memory: "Memory",
       tools: "Tools",

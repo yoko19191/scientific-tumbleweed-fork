@@ -1,11 +1,13 @@
 "use client";
 
+import { BriefcaseIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 
 import { MemorySettingsPage } from "@/components/workspace/settings/memory-settings";
 import { SkillSettingsPage } from "@/components/workspace/settings/skill-settings-page";
 import { ToolSettingsPage } from "@/components/workspace/settings/tool-settings-page";
+import { WorkspacePageHeader } from "@/components/workspace/workspace-page-header";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
@@ -29,13 +31,14 @@ function PreferencesContent() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border px-6 py-4">
-        <h1 className="text-xl font-semibold">{t.preferences.title}</h1>
-      </div>
+      <WorkspacePageHeader
+        icon={BriefcaseIcon}
+        title={t.preferences.title}
+        description={t.preferences.description}
+      />
 
       {/* Horizontal tab nav */}
-      <div className="border-b border-border px-6">
+      <div className="border-border border-b px-6">
         <nav className="flex gap-1" aria-label="Preferences tabs">
           {tabs.map(({ id, label }) => (
             <button
@@ -43,10 +46,10 @@ function PreferencesContent() {
               type="button"
               onClick={() => setTab(id)}
               className={cn(
-                "px-4 py-3 text-sm font-medium transition-colors border-b-2 -mb-px",
+                "-mb-px border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                 activeTab === id
                   ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground",
+                  : "text-muted-foreground hover:text-foreground hover:border-muted-foreground border-transparent",
               )}
             >
               {label}

@@ -9,6 +9,8 @@ import { useApps } from "@/core/apps";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
+import { WorkspacePageHeader } from "../workspace-page-header";
+
 import { AppCard, formatCategory } from "./app-card";
 import { AppsEmptyState } from "./apps-empty-state";
 
@@ -51,19 +53,11 @@ export function AppsPage() {
 
   return (
     <div className="flex size-full flex-col">
-      <div className="border-b px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="mb-2 flex items-center gap-2">
-              <div className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-lg">
-                <LayoutGridIcon className="size-4" />
-              </div>
-              <h1 className="text-xl font-semibold">{t.apps.title}</h1>
-            </div>
-            <p className="text-muted-foreground max-w-2xl text-sm">
-              {t.apps.description}
-            </p>
-          </div>
+      <WorkspacePageHeader
+        icon={LayoutGridIcon}
+        title={t.apps.title}
+        description={t.apps.description}
+        actions={
           <div className="grid min-w-64 grid-cols-3 overflow-hidden rounded-lg border">
             <AppStat value={apps.length} label={t.apps.stats.registered} />
             <AppStat
@@ -75,8 +69,8 @@ export function AppsPage() {
               label={t.apps.stats.featured}
             />
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <div className="flex min-h-0 flex-1 flex-col">
         {apps.length > 0 && (

@@ -332,6 +332,7 @@ export interface Translations {
 
   // Chats
   chats: {
+    description: string;
     searchChats: string;
   };
 
@@ -591,6 +592,7 @@ export interface Translations {
   // Preferences
   preferences: {
     title: string;
+    description: string;
     tabs: {
       memory: string;
       tools: string;

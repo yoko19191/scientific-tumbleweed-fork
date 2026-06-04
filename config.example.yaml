@@ -97,6 +97,28 @@ models:
         thinking:
           type: enabled
 
+  - name: doubao-seed-2.0-pro
+    display_name: Doubao Seed 2.0 Pro
+    description: 字节糖包，用最直接最不绕弯子的回答稳稳接住你
+    use: langchain_openai:ChatOpenAI
+    model: doubao-seed-2-0-pro-260215
+    api_key: $DMXAPI_API_KEY
+    base_url: https://www.dmxapi.cn/v1
+    timeout: 600
+    max_retries: 5
+    supports_thinking: true
+    supports_vision: true
+    supports_reasoning_effort: true
+    reasoning_effort_levels: ["minimal", "low", "medium", "high"]
+    default_reasoning_effort: medium
+    max_tokens: 131072
+    profile:
+      max_input_tokens: 262144
+    when_thinking_enabled:
+      extra_body:
+        thinking:
+          type: enabled
+
   - name: mimo-v2.5-pro
     display_name: MiMO V2.5 Pro
     description: 小米旗舰模型长程推理能力模型，Agent 效率高
@@ -174,7 +196,7 @@ models:
   
   - name: claude-sonnet-4-6
     display_name: Claude Sonnet 4.6
-    description: Anthropic 主力模型，编程能力强，人机交互体验好
+    description: Anthropic 主力模型，编程强人机交互体验1st
     use: langchain_anthropic:ChatAnthropic
     model: claude-sonnet-4-6
     api_key: $DMXAPI_API_KEY

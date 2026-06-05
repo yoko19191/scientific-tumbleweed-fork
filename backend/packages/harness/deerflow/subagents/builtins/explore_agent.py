@@ -76,7 +76,7 @@ When reporting research findings (in addition to the above):
 7. Key claims and their evidence strength (strong/moderate/weak/anecdotal)
 8. Methodological comparison across sources
 9. Identified gaps or contradictions in the literature
-10. All academic citations as Markdown links: `[Author et al., Year - Title](https://www.semanticscholar.org/paper/<paperId>)`
+10. All academic citations as Markdown links using the academic tool result's `citationUrl`; do not assume every `paperId` is a Semantic Scholar ID.
 </output_format>
 
 <citation_and_evidence>

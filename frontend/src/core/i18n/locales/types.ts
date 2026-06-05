@@ -371,6 +371,13 @@ export interface Translations {
     getCitationNetwork: string;
   };
 
+  // Citations
+  citations: {
+    source: string;
+    visitSource: string;
+    citationsCount: (count: number) => string;
+  };
+
   // Uploads
   uploads: {
     uploading: string;

@@ -10,6 +10,8 @@ from urllib.parse import quote
 
 import httpx
 
+from deerflow.community.citations import canonical_academic_result
+
 from .cache import TTLCache, build_cache_key
 
 GRAPH_API_BASE_URL = "https://api.semanticscholar.org/graph/v1"
@@ -116,28 +118,40 @@ def _normalize_open_access_url(value: Any) -> str | None:
 
 
 def normalize_paper(paper: dict[str, Any], *, include_detail_fields: bool = False) -> dict[str, Any]:
+    tldr = _coerce_tldr(paper.get("tldr"))
+    external_ids = paper.get("externalIds") or {}
+    doi = external_ids.get("DOI") if isinstance(external_ids, dict) else None
     result: dict[str, Any] = {
         "paperId": paper.get("paperId"),
         "title": paper.get("title"),
         "abstract": paper.get("abstract"),
-        "tldr": _coerce_tldr(paper.get("tldr")),
+        "tldr": tldr,
         "year": paper.get("year"),
         "venue": paper.get("venue"),
         "authors": _normalize_authors(paper.get("authors")),
         "citationCount": paper.get("citationCount"),
         "openAccessPdfUrl": _normalize_open_access_url(paper.get("openAccessPdf")),
+        **canonical_academic_result(
+            title=paper.get("title"),
+            provider="semantic_scholar",
+            paper_id=paper.get("paperId"),
+            doi=doi,
+            abstract=paper.get("abstract"),
+            tldr=tldr,
+        ),
     }
     if include_detail_fields:
         result["journal"] = paper.get("journal") if isinstance(paper.get("journal"), dict) else None
         result["referenceCount"] = paper.get("referenceCount")
         result["isOpenAccess"] = paper.get("isOpenAccess")
-        result["externalIds"] = paper.get("externalIds") or {}
+        result["externalIds"] = external_ids
     return result
 
 
 def normalize_relation_preview(entry: dict[str, Any], paper_key: str) -> dict[str, Any]:
     paper = entry.get(paper_key)
     raw = paper if isinstance(paper, dict) else {}
+    normalized = normalize_paper(raw)
     return {
         "paperId": raw.get("paperId"),
         "title": raw.get("title"),
@@ -145,6 +159,11 @@ def normalize_relation_preview(entry: dict[str, Any], paper_key: str) -> dict[st
         "year": raw.get("year"),
         "citationCount": raw.get("citationCount"),
         "isInfluential": entry.get("isInfluential"),
+        "citationUrl": normalized.get("citationUrl"),
+        "citationTitle": normalized.get("citationTitle"),
+        "citationProvider": normalized.get("citationProvider"),
+        "citationType": normalized.get("citationType"),
+        "evidenceSnippet": normalized.get("evidenceSnippet"),
     }
 
 

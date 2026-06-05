@@ -3,6 +3,7 @@ import json
 from firecrawl import FirecrawlApp
 from langchain.tools import tool
 
+from deerflow.community.citations import canonical_web_result, format_fetched_document
 from deerflow.config import get_app_config
 
 
@@ -37,6 +38,12 @@ def web_search_tool(query: str) -> str:
                 "title": getattr(item, "title", "") or "",
                 "url": getattr(item, "url", "") or "",
                 "snippet": getattr(item, "description", "") or "",
+                **canonical_web_result(
+                    title=getattr(item, "title", "") or "",
+                    url=getattr(item, "url", "") or "",
+                    snippet=getattr(item, "description", "") or "",
+                    provider="firecrawl",
+                ),
             }
             for item in web_results
         ]
@@ -70,4 +77,9 @@ def web_fetch_tool(url: str) -> str:
     except Exception as e:
         return f"Error: {str(e)}"
 
-    return f"# {title}\n\n{markdown_content[:4096]}"
+    return format_fetched_document(
+        title=title,
+        url=url,
+        provider="firecrawl",
+        content=markdown_content,
+    )

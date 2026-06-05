@@ -601,6 +601,8 @@ When you install `.skill` archives through the Gateway, Scientific Tumbleweed ac
 
 Tools follow the same philosophy. Scientific Tumbleweed comes with a core toolset — web search, web fetch, file operations, bash execution — and supports custom tools via MCP servers and Python functions. Swap anything. Add anything.
 
+External evidence tools expose canonical citation fields (`citationUrl`, `citationTitle`, `citationProvider`, `citationType`, and `evidenceSnippet`) while preserving provider-specific fields. Academic citations use provider-correct URLs (DOI, OpenAlex, or Semantic Scholar as appropriate), and web fetch results include source provenance before page content when the tool is enabled.
+
 Gateway-generated follow-up suggestions now normalize both plain-string model output and block/list-style rich content before parsing the JSON array response, so provider-specific content wrappers do not silently drop suggestions.
 
 ```

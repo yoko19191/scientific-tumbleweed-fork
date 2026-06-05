@@ -209,14 +209,14 @@ class AcademicAggregator:
             s2_id = paper_id
             if paper_id.startswith("10.") or "doi.org" in paper_id.lower():
                 s2_id = f"DOI:{paper_id}" if not paper_id.upper().startswith("DOI:") else paper_id
-            return self._s2.get_paper_details(s2_id)
+            return self._unwrap_s2_paper_details(self._s2.get_paper_details(s2_id))
         except Exception as exc:
             logger.debug("S2 get_paper fallback failed for %s: %s", paper_id, exc)
             return None
 
     def _get_paper_s2_first(self, paper_id: str) -> dict[str, Any] | None:
         try:
-            return self._s2.get_paper_details(paper_id)
+            return self._unwrap_s2_paper_details(self._s2.get_paper_details(paper_id))
         except Exception as exc:
             logger.debug("S2 get_paper failed for %s: %s", paper_id, exc)
 
@@ -228,6 +228,11 @@ class AcademicAggregator:
             logger.debug("OpenAlex get_paper fallback failed for %s: %s", paper_id, exc)
 
         return None
+
+    @staticmethod
+    def _unwrap_s2_paper_details(details: dict[str, Any]) -> dict[str, Any] | None:
+        paper = details.get("paper") if isinstance(details, dict) else None
+        return paper if isinstance(paper, dict) else None
 
     @staticmethod
     def _resolve_year_range(

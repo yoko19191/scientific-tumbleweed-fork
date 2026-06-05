@@ -140,6 +140,20 @@ def test_apply_prompt_template_includes_collaboration_mechanics(monkeypatch):
     assert "当前用户明确指令优先于旧记忆" in prompt
 
 
+def test_apply_prompt_template_includes_canonical_citation_contract(monkeypatch):
+    _patch_prompt_dependencies(monkeypatch)
+
+    prompt = prompt_module.apply_prompt_template()
+
+    assert "<citations>" in prompt
+    assert "claim-level citation" in prompt
+    assert "`citationUrl`" in prompt
+    assert "`citationTitle`" in prompt
+    assert "不要假设 `paperId` 一定是 Semantic Scholar ID" in prompt
+    assert "若 web_fetch 可用，先 fetch 关键来源验证正文" in prompt
+    assert "当前证据不足" in prompt
+
+
 def test_build_custom_mounts_section_lists_configured_mounts(monkeypatch):
     mounts = [
         SimpleNamespace(container_path="/home/user/shared", read_only=False),

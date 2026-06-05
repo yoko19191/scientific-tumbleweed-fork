@@ -229,7 +229,7 @@ def generate_bibtex(paper: dict[str, Any], custom_key: str | None = None) -> str
         lines.append(f"  eprint = {{{arxiv_id}}},")
         lines.append("  archiveprefix = {arXiv},")
 
-    url = paper.get("openAccessPdfUrl") or paper.get("url")
+    url = paper.get("citationUrl") or paper.get("openAccessPdfUrl") or paper.get("url")
     if url:
         lines.append(f"  url = {{{url}}},")
 

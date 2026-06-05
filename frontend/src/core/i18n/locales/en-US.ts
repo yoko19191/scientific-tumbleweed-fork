@@ -677,6 +677,13 @@ export const enUS: Translations = {
     getCitationNetwork: "Building citation network",
   },
 
+  // Citations
+  citations: {
+    source: "Source",
+    visitSource: "Visit source",
+    citationsCount: (count: number) => `${count} citations`,
+  },
+
   // Subtasks
   uploads: {
     uploading: "Uploading...",

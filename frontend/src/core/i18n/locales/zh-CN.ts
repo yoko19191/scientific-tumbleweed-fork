@@ -662,6 +662,13 @@ export const zhCN: Translations = {
     getCitationNetwork: "构建引用网络",
   },
 
+  // Citations
+  citations: {
+    source: "来源",
+    visitSource: "查看来源",
+    citationsCount: (count: number) => `${count} 次引用`,
+  },
+
   uploads: {
     uploading: "上传中...",
     uploadingFiles: "文件上传中，请稍候...",

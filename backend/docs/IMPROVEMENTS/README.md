@@ -11,6 +11,7 @@
 4. `04-user-extensions-config.md` - User Extensions Config Module
 5. `05-custom-agent-store.md` - Custom Agent Store Module
 6. `06-run-state-streaming-persistence.md` - Run State、Streaming 与 Persistence 深化
+7. `07-citation-grounding.md` - Citation Grounding 与 Source Evidence 改造
 
 每个 Phase 只在当前边界内改造，并在对应文档中记录新 Module 的
 Interface、Adapter、迁移规则和测试证据。

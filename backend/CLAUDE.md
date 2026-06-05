@@ -337,6 +337,7 @@ Run wait and stream protocol helpers are harness runtime concerns. Routers shoul
 - `tavily/` - Web search (5 results default) and web fetch (4KB limit)
 - `jina_ai/` - Web fetch via Jina reader API with readability extraction
 - `firecrawl/` - Web scraping via Firecrawl API
+- Evidence-producing community tools should expose canonical citation fields (`citationUrl`, `citationTitle`, `citationProvider`, `citationType`, `evidenceSnippet`) without removing provider-specific fields. Academic tools must not infer a Semantic Scholar URL from every `paperId`; DOI URLs, OpenAlex work URLs, and Semantic Scholar paper URLs are selected by provider/ID type. Web fetch output includes `citationUrl`, `citationTitle`, `citationProvider`, `citationType`, and `fetchedAt` before page content.
 
 **ACP agent tools**:
 - `invoke_acp_agent` - Invokes external ACP-compatible agents from `config.yaml`

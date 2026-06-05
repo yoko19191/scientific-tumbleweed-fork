@@ -195,6 +195,9 @@ async def test_web_fetch_tool_returns_markdown_on_success(monkeypatch):
     monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
     monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
     result = await web_fetch_tool.ainvoke("https://example.com")
+    assert result.startswith("# Untitled\n\ncitationUrl: https://example.com")
+    assert "citationProvider: jina" in result
+    assert "fetchedAt: " in result
     assert "Hello world" in result
     assert not result.startswith("Error:")
 

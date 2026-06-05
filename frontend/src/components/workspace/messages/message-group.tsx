@@ -26,6 +26,13 @@ import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
 import {
+  extractFetchedCitation,
+  getCanonicalCitationUrl,
+  getCitationDisplayTitle,
+  getToolCardCitationHref,
+  type CitationLike,
+} from "@/core/messages/citations";
+import {
   extractTextFromMessage,
   extractReasoningContentFromMessage,
 } from "@/core/messages/utils";
@@ -186,6 +193,51 @@ function MessageGroupComponent({
 
 export const MessageGroup = memo(MessageGroupComponent);
 
+type AcademicPaperResult = CitationLike & {
+  paperId?: string;
+  title?: string;
+  authors?: string[];
+  year?: number | null;
+  venue?: string | null;
+  citationCount?: number | null;
+  openAccessPdfUrl?: string | null;
+};
+
+type WebSearchResult = CitationLike & {
+  url?: string;
+  title?: string;
+};
+
+function CitationAwareResult({
+  href,
+  children,
+}: {
+  href: string | null;
+  children: React.ReactNode;
+}) {
+  if (!href) {
+    return <span>{children}</span>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+}
+
+function getWebSearchResults(
+  result: string | Record<string, unknown> | undefined,
+) {
+  if (Array.isArray(result)) {
+    return result as WebSearchResult[];
+  }
+  const maybeResults = (result as { results?: unknown } | undefined)?.results;
+  if (Array.isArray(maybeResults)) {
+    return maybeResults as WebSearchResult[];
+  }
+  return null;
+}
+
 function ToolCall({
   id,
   messageId,
@@ -216,29 +268,26 @@ function ToolCall({
       label = t.toolCalls.searchAcademicPapersFor(args.query);
     }
     const parsed = result as {
-      results?: {
-        paperId: string;
-        title: string;
-        authors: string[];
-        year: number | null;
-        venue: string | null;
-        citationCount: number | null;
-        openAccessPdfUrl: string | null;
-      }[];
+      results?: AcademicPaperResult[];
     };
     const papers = parsed?.results;
     return (
       <ChainOfThoughtStep key={id} label={label} icon={GraduationCapIcon}>
         {Array.isArray(papers) && papers.length > 0 && (
           <ChainOfThoughtSearchResults>
-            {papers.map((paper) => (
-              <ChainOfThoughtSearchResult key={paper.paperId}>
-                <a
-                  href={`https://www.semanticscholar.org/paper/${paper.paperId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span>{paper.title}</span>
+            {papers.map((paper, index) => (
+              <ChainOfThoughtSearchResult
+                key={
+                  paper.paperId ??
+                  getCanonicalCitationUrl(paper) ??
+                  paper.title ??
+                  index
+                }
+              >
+                <CitationAwareResult href={getToolCardCitationHref(paper)}>
+                  <span>
+                    {getCitationDisplayTitle(paper) ?? paper.paperId}
+                  </span>
                   <span className="text-muted-foreground ml-1 text-xs">
                     {[
                       paper.authors?.slice(0, 2).join(", "),
@@ -253,7 +302,7 @@ function ToolCall({
                       .filter(Boolean)
                       .join(" · ")}
                   </span>
-                </a>
+                </CitationAwareResult>
               </ChainOfThoughtSearchResult>
             ))}
           </ChainOfThoughtSearchResults>
@@ -262,31 +311,27 @@ function ToolCall({
     );
   } else if (name === "academic_get_paper") {
     const parsed = result as {
-      paper?: {
-        paperId: string;
-        title: string;
-        authors: string[];
-        year: number | null;
-        venue: string | null;
-      };
+      paper?: AcademicPaperResult;
     };
     const paper = parsed?.paper;
     const paperLabel = paper?.title
       ? `${paper.title}`
       : t.toolCalls.useTool(name);
+    const paperMetaText = [
+      paper?.authors?.slice(0, 3).join(", "),
+      paper?.year,
+      paper?.venue,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const paperMeta = paperMetaText ? paperMetaText : null;
     return (
       <ChainOfThoughtStep key={id} label={paperLabel} icon={GraduationCapIcon}>
-        {paper?.paperId && (
+        {paper && (
           <ChainOfThoughtSearchResult>
-            <a
-              href={`https://www.semanticscholar.org/paper/${paper.paperId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {[paper.authors?.slice(0, 3).join(", "), paper.year, paper.venue]
-                .filter(Boolean)
-                .join(" · ")}
-            </a>
+            <CitationAwareResult href={getToolCardCitationHref(paper)}>
+              {paperMeta ?? getCitationDisplayTitle(paper) ?? paper.paperId}
+            </CitationAwareResult>
           </ChainOfThoughtSearchResult>
         )}
       </ChainOfThoughtStep>
@@ -296,15 +341,20 @@ function ToolCall({
     if (typeof args.query === "string") {
       label = t.toolCalls.searchOnWebFor(args.query);
     }
+    const searchResults = getWebSearchResults(result);
     return (
       <ChainOfThoughtStep key={id} label={label} icon={SearchIcon}>
-        {Array.isArray(result) && (
+        {Array.isArray(searchResults) && (
           <ChainOfThoughtSearchResults>
-            {result.map((item) => (
-              <ChainOfThoughtSearchResult key={item.url}>
-                <a href={item.url} target="_blank" rel="noopener noreferrer">
-                  {item.title}
-                </a>
+            {searchResults.map((item, index) => (
+              <ChainOfThoughtSearchResult
+                key={
+                  getCanonicalCitationUrl(item) ?? item.url ?? item.title ?? index
+                }
+              >
+                <CitationAwareResult href={getToolCardCitationHref(item)}>
+                  {getCitationDisplayTitle(item) ?? item.url}
+                </CitationAwareResult>
               </ChainOfThoughtSearchResult>
             ))}
           </ChainOfThoughtSearchResults>
@@ -358,9 +408,19 @@ function ToolCall({
   } else if (name === "web_fetch") {
     const url = (args as { url: string })?.url;
     let title = url;
+    let citationUrl: string | null = null;
     if (typeof result === "string") {
+      const citation = extractFetchedCitation(result);
+      citationUrl = citation.citationUrl;
+      if (citation.citationTitle) {
+        title = citation.citationTitle;
+      }
       const potentialTitle = extractTitleFromMarkdown(result);
-      if (potentialTitle && potentialTitle.toLowerCase() !== "untitled") {
+      if (
+        !citation.citationTitle &&
+        potentialTitle &&
+        potentialTitle.toLowerCase() !== "untitled"
+      ) {
         title = potentialTitle;
       }
     }
@@ -371,15 +431,10 @@ function ToolCall({
         icon={GlobeIcon}
       >
         <ChainOfThoughtSearchResult>
-          {url && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="cursor-pointer"
-            >
-              {title}
-            </a>
+          {title && (
+            <CitationAwareResult href={citationUrl}>
+              <span className="cursor-pointer">{title}</span>
+            </CitationAwareResult>
           )}
         </ChainOfThoughtSearchResult>
       </ChainOfThoughtStep>

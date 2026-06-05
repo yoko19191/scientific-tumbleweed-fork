@@ -9,6 +9,7 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { useI18n } from "@/core/i18n/hooks";
+import { buildCitationRegistry } from "@/core/messages/citations";
 import {
   accumulateUsage,
   splitTurns,
@@ -35,6 +36,7 @@ import type { AgentThreadState } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
+import { CitationRegistryProvider } from "../citations/context";
 import { FollowupSuggestions } from "../followup-suggestions";
 import { StreamingIndicator } from "../streaming-indicator";
 
@@ -94,6 +96,10 @@ export function MessageList({
     [messages],
   );
   const messageTurns = useMemo(() => splitTurns(messages), [messages]);
+  const citationRegistry = useMemo(
+    () => buildCitationRegistry(messages),
+    [messages],
+  );
   const showTurnUsage = tokenUsagePreset === "per_turn";
   const showStepDebug = tokenUsagePreset === "step_debug";
 
@@ -348,20 +354,22 @@ export function MessageList({
   }
 
   return (
-    <Conversation
-      className={cn("flex size-full flex-col justify-center", className)}
-    >
-      <ConversationScrollButton bottomOffset={paddingBottom + 16} />
-      <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-12">
-        <TurnList
-          turnItems={turnItems}
-          showStepDebug={showStepDebug}
-          showTurnUsage={showTurnUsage}
-        />
-        {thread.isLoading && <StreamingIndicator className="my-4" />}
-        <div style={{ height: `${paddingBottom}px` }} />
-      </ConversationContent>
-    </Conversation>
+    <CitationRegistryProvider registry={citationRegistry}>
+      <Conversation
+        className={cn("flex size-full flex-col justify-center", className)}
+      >
+        <ConversationScrollButton bottomOffset={paddingBottom + 16} />
+        <ConversationContent className="mx-auto w-full max-w-(--container-width-md) gap-8 pt-12">
+          <TurnList
+            turnItems={turnItems}
+            showStepDebug={showStepDebug}
+            showTurnUsage={showTurnUsage}
+          />
+          {thread.isLoading && <StreamingIndicator className="my-4" />}
+          <div style={{ height: `${paddingBottom}px` }} />
+        </ConversationContent>
+      </Conversation>
+    </CitationRegistryProvider>
   );
 }
 

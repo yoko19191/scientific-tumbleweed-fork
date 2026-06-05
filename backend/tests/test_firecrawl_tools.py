@@ -22,13 +22,14 @@ class TestWebSearchTool:
 
         result = web_search_tool.invoke({"query": "test query"})
 
-        assert json.loads(result) == [
-            {
-                "title": "Result",
-                "url": "https://example.com",
-                "snippet": "Snippet",
-            }
-        ]
+        parsed = json.loads(result)
+        assert parsed[0]["title"] == "Result"
+        assert parsed[0]["url"] == "https://example.com"
+        assert parsed[0]["snippet"] == "Snippet"
+        assert parsed[0]["citationUrl"] == "https://example.com"
+        assert parsed[0]["citationTitle"] == "Result"
+        assert parsed[0]["citationProvider"] == "firecrawl"
+        assert parsed[0]["evidenceSnippet"] == "Snippet"
         mock_get_app_config.return_value.get_tool_config.assert_called_with("web_search")
         mock_firecrawl_cls.assert_called_once_with(api_key="firecrawl-search-key")
         mock_firecrawl_cls.return_value.search.assert_called_once_with("test query", limit=7)
@@ -57,7 +58,11 @@ class TestWebFetchTool:
 
         result = web_fetch_tool.invoke({"url": "https://example.com"})
 
-        assert result == "# Fetched Page\n\nFetched markdown"
+        assert result.startswith("# Fetched Page\n\ncitationUrl: https://example.com")
+        assert "citationTitle: Fetched Page" in result
+        assert "citationProvider: firecrawl" in result
+        assert "fetchedAt: " in result
+        assert result.endswith("Fetched markdown")
         mock_get_app_config.return_value.get_tool_config.assert_any_call("web_fetch")
         mock_firecrawl_cls.assert_called_once_with(api_key="firecrawl-fetch-key")
         mock_firecrawl_cls.return_value.scrape.assert_called_once_with(

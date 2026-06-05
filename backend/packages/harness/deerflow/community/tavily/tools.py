@@ -3,6 +3,7 @@ import json
 from langchain.tools import tool
 from tavily import TavilyClient
 
+from deerflow.community.citations import canonical_web_result, format_fetched_document
 from deerflow.config import get_app_config
 
 
@@ -33,6 +34,12 @@ def web_search_tool(query: str) -> str:
             "title": result["title"],
             "url": result["url"],
             "snippet": result["content"],
+            **canonical_web_result(
+                title=result["title"],
+                url=result["url"],
+                snippet=result["content"],
+                provider="tavily",
+            ),
         }
         for result in res["results"]
     ]
@@ -57,6 +64,11 @@ def web_fetch_tool(url: str) -> str:
         return f"Error: {res['failed_results'][0]['error']}"
     elif "results" in res and len(res["results"]) > 0:
         result = res["results"][0]
-        return f"# {result['title']}\n\n{result['raw_content'][:4096]}"
+        return format_fetched_document(
+            title=result["title"],
+            url=url,
+            provider="tavily",
+            content=result["raw_content"],
+        )
     else:
         return "Error: No results found"

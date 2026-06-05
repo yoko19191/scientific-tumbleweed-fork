@@ -56,6 +56,8 @@ The backend exposes two LangGraph lead-agent runtime entry points: `chat_lead_ag
 - **Subagent delegation** for parallel task execution
 - **System prompt** with skills injection, memory context, and working directory guidance
 
+Web and academic evidence tools preserve their old provider fields while also returning canonical citation fields (`citationUrl`, `citationTitle`, `citationProvider`, `citationType`, and `evidenceSnippet`). Academic URLs are provider-correct: DOI URLs take precedence when available, OpenAlex works stay on `openalex.org`, and Semantic Scholar IDs use Semantic Scholar paper pages. Web fetch tools include citation provenance and `fetchedAt` before fetched content when configured.
+
 Follow-up suggestions and automatic titles live in harness modules too: `agents/suggestion_agent` owns suggestion prompt rendering and JSON parsing, while `agents/title_agent` owns title prompt rendering, model invocation, parsing, and fallback. Gateway routers and middlewares stay thin boundary layers around those modules.
 
 ### Middleware Chain

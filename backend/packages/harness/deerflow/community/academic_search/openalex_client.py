@@ -9,6 +9,7 @@ from urllib.parse import quote_plus
 
 import httpx
 
+from deerflow.community.citations import canonical_academic_result, openalex_work_url
 from deerflow.community.semantic_scholar.cache import TTLCache, build_cache_key
 
 logger = logging.getLogger(__name__)
@@ -172,10 +173,14 @@ class OpenAlexClient:
         if ids_block.get("openalex"):
             external_ids["OpenAlex"] = ids_block["openalex"]
 
+        title = work.get("display_name") or work.get("title") or "Untitled"
+        abstract = self._reconstruct_abstract(work.get("abstract_inverted_index"))
+        provider_url = openalex_work_url((work.get("ids") or {}).get("openalex")) or openalex_work_url(openalex_id)
+
         return {
             "paperId": openalex_id,
-            "title": work.get("display_name") or work.get("title") or "Untitled",
-            "abstract": self._reconstruct_abstract(work.get("abstract_inverted_index")),
+            "title": title,
+            "abstract": abstract,
             "tldr": None,
             "year": work.get("publication_year"),
             "venue": venue,
@@ -188,6 +193,14 @@ class OpenAlexClient:
             "volume": biblio.get("volume"),
             "issue": biblio.get("issue"),
             "pages": self._format_pages(biblio.get("first_page"), biblio.get("last_page")),
+            **canonical_academic_result(
+                title=title,
+                provider="openalex",
+                paper_id=openalex_id,
+                doi=doi,
+                provider_url=provider_url,
+                abstract=abstract,
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -407,6 +420,11 @@ class OpenAlexClient:
                 "year": paper.get("year"),
                 "citation_count": paper.get("citationCount", 0),
                 "is_center": True,
+                "citationUrl": paper.get("citationUrl"),
+                "citationTitle": paper.get("citationTitle"),
+                "citationProvider": paper.get("citationProvider"),
+                "citationType": paper.get("citationType"),
+                "evidenceSnippet": paper.get("evidenceSnippet"),
             }
         ]
         edges: list[dict[str, Any]] = []
@@ -426,6 +444,11 @@ class OpenAlexClient:
                         "year": cp.get("year"),
                         "citation_count": cp.get("citationCount", 0),
                         "is_center": False,
+                        "citationUrl": cp.get("citationUrl"),
+                        "citationTitle": cp.get("citationTitle"),
+                        "citationProvider": cp.get("citationProvider"),
+                        "citationType": cp.get("citationType"),
+                        "evidenceSnippet": cp.get("evidenceSnippet"),
                     })
                     edges.append({"source": cid, "target": openalex_id, "relation": "cites"})
 
@@ -441,6 +464,11 @@ class OpenAlexClient:
                         "year": rp.get("year"),
                         "citation_count": rp.get("citationCount", 0),
                         "is_center": False,
+                        "citationUrl": rp.get("citationUrl"),
+                        "citationTitle": rp.get("citationTitle"),
+                        "citationProvider": rp.get("citationProvider"),
+                        "citationType": rp.get("citationType"),
+                        "evidenceSnippet": rp.get("evidenceSnippet"),
                     })
                     edges.append({"source": openalex_id, "target": rid, "relation": "cites"})
 

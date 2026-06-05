@@ -2,6 +2,7 @@ import asyncio
 
 from langchain.tools import tool
 
+from deerflow.community.citations import format_fetched_document
 from deerflow.community.jina_ai.jina_client import JinaClient
 from deerflow.config import get_app_config
 from deerflow.utils.readability import ReadabilityExtractor
@@ -29,4 +30,9 @@ async def web_fetch_tool(url: str) -> str:
     if isinstance(html_content, str) and html_content.startswith("Error:"):
         return html_content
     article = await asyncio.to_thread(readability_extractor.extract_article, html_content)
-    return article.to_markdown()[:4096]
+    return format_fetched_document(
+        title=article.title,
+        url=url,
+        provider="jina",
+        content=article.to_markdown(including_title=False),
+    )

@@ -24,6 +24,7 @@ import { explainLastToolCall } from "@/core/tools/utils";
 import { cn } from "@/lib/utils";
 
 import { CitationLink } from "../citations/citation-link";
+import { CitationNumberingProvider } from "../citations/context";
 import { FlipDisplay } from "../flip-display";
 
 import { MarkdownContent, type MarkdownContentProps } from "./markdown-content";
@@ -162,12 +163,14 @@ function SubtaskCardComponent({
           {task.prompt && (
             <ChainOfThoughtStep
               label={
-                <Streamdown
-                  {...streamdownPluginsWithWordAnimation}
-                  components={{ a: CitationLink }}
-                >
-                  {task.prompt}
-                </Streamdown>
+                <CitationNumberingProvider content={task.prompt}>
+                  <Streamdown
+                    {...streamdownPluginsWithWordAnimation}
+                    components={{ a: CitationLink }}
+                  >
+                    {task.prompt}
+                  </Streamdown>
+                </CitationNumberingProvider>
               }
             ></ChainOfThoughtStep>
           )}

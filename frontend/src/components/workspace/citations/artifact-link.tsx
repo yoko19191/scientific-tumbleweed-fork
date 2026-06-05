@@ -1,5 +1,6 @@
 import type { AnchorHTMLAttributes } from "react";
 
+import { getCitationLabelFromNode } from "@/core/messages/citations";
 import { cn } from "@/lib/utils";
 
 import { CitationLink } from "./citation-link";
@@ -10,12 +11,9 @@ function isExternalUrl(href: string | undefined): boolean {
 
 /** Link renderer for artifact markdown: citation: prefix → CitationLink, otherwise underlined text. */
 export function ArtifactLink(props: AnchorHTMLAttributes<HTMLAnchorElement>) {
-  if (typeof props.children === "string") {
-    const match = /^citation:(.+)$/.exec(props.children);
-    if (match) {
-      const [, text] = match;
-      return <CitationLink {...props}>{text}</CitationLink>;
-    }
+  const citationText = getCitationLabelFromNode(props.children);
+  if (citationText) {
+    return <CitationLink {...props}>{citationText}</CitationLink>;
   }
   const { className, target, rel, ...rest } = props;
   const external = isExternalUrl(props.href);

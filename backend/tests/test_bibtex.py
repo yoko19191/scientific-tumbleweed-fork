@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from deerflow.community.academic_search.bibtex import (
     determine_entry_type,
     escape_latex,
@@ -122,6 +120,19 @@ class TestGenerateBibtex:
         lines = bib.strip().split("\n")
         last_field_line = lines[-2]
         assert not last_field_line.rstrip().endswith(",")
+
+    def test_url_prefers_canonical_citation_url(self):
+        paper = {
+            "authors": ["Smith"],
+            "title": "Test",
+            "year": 2024,
+            "citationUrl": "https://doi.org/10.1234/test",
+            "openAccessPdfUrl": "https://example.com/paper.pdf",
+        }
+        bib = generate_bibtex(paper)
+
+        assert "url = {https://doi.org/10.1234/test}" in bib
+        assert "https://example.com/paper.pdf" not in bib
 
 
 class TestGenerateBibtexBatch:

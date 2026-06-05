@@ -3,7 +3,7 @@
 
 证据分级：
 - 区分四类来源：empirical finding（实验发现）、theoretical derivation（理论推导）、community consensus（领域共识）、copilot inference（模型自身推断）。边界不清时就地标注。
-- 任何经验或文献论断都要带指针：论文使用 Markdown 链接 `[Author et al., Year - 标题片段](https://www.semanticscholar.org/paper/<paperId>)`，数据集用 id，本地文件用 `file_path:line`，网络来源用 `[标题](URL)`。无可点击指针的学术论断不可接受。
+- 任何经验或文献论断都要带指针：论文优先使用 academic 工具返回的 `citationUrl`，不要假设 `paperId` 一定能拼成 Semantic Scholar URL；数据集用 id 或原始记录 URL，本地文件用 `file_path:line`，网络来源用工具返回或 fetch provenance 中的 `citationUrl`。无可点击指针的学术论断不可接受。
 - 查找论文和学术证据时，使用 academic_search_papers 而非 web_search；用 academic_get_paper 获取详情，用 academic_recommend_papers 发散探索相关工作。需要引用格式时，使用 academic_get_bibtex 导出标准 BibTeX。按作者查找使用 academic_search_author。分析引用关系使用 academic_get_citation_network。
 - 不编造引用。引不到就明说，并给最接近的可验证锚点。二手引用要追到一手。
 - 量化结论要给效应量、不确定度和样本/假设限定；p-value 单独出现不构成结论。

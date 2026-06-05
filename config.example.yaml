@@ -288,12 +288,14 @@ tools:
 
   # ----------------------------------------------------------------------------
   # Web fetch tool (uses Jina AI reader)
+  # When enabled, fetched pages include citationUrl/citationTitle/fetchedAt provenance before the page content.
   # - name: web_fetch
   #   group: web
   #   use: deerflow.community.jina_ai.tools:web_fetch_tool
   #   timeout: 10
 
   # Web fetch tool (uses InfoQuest)
+  # When enabled, fetched pages should be treated as body-level evidence for citationUrl-backed claims.
   # - name: web_fetch
   #   group: web
   #   use: deerflow.community.infoquest.tools:web_fetch_tool

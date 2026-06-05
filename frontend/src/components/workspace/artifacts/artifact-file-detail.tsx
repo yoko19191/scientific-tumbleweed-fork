@@ -48,6 +48,7 @@ import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
 import { ArtifactLink } from "../citations/artifact-link";
+import { CitationNumberingProvider } from "../citations/context";
 import { useThread } from "../messages/context";
 import { Tooltip } from "../tooltip";
 
@@ -383,13 +384,15 @@ export function ArtifactFilePreview({
   if (language === "markdown") {
     return (
       <div className="size-full px-4">
-        <Streamdown
-          className="size-full"
-          {...streamdownPlugins}
-          components={{ a: ArtifactLink }}
-        >
-          {content ?? ""}
-        </Streamdown>
+        <CitationNumberingProvider content={content ?? ""}>
+          <Streamdown
+            className="size-full"
+            {...streamdownPlugins}
+            components={{ a: ArtifactLink }}
+          >
+            {content ?? ""}
+          </Streamdown>
+        </CitationNumberingProvider>
       </div>
     );
   }

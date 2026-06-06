@@ -24,7 +24,6 @@ export const enUS: Translations = {
     delete: "Delete",
     edit: "Edit",
     rename: "Rename",
-    share: "Share",
     openInNewWindow: "Open in new window",
     close: "Close",
     back: "Back",
@@ -414,7 +413,6 @@ export const enUS: Translations = {
     copyToClipboard: "Copy to clipboard",
     copiedToClipboard: "Copied to clipboard",
     failedToCopyToClipboard: "Failed to copy to clipboard",
-    linkCopied: "Link copied to clipboard",
   },
 
   // Input Box

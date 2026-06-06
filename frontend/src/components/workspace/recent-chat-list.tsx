@@ -6,7 +6,6 @@ import {
   FileText,
   MoreHorizontal,
   Pencil,
-  Share2,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
@@ -122,26 +121,6 @@ export function RecentChatList() {
     }
   }, [renameThread, renameThreadId, renameValue]);
 
-  const handleShare = useCallback(
-    async (thread: AgentThread) => {
-      // Always use Vercel URL for sharing so others can access
-      const VERCEL_URL = "https://deer-flow-v2.vercel.app";
-      const isLocalhost =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1";
-      // On localhost: use Vercel URL; On production: use current origin
-      const baseUrl = isLocalhost ? VERCEL_URL : window.location.origin;
-      const shareUrl = `${baseUrl}${pathOfThread(thread)}`;
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        toast.success(t.clipboard.linkCopied);
-      } catch {
-        toast.error(t.clipboard.failedToCopyToClipboard);
-      }
-    },
-    [t],
-  );
-
   const handleExport = useCallback(
     async (thread: AgentThread, format: "html" | "json") => {
       try {
@@ -246,12 +225,6 @@ export function RecentChatList() {
                               >
                                 <Pencil className="text-muted-foreground" />
                                 <span>{t.common.rename}</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => handleShare(thread)}
-                              >
-                                <Share2 className="text-muted-foreground" />
-                                <span>{t.common.share}</span>
                               </DropdownMenuItem>
                               <DropdownMenuSub>
                                 <DropdownMenuSubTrigger>

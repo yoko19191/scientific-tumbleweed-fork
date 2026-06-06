@@ -118,7 +118,6 @@ export interface Translations {
     delete: string;
     edit: string;
     rename: string;
-    share: string;
     openInNewWindow: string;
     close: string;
     back: string;
@@ -170,7 +169,6 @@ export interface Translations {
     copyToClipboard: string;
     copiedToClipboard: string;
     failedToCopyToClipboard: string;
-    linkCopied: string;
   };
 
   // Input Box

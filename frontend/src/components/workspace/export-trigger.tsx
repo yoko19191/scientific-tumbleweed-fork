@@ -11,10 +11,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/core/auth/AuthProvider";
+import type { User } from "@/core/auth/types";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   exportThreadAsJSON,
-  exportThreadAsMarkdown,
+  exportThreadAsHTML,
 } from "@/core/threads/export";
 import type { AgentThread } from "@/core/threads/types";
 
@@ -23,12 +25,13 @@ import { Tooltip } from "./tooltip";
 
 export function ExportTrigger({ threadId }: { threadId: string }) {
   const { t } = useI18n();
+  const { user } = useAuth();
   const { thread } = useThread();
 
   const messages = thread.messages;
 
   const handleExport = useCallback(
-    (format: "markdown" | "json") => {
+    (format: "html" | "json") => {
       if (messages.length === 0) {
         toast.error(t.conversation.noMessages);
         return;
@@ -39,14 +42,16 @@ export function ExportTrigger({ threadId }: { threadId: string }) {
         values: thread.values,
       } as AgentThread;
 
-      if (format === "markdown") {
-        exportThreadAsMarkdown(agentThread, messages);
+      if (format === "html") {
+        exportThreadAsHTML(agentThread, messages, {
+          userDisplayName: formatExportUserName(user),
+        });
       } else {
         exportThreadAsJSON(agentThread, messages);
       }
       toast.success(t.common.exportSuccess);
     },
-    [messages, thread.values, threadId, t],
+    [messages, thread.values, threadId, t, user],
   );
 
   if (messages.length === 0) {
@@ -68,9 +73,9 @@ export function ExportTrigger({ threadId }: { threadId: string }) {
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => handleExport("markdown")}>
+        <DropdownMenuItem onSelect={() => handleExport("html")}>
           <FileText className="text-muted-foreground" />
-          <span>{t.common.exportAsMarkdown}</span>
+          <span>{t.common.exportAsHTML}</span>
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => handleExport("json")}>
           <FileJson className="text-muted-foreground" />
@@ -79,4 +84,12 @@ export function ExportTrigger({ threadId }: { threadId: string }) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+function formatExportUserName(user: User | null): string | undefined {
+  if (!user) return undefined;
+  if (user.display_name && user.username) {
+    return `${user.display_name} (@${user.username})`;
+  }
+  return user.display_name || user.username || user.email;
 }

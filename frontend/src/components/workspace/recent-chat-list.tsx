@@ -43,10 +43,12 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { getAPIClient } from "@/core/api";
+import { useAuth } from "@/core/auth/AuthProvider";
+import type { User } from "@/core/auth/types";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   exportThreadAsJSON,
-  exportThreadAsMarkdown,
+  exportThreadAsHTML,
 } from "@/core/threads/export";
 import {
   useDeleteThread,
@@ -64,6 +66,7 @@ import { CursorTooltip } from "./artifacts/cursor-tooltip";
 
 export function RecentChatList() {
   const { t, locale } = useI18n();
+  const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const { thread_id: threadIdFromPath, agent_name: agentNameFromPath } =
@@ -140,7 +143,7 @@ export function RecentChatList() {
   );
 
   const handleExport = useCallback(
-    async (thread: AgentThread, format: "markdown" | "json") => {
+    async (thread: AgentThread, format: "html" | "json") => {
       try {
         const apiClient = getAPIClient();
         const state = await apiClient.threads.getState<AgentThreadState>(
@@ -151,8 +154,10 @@ export function RecentChatList() {
           toast.error(t.conversation.noMessages);
           return;
         }
-        if (format === "markdown") {
-          exportThreadAsMarkdown(thread, messages);
+        if (format === "html") {
+          exportThreadAsHTML(thread, messages, {
+            userDisplayName: formatExportUserName(user),
+          });
         } else {
           exportThreadAsJSON(thread, messages);
         }
@@ -161,7 +166,7 @@ export function RecentChatList() {
         toast.error("Failed to export conversation");
       }
     },
-    [t],
+    [t, user],
   );
 
   if (threads.length === 0) {
@@ -256,11 +261,11 @@ export function RecentChatList() {
                                 <DropdownMenuSubContent>
                                   <DropdownMenuItem
                                     onSelect={() =>
-                                      handleExport(thread, "markdown")
+                                      handleExport(thread, "html")
                                     }
                                   >
                                     <FileText className="text-muted-foreground" />
-                                    <span>{t.common.exportAsMarkdown}</span>
+                                    <span>{t.common.exportAsHTML}</span>
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onSelect={() =>
@@ -324,4 +329,12 @@ export function RecentChatList() {
       </Dialog>
     </>
   );
+}
+
+function formatExportUserName(user: User | null): string | undefined {
+  if (!user) return undefined;
+  if (user.display_name && user.username) {
+    return `${user.display_name} (@${user.username})`;
+  }
+  return user.display_name || user.username || user.email;
 }

@@ -48,7 +48,7 @@ export const zhCN: Translations = {
     create: "创建",
     import: "导入",
     export: "导出",
-    exportAsMarkdown: "导出为 Markdown",
+    exportAsHTML: "导出为 HTML",
     exportAsJSON: "导出为 JSON",
     exportSuccess: "对话已导出",
     noPreviewTitle: "此类文件不支持预览",

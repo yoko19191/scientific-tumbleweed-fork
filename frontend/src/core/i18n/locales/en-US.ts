@@ -48,7 +48,7 @@ export const enUS: Translations = {
     create: "Create",
     import: "Import",
     export: "Export",
-    exportAsMarkdown: "Export as Markdown",
+    exportAsHTML: "Export as HTML",
     exportAsJSON: "Export as JSON",
     exportSuccess: "Conversation exported",
     noPreviewTitle: "No preview for this file type",

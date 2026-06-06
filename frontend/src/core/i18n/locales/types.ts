@@ -142,7 +142,7 @@ export interface Translations {
     create: string;
     import: string;
     export: string;
-    exportAsMarkdown: string;
+    exportAsHTML: string;
     exportAsJSON: string;
     exportSuccess: string;
     noPreviewTitle: string;

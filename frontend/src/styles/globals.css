@@ -443,6 +443,361 @@
     transform: translateY(0);
   }
 
+  .landing-redesign {
+    --lab-bg-main: hsl(92, 24%, 92%);
+    --lab-bg-sub: hsl(84, 18%, 86%);
+    --lab-surface: hsl(78, 28%, 96%);
+    --lab-surface-strong: hsl(112, 20%, 90%);
+    --lab-border: hsl(112, 10%, 62%);
+    --lab-border-soft: hsl(104, 16%, 78%);
+    --lab-divider: hsl(110, 8%, 46%);
+    --lab-primary: hsl(143, 44%, 36%);
+    --lab-primary-hover: hsl(143, 50%, 42%);
+    --lab-primary-active: hsl(143, 48%, 24%);
+    --lab-primary-soft: hsl(138, 48%, 84%);
+    --lab-accent: hsl(12, 78%, 54%);
+    --lab-accent-hover: hsl(12, 82%, 60%);
+    --lab-accent-deep: hsl(12, 54%, 27%);
+    --lab-accent-soft: hsl(17, 74%, 86%);
+    --lab-success: hsl(143, 46%, 34%);
+    --lab-success-soft: hsl(143, 48%, 84%);
+    --lab-cyan: hsl(187, 58%, 58%);
+    --lab-cyan-soft: hsl(187, 55%, 86%);
+    --lab-purple: hsl(255, 34%, 52%);
+    --lab-purple-soft: hsl(255, 46%, 90%);
+    --lab-yellow: hsl(48, 84%, 64%);
+    --lab-text-main: hsl(118, 12%, 13%);
+    --lab-text-sub: hsl(110, 10%, 28%);
+    --lab-text-muted: hsl(112, 8%, 43%);
+    --lab-ink-dark: hsl(128, 20%, 10%);
+    --lab-ink-dark-elevated: hsl(126, 16%, 16%);
+    --lab-ink-dark-border: hsl(130, 10%, 26%);
+    --lab-on-dark: hsl(80, 30%, 94%);
+    --lab-on-dark-muted: hsl(92, 14%, 72%);
+    background:
+      linear-gradient(90deg, rgb(20 36 24 / 0.04) 1px, transparent 1px),
+      linear-gradient(0deg, rgb(20 36 24 / 0.04) 1px, transparent 1px),
+      var(--lab-bg-main);
+    background-size:
+      44px 44px,
+      44px 44px,
+      auto;
+  }
+
+  .landing-hero-field::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    background:
+      linear-gradient(115deg, transparent 0 58%, rgb(17 43 24 / 0.08) 58% 58.4%, transparent 58.4%),
+      repeating-linear-gradient(
+        90deg,
+        rgb(17 43 24 / 0.035) 0 1px,
+        transparent 1px 22px
+      );
+  }
+
+  .landing-hero-field::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    z-index: -1;
+    height: 30%;
+    background: linear-gradient(180deg, transparent, var(--lab-surface));
+  }
+
+  .landing-ascii-stage {
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+  }
+
+  .landing-stage-grid {
+    position: absolute;
+    inset: 0;
+    opacity: 0.76;
+    background:
+      linear-gradient(90deg, rgb(23 58 32 / 0.09) 1px, transparent 1px),
+      linear-gradient(0deg, rgb(23 58 32 / 0.09) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: linear-gradient(90deg, black, rgb(0 0 0 / 0.65));
+  }
+
+  .landing-dna-column {
+    position: absolute;
+    left: clamp(1.25rem, 5vw, 4rem);
+    top: 50%;
+    width: 8rem;
+    transform: translateY(-50%);
+    color: var(--lab-primary);
+    animation: landing-dna-float 6s ease-in-out infinite;
+  }
+
+  .landing-dna-row {
+    display: grid;
+    grid-template-columns: 1fr 2.25rem 1fr;
+    align-items: center;
+    color: var(--lab-text-main);
+    font-size: clamp(1rem, 1.9vw, 1.45rem);
+    line-height: 1;
+    animation: landing-dna-row-pulse 2.8s ease-in-out infinite;
+  }
+
+  .landing-dna-row:nth-child(2n) {
+    color: var(--lab-accent);
+    animation-delay: 420ms;
+    transform: translateX(0.8rem);
+  }
+
+  .landing-dna-row:nth-child(3n) {
+    color: var(--lab-primary);
+    animation-delay: 860ms;
+    transform: translateX(1.35rem);
+  }
+
+  .landing-dna-rung {
+    color: var(--lab-border);
+  }
+
+  .landing-signal-rail {
+    position: absolute;
+    left: clamp(8rem, 25vw, 18rem);
+    right: clamp(10rem, 28vw, 20rem);
+    top: 48%;
+    height: 5rem;
+    transform: translateY(-50%);
+  }
+
+  .landing-signal-rail::before,
+  .landing-signal-rail::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--lab-primary),
+      var(--lab-accent),
+      transparent
+    );
+  }
+
+  .landing-signal-rail::before {
+    top: 1.35rem;
+  }
+
+  .landing-signal-rail::after {
+    bottom: 1.35rem;
+  }
+
+  .landing-signal-token {
+    position: absolute;
+    left: 0;
+    top: calc(50% - 0.9rem);
+    display: inline-flex;
+    min-width: 4.6rem;
+    justify-content: center;
+    border: 1px solid var(--lab-border-soft);
+    border-radius: 4px;
+    background: var(--lab-surface);
+    padding: 0.32rem 0.46rem;
+    color: var(--lab-text-main);
+    font-size: 0.66rem;
+    box-shadow: 0 8px 24px rgb(35 58 41 / 0.08);
+    opacity: 0;
+    animation: landing-signal-flight 7.5s linear infinite;
+  }
+
+  .landing-signal-token:nth-child(2) {
+    animation-delay: 1.35s;
+  }
+
+  .landing-signal-token:nth-child(3) {
+    animation-delay: 2.7s;
+  }
+
+  .landing-signal-token:nth-child(4) {
+    animation-delay: 4.05s;
+  }
+
+  .landing-signal-token:nth-child(5) {
+    animation-delay: 5.4s;
+  }
+
+  .landing-macintosh {
+    position: absolute;
+    right: clamp(1rem, 4vw, 3rem);
+    top: 50%;
+    width: min(46vw, 23rem);
+    transform: translateY(-50%);
+    color: var(--lab-text-main);
+    text-shadow: 0 0 18px rgb(84 130 91 / 0.2);
+    animation: landing-mac-breathe 5.5s ease-in-out infinite;
+  }
+
+  .landing-macintosh pre {
+    margin: 0;
+    white-space: pre;
+    font-size: clamp(0.72rem, 1.5vw, 1.13rem);
+    line-height: 1.28;
+  }
+
+  .landing-cursor {
+    position: absolute;
+    right: 28%;
+    bottom: 31%;
+    width: 0.55rem;
+    height: 1rem;
+    background: var(--lab-accent);
+    animation: landing-cursor-blink 950ms steps(2, jump-none) infinite;
+  }
+
+  .landing-stage-caption {
+    position: absolute;
+    bottom: 1rem;
+    left: 1rem;
+    right: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .landing-stage-caption span {
+    border: 1px solid var(--lab-border-soft);
+    border-radius: 4px;
+    background: rgb(246 249 238 / 0.78);
+    padding: 0.35rem 0.55rem;
+    color: var(--lab-text-muted);
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+    font-size: 0.72rem;
+  }
+
+  .landing-step-row {
+    transition:
+      border-color 220ms ease,
+      transform 220ms ease;
+  }
+
+  .landing-step-row:hover {
+    border-color: var(--lab-primary);
+    transform: translateX(0.25rem);
+  }
+
+  .landing-workflow-card {
+    box-shadow: 0 24px 70px rgb(48 70 52 / 0.1);
+    transition:
+      border-color 220ms ease,
+      transform 220ms ease,
+      box-shadow 220ms ease;
+  }
+
+  .landing-workflow-card:hover {
+    border-color: var(--lab-primary);
+    box-shadow: 0 34px 90px rgb(48 70 52 / 0.15);
+    transform: translateY(-0.25rem);
+  }
+
+  @keyframes landing-dna-float {
+    0%,
+    100% {
+      transform: translateY(-50%) rotate(-2deg);
+    }
+    50% {
+      transform: translateY(calc(-50% - 0.7rem)) rotate(2deg);
+    }
+  }
+
+  @keyframes landing-dna-row-pulse {
+    0%,
+    100% {
+      opacity: 0.58;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes landing-signal-flight {
+    0% {
+      opacity: 0;
+      transform: translateX(0) translateY(0);
+    }
+    10%,
+    72% {
+      opacity: 1;
+    }
+    86%,
+    100% {
+      opacity: 0;
+      transform: translateX(calc(100% - 4.6rem)) translateY(-0.4rem);
+    }
+  }
+
+  @keyframes landing-mac-breathe {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 0 rgb(61 106 67 / 0));
+      transform: translateY(-50%) scale(1);
+    }
+    50% {
+      filter: drop-shadow(0 16px 30px rgb(61 106 67 / 0.18));
+      transform: translateY(calc(-50% - 0.35rem)) scale(1.015);
+    }
+  }
+
+  @keyframes landing-cursor-blink {
+    0%,
+    42% {
+      opacity: 1;
+    }
+    43%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .landing-ascii-stage {
+      min-height: 27rem;
+    }
+
+    .landing-dna-column {
+      left: 1rem;
+      top: 44%;
+      width: 6.6rem;
+    }
+
+    .landing-dna-row {
+      font-size: 0.95rem;
+    }
+
+    .landing-signal-rail {
+      left: 6.7rem;
+      right: 10.25rem;
+      top: 43%;
+    }
+
+    .landing-signal-token {
+      min-width: 3.6rem;
+      font-size: 0.58rem;
+    }
+
+    .landing-macintosh {
+      right: 0.75rem;
+      top: 44%;
+      width: 11rem;
+    }
+
+    .landing-macintosh pre {
+      font-size: 0.62rem;
+    }
+  }
+
   .computer-input-active {
     position: relative;
     box-shadow:
@@ -526,6 +881,14 @@
       opacity: 1;
       transform: none;
       transition: none;
+    }
+
+    .landing-dna-column,
+    .landing-dna-row,
+    .landing-signal-token,
+    .landing-macintosh,
+    .landing-cursor {
+      animation: none;
     }
 
     .computer-input-ignite,

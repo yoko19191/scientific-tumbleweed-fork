@@ -29,6 +29,7 @@ type MarketingTranslations = {
     tryNow: string;
     talkToUs: string;
     readVision: string;
+    workbench: string;
   };
   footer: {
     columns: { links: string[]; title: string }[];

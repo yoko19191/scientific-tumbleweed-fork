@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightIcon, DnaIcon } from "lucide-react";
+import { DnaIcon } from "lucide-react";
 import Link from "next/link";
 
 import { useI18n } from "@/core/i18n/hooks";
@@ -23,13 +23,6 @@ export function SiteFooter() {
           <p className="max-w-md text-sm leading-7 text-[var(--lab-on-dark-muted)]">
             {t.marketing.footer.note}
           </p>
-          <Link
-            href="/workspace"
-            className="inline-flex items-center gap-2 rounded-md bg-[var(--lab-accent)] px-4 py-3 text-sm font-semibold text-white shadow-[0_6px_0_var(--lab-accent-deep)] transition-transform hover:-translate-y-0.5"
-          >
-            {t.marketing.nav.tryNow}
-            <ArrowRightIcon className="size-4" />
-          </Link>
         </div>
 
         <div className="grid gap-8 sm:grid-cols-3">

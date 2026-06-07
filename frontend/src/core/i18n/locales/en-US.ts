@@ -72,6 +72,7 @@ export const enUS: Translations = {
       tryNow: "Try it now",
       talkToUs: "Talk to us",
       readVision: "Read our vision",
+      workbench: "Workbench",
     },
     footer: {
       note:
@@ -85,66 +86,55 @@ export const enUS: Translations = {
     landing: {
       toc: [
         { href: "#hero", label: "Overview" },
-        { href: "#workbench", label: "The Workbench" },
-        { href: "#scenario", label: "Scenario Layer" },
-        { href: "#capability", label: "Capability Layer" },
-        { href: "#compute", label: "Compute Layer" },
-        { href: "#different", label: "Different" },
-        { href: "#method", label: "The method" },
-        { href: "#trusted", label: "Trusted" },
+        { href: "#collaboration", label: "Collaboration" },
+        { href: "#workflow", label: "Workflow" },
+        { href: "#capability", label: "Capability" },
         { href: "#cta", label: "Try it now" },
       ],
       hero: {
-        badge: "AI Native",
-        headline: "Agentic Labbench\nfor Biologist\nin One",
+        badge: "AI × Biology",
+        headline: "Agent x Biologist\nCowork Lead Science Frontier.",
         subhead:
-          "Define questions, generate hypotheses, automate bioinformatics analysis, and interpret experimental results\nthrough natural language.",
+          "Scientific Tumbleweed puts research questions, data analysis, and evidence checks on one executable labbench.",
       },
       workbench: {
-        headline: "A natural-language operating layer for biological research.",
+        headline: "A labbench that collaborates.",
         body:
-          "Scientific Tumbleweed brings agent-driven research, automated bioinformatics, and citation-grounded reporting into one labbench. Researchers state the question; agents plan the work, execute analyses, verify evidence, and prepare reviewable outputs.",
+          "Biology brings complex signals. The agent plans, executes, and checks the work. Between them is not a chat window, but a traceable research chain.",
         items: [
           {
-            title: "Agent-driven biology",
-            body: "Agents turn research intent into tasks, assign work, and integrate the result.",
+            title: "Read biological signals",
+            body: "Genes, omics, phenotypes, and papers become evidence the team can discuss.",
           },
           {
-            title: "Automated bioinformatics",
-            body: "Routine analysis steps move from manual notebooks into an executable sandbox.",
+            title: "Create the next move",
+            body: "The agent breaks questions into search, analysis, verification, and reporting tasks.",
           },
           {
-            title: "Real citations",
-            body: "Key claims stay linked to sources, raw records, and run history.",
+            title: "Keep scientific boundaries",
+            body: "Claims stay attached to sources, files, and run records for review.",
           },
         ],
       },
       scenario: {
-        headline:
-          "From research question to reviewable result.",
+        headline: "From one question to a reviewable research run.",
         subhead:
-          "The workflow is built around agent-driven research, automated bioinformatics, and citation-grounded conclusions.",
+          "The page no longer explains every feature. It shows how scientific intent becomes the next action.",
         cards: [
           {
-            title: "Define the problem and generate hypotheses",
-            quote:
-              '"I have a disease phenotype and early signals. Help me formulate testable hypotheses."',
-            result:
-              "Agents structure the research path, identify evidence gaps, and prioritize the next analyses.",
+            title: "Raise a hypothesis",
+            quote: '"What candidate mechanisms might explain this phenotype?"',
+            result: "Organize evidence, gaps, and priority.",
           },
           {
-            title: "Automate public data analysis",
-            quote:
-              '"Replay a public omics dataset and return QC, grouping, differential signals, and interpretation."',
-            result:
-              "The system plans the workflow, executes it in the sandbox, and returns figures, files, and run records.",
+            title: "Run the analysis",
+            quote: '"Replay this public omics dataset."',
+            result: "Plan the workflow and generate figures and files in the sandbox.",
           },
           {
-            title: "Assess target and mechanism evidence",
-            quote:
-              '"Is this target worth advancing? Separate support, contradiction, and uncertainty."',
-            result:
-              "Agents synthesize evidence types into a structured judgment with source links attached.",
+            title: "Check the claim",
+            quote: '"What is supported, and what is still uncertain?"',
+            result: "Separate facts, inferences, and open questions.",
           },
           {
             title: "Write the evidence into a report",
@@ -158,16 +148,15 @@ export const enUS: Translations = {
           "Agents move the work forward, the sandbox executes analyses, and every conclusion must trace back to real evidence.",
       },
       capability: {
-        headline:
-          "Capability Layer -- what is wired into the biology you actually cite.",
+        headline: "Real tools, fewer entry points.",
         subhead:
-          "Three columns. Three promises. Each one is a typed, audited interface to a real source, not a web-scrape.",
+          "Databases, papers, CLIs, and models are organized as capabilities the agent can call.",
         columns: [
           {
             metric: "50+",
-            title: "Life-science databases, natively integrated.",
+            title: "Life-science databases",
             body:
-              "Human genetics, variants, expression, proteins, structures, compounds, drugs, pathways, and clinical trials behind one chat.",
+              "Genetics, variants, expression, proteins, structures, drugs, pathways, and trials from one question.",
             chips: [
               "GWAS Catalog",
               "gnomAD",
@@ -182,9 +171,9 @@ export const enUS: Translations = {
           },
           {
             metric: "40M+",
-            title: "Papers and preprints, reasoned over.",
+            title: "Papers and citations",
             body:
-              "PubMed, PMC Open Access, bioRxiv, medRxiv, Semantic Scholar citation graph, and survey agents that write with clickable citations.",
+              "Search, read, cross-check, and report while keeping clickable sources.",
             chips: [
               "PubMed",
               "PMC OA",
@@ -196,9 +185,9 @@ export const enUS: Translations = {
           },
           {
             metric: "8",
-            title: "Omics modalities the sandbox runs end to end.",
+            title: "Omics analysis modes",
             body:
-              "From raw files to a figure you can put in a paper, with the right database and CLI combination selected for the question.",
+              "From raw files to figures, with the database, CLI, and analysis path selected for the question.",
             chips: [
               "Bulk RNA-seq",
               "single-cell RNA-seq",
@@ -221,19 +210,19 @@ export const enUS: Translations = {
           "The agent picks the right combination for your question. You read the answer with every accession, peak, and p-value linked back to the source.",
       },
       compute: {
-        headline: "Automated bioinformatics, executed from conversation.",
+        headline: "The intelligence layer moves the work.",
         subhead:
-          "Agents translate research intent into executable tasks. The sandbox runs the analysis. Verification checks outputs and citations.",
+          "The researcher states intent. Agents turn it into executable, checkable, shareable steps.",
         sandboxTitle: "An executable sandbox for bioinformatics analysis.",
         sandboxBody:
           "The sandbox preserves state, inputs, outputs, and generated files so work can continue, be reviewed, and be handed off.",
         intelligenceTitle: "A coordinated agent layer.",
         agents: [
-          { title: "Lead", body: "Breaks down research goals and integrates the final result." },
-          { title: "Explore", body: "Collects evidence without mutating the analysis environment." },
-          { title: "Plan", body: "Defines inputs, outputs, and validation criteria." },
-          { title: "General", body: "Executes analysis tasks and produces files and figures." },
-          { title: "Verify", body: "Checks consistency, citations, and failure modes." },
+          { title: "Lead", body: "Breaks down goals and keeps direction." },
+          { title: "Explore", body: "Collects evidence and background." },
+          { title: "Plan", body: "Defines inputs, outputs, and checks." },
+          { title: "General", body: "Runs analysis and creates files." },
+          { title: "Verify", body: "Checks results, citations, and uncertainty." },
         ],
         note:
           "The researcher works in natural language; the system maintains an auditable execution chain underneath.",
@@ -313,7 +302,7 @@ export const enUS: Translations = {
       finalCta: {
         headline: "Start the next research workflow in natural language.",
         subhead:
-          "From hypothesis generation to bioinformatics analysis, result interpretation, and citation verification.",
+          "From hypothesis generation to bioinformatics analysis, result interpretation, and citation checks.",
       },
     },
     pages: {

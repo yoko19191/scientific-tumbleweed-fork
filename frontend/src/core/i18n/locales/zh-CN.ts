@@ -63,15 +63,16 @@ export const zhCN: Translations = {
 
   marketing: {
     nav: {
-      product: "Product",
-      useCase: "Use Case",
-      research: "Research",
-      blog: "Blog",
-      pricing: "Pricing",
-      about: "About",
+      product: "产品",
+      useCase: "场景",
+      research: "研究",
+      blog: "博客",
+      pricing: "价格",
+      about: "关于",
       tryNow: "立即试用",
       talkToUs: "联系我们",
       readVision: "了解方法论",
+      workbench: "工作台",
     },
     footer: {
       note:
@@ -85,65 +86,55 @@ export const zhCN: Translations = {
     landing: {
       toc: [
         { href: "#hero", label: "概览" },
-        { href: "#workbench", label: "工作台" },
-        { href: "#scenario", label: "场景层" },
-        { href: "#capability", label: "能力层" },
-        { href: "#compute", label: "计算层" },
-        { href: "#different", label: "差异化" },
-        { href: "#method", label: "方法论" },
-        { href: "#trusted", label: "可信赖" },
+        { href: "#collaboration", label: "协作" },
+        { href: "#workflow", label: "流程" },
+        { href: "#capability", label: "能力" },
         { href: "#cta", label: "立即开始" },
       ],
       hero: {
-        badge: "AI Native",
-        headline: "Agentic Labbench\nfor Biologist\nin One",
+        badge: "AI × Biology",
+        headline: "智能体 x 生物学家\n协作扩展科学边界",
         subhead:
-          "从问题定义、假设生成，到生信分析与实验结果解读\n用自然语言驱动你的研究。",
+          "Scientific Tumbleweed 把研究问题、数据分析和证据核查放进同一个可执行的工作台。",
       },
       workbench: {
-        headline: "用自然语言驱动研究流程",
+        headline: "一个会协作的实验台。",
         body:
-          "科学风滚草把生物学问题、智能体协作、生信自动化和引用追溯放在同一个工作台里。研究者提出问题，系统拆解任务、执行分析、核对证据，并把结果组织成可继续审阅的交付物。",
+          "左边是生命系统的复杂信号，右边是能规划、执行和复查的 agent。中间不是聊天窗口，而是一条可追溯的研究链。",
         items: [
           {
-            title: "智能体驱动生物学研究",
-            body: "从问题定义到假设生成，智能体负责拆解路径、分配任务并汇总结果。",
+            title: "读懂生物信号",
+            body: "基因、组学、表型和文献先被整理成可讨论的证据。",
           },
           {
-            title: "自动化生信工作流",
-            body: "把重复的分析步骤交给沙箱执行，减少手工脚本、环境切换和结果搬运。",
+            title: "生成下一步动作",
+            body: "agent 将问题拆成检索、分析、验证和报告任务。",
           },
           {
-            title: "引用真实可追溯",
-            body: "结论必须带来源。数据库返回、文献依据和运行记录都能回看。",
+            title: "保留科学边界",
+            body: "每个结论都带来源、文件和运行记录，方便团队审阅。",
           },
         ],
       },
       scenario: {
-        headline: "从研究问题到可审阅结果。",
+        headline: "从一个问题，到一轮可复查的研究。",
         subhead:
-          "围绕智能体驱动研究、自动化生信和真实引用，覆盖生物学团队最常见的分析链路。",
+          "页面不再解释所有功能，只展示系统怎么把科学意图变成下一步行动。",
         cards: [
           {
-            title: "定义问题与生成假设",
-            quote:
-              '"我有一个疾病表型和一组初步线索，帮我整理可检验的研究假设。"',
-            result:
-              "系统会把问题拆成可执行的研究路径，标出证据缺口，并给出后续分析优先级。",
+            title: "提出假设",
+            quote: '"这个表型背后的候选机制是什么？"',
+            result: "整理证据、空白和优先级。",
           },
           {
-            title: "自动化公共数据分析",
-            quote:
-              '"帮我复盘一个公共组学数据集，给出质量控制、分群、差异信号和可解释结果。"',
-            result:
-              "智能体会规划生信流程并在沙箱中执行，返回图表、分析文件和可复查的运行记录。",
+            title: "执行分析",
+            quote: '"复盘这个公共组学数据集。"',
+            result: "规划流程，在沙箱生成图表和文件。",
           },
           {
-            title: "评估靶点与机制证据",
-            quote:
-              '"这个靶点是否值得继续推进？请把支持、反对和不确定证据分开。"',
-            result:
-              "系统会整合多类证据，输出结构化判断，并保留每条结论对应的真实来源。",
+            title: "核查结论",
+            quote: '"哪些证据支持，哪些仍然不确定？"',
+            result: "分开事实、推断和待验证问题。",
           },
           {
             title: "把证据写成报告",
@@ -156,15 +147,15 @@ export const zhCN: Translations = {
           "这里强调的是工作方式：智能体负责推进流程，沙箱负责执行分析，所有结论都要回到真实引用。",
       },
       capability: {
-        headline: "能力层——真实工具与真实数据源。",
+        headline: "真实工具，少量入口。",
         subhead:
-          "这一层展示系统实际接入的数据库、文献源和生信分析能力。其他页面讲工作方式，这里讲可调用的底层能力。",
+          "数据库、文献、CLI 和模型被组织成 agent 可以调用的能力。",
         columns: [
           {
             metric: "50+",
-            title: "生命科学数据库原生接入。",
+            title: "生命科学数据库",
             body:
-              "人类遗传、变异、表达、蛋白、结构、化合物、药物、通路、临床试验，都可以从同一个对话里调出来。",
+              "遗传、变异、表达、蛋白、结构、药物、通路和临床试验可以从同一个问题里调出。",
             chips: [
               "GWAS Catalog",
               "gnomAD",
@@ -179,9 +170,9 @@ export const zhCN: Translations = {
           },
           {
             metric: "40M+",
-            title: "文献、检索、阅读和引用。",
+            title: "文献与引用",
             body:
-              "PubMed、PMC Open Access、bioRxiv、medRxiv、Semantic Scholar citation graph，再加上能带引用写综述的 agents。",
+              "检索、阅读、交叉检查和报告生成都保留可点击来源。",
             chips: [
               "PubMed",
               "PMC OA",
@@ -193,9 +184,9 @@ export const zhCN: Translations = {
           },
           {
             metric: "8",
-            title: "端到端组学分析模态。",
+            title: "组学分析模态",
             body:
-              "从原始文件到论文图，按问题选择数据库、CLI 和分析流程。",
+              "从原始文件到图表，按问题选择数据库、CLI 和分析流程。",
             chips: [
               "Bulk RNA-seq",
               "single-cell RNA-seq",
@@ -218,19 +209,19 @@ export const zhCN: Translations = {
           "你不用先想清楚该调哪个库、跑哪个命令。Agent 会组合这些能力，结果里的 accession、peak、p-value 也能回溯。",
       },
       compute: {
-        headline: "自动化生信，从对话进入执行。",
+        headline: "智能层负责推进。",
         subhead:
-          "智能体将研究意图转化为可执行任务，沙箱负责运行分析，验证环节负责检查结果和引用。",
+          "研究者表达意图，agent 把它变成可执行、可检查、可交接的步骤。",
         sandboxTitle: "面向生信分析的可执行沙箱。",
         sandboxBody:
           "沙箱保存运行状态、输入输出和生成文件，使分析过程可以继续、可以复查，也可以交给团队成员审阅。",
         intelligenceTitle: "智能体协作层。",
         agents: [
-          { title: "Lead", body: "拆解研究目标，安排执行路径，整合最终结果。" },
-          { title: "Explore", body: "检索证据和背景信息，只读不改动分析环境。" },
-          { title: "Plan", body: "生成分析方案，明确输入、输出和验证标准。" },
-          { title: "General", body: "在沙箱中执行分析任务，生成文件和图表。" },
-          { title: "Verify", body: "检查结果一致性、引用来源和潜在错误。" },
+          { title: "Lead", body: "拆解目标，保持研究方向。" },
+          { title: "Explore", body: "检索证据，补齐背景。" },
+          { title: "Plan", body: "定义输入、输出和验证标准。" },
+          { title: "General", body: "执行分析，生成文件和图表。" },
+          { title: "Verify", body: "检查结果、引用和不确定性。" },
         ],
         note:
           "对研究者来说，入口仍然是自然语言；对系统来说，背后是可审计的任务执行链。",
@@ -308,9 +299,9 @@ export const zhCN: Translations = {
         badges: ["OpenAI", "Anthropic", "DeepSeek", "Qwen", "local vLLM", "Claude Code", "Cursor", "Windsurf", "Zed"],
       },
       finalCta: {
-        headline: "用自然语言启动下一次研究",
+        headline: "用自然语言启动下一次研究。",
         subhead:
-          "从假设生成到生信分析，再到结果解读与引用核查，让智能体把研究流程真正跑起来",
+          "从假设生成到生信分析，再到结果解读与引用核查，让智能体把研究流程真正跑起来。",
       },
     },
     pages: {

@@ -1,11 +1,18 @@
 "use client";
 
-import { ArrowRightIcon, DnaIcon, MenuIcon, XIcon } from "lucide-react";
+import { DnaIcon, GlobeIcon, MenuIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/core/i18n/hooks";
 import type { Locale } from "@/core/i18n/locale";
 import { cn } from "@/lib/utils";
@@ -30,8 +37,8 @@ export function SiteHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-[var(--lab-border-soft)]/80 bg-[var(--lab-bg-main)]/88 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <header className="sticky top-3 z-50 px-3 sm:px-4">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between rounded-[10px] border border-[var(--lab-border-soft)]/70 bg-[var(--lab-bg-main)]/72 px-4 shadow-[0_18px_50px_rgb(38_55_41/0.12)] backdrop-blur-2xl sm:px-6 lg:px-8">
         <Link
           href="/"
           className="group flex items-center gap-3"
@@ -61,18 +68,15 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-4 lg:flex">
-          <LanguageSwitch locale={locale} onChange={setLanguage} />
+          <LanguageMenu locale={locale} onChange={setLanguage} />
           <Button asChild className="bg-[var(--lab-accent)] text-white shadow-[0_7px_0_var(--lab-accent-deep),0_18px_30px_hsla(24,92%,48%,0.22)] hover:-translate-y-0.5 hover:bg-[var(--lab-accent-hover)]">
-            <Link href="/workspace">
-              {t.marketing.nav.tryNow}
-              <ArrowRightIcon className="size-4" />
-            </Link>
+            <Link href="/workspace">{t.marketing.nav.workbench}</Link>
           </Button>
         </div>
 
         <div className="flex items-center gap-3 lg:hidden">
           <Button asChild size="sm" className="bg-[var(--lab-accent)] text-white">
-            <Link href="/workspace">{t.marketing.nav.tryNow}</Link>
+            <Link href="/workspace">{t.marketing.nav.workbench}</Link>
           </Button>
           <button
             type="button"
@@ -86,12 +90,12 @@ export function SiteHeader() {
       </div>
 
       {open ? (
-        <div className="border-t border-[var(--lab-border-soft)] bg-[var(--lab-surface)] px-4 py-4 lg:hidden">
+        <div className="mx-auto mt-2 max-w-7xl rounded-[10px] border border-[var(--lab-border-soft)]/70 bg-[var(--lab-surface)]/88 px-4 py-4 shadow-[0_18px_50px_rgb(38_55_41/0.12)] backdrop-blur-2xl lg:hidden">
           <div className="mb-4 flex items-center justify-between">
             <span className="font-mono text-xs uppercase tracking-[0.18em] text-[var(--lab-text-muted)]">
-              Language
+              LANG
             </span>
-            <LanguageSwitch locale={locale} onChange={setLanguage} />
+            <LanguageMenu locale={locale} onChange={setLanguage} />
           </div>
           <nav className="grid gap-2">
             {NAV_LINKS.map((item) => (
@@ -111,36 +115,43 @@ export function SiteHeader() {
   );
 }
 
-function LanguageSwitch({
+function LanguageMenu({
   locale,
   onChange,
 }: {
   locale: Locale;
   onChange: (locale: Locale) => void;
 }) {
+  const handleValueChange = (value: string) => {
+    if (value === "en-US" || value === "zh-CN") {
+      onChange(value);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.14em] text-[var(--lab-text-muted)]">
-      <button
-        type="button"
-        className={cn(
-          "transition-colors hover:text-[var(--lab-primary)]",
-          locale === "en-US" && "text-[var(--lab-primary)]",
-        )}
-        onClick={() => onChange("en-US")}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Select language"
+          className="grid size-9 place-items-center rounded-[6px] bg-transparent text-[var(--lab-text-sub)] transition-colors hover:bg-[var(--lab-surface)]/58 hover:text-[var(--lab-primary)]"
+        >
+          <GlobeIcon className="size-5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="border-[var(--lab-border-soft)] bg-[var(--lab-surface)]/94 text-[var(--lab-text-main)] shadow-[0_18px_44px_rgb(38_55_41/0.14)] backdrop-blur-xl"
       >
-        EN
-      </button>
-      <span className="text-[var(--lab-divider)]">·</span>
-      <button
-        type="button"
-        className={cn(
-          "transition-colors hover:text-[var(--lab-primary)]",
-          locale === "zh-CN" && "text-[var(--lab-primary)]",
-        )}
-        onClick={() => onChange("zh-CN")}
-      >
-        中
-      </button>
-    </div>
+        <DropdownMenuRadioGroup value={locale} onValueChange={handleValueChange}>
+          <DropdownMenuRadioItem value="en-US" className={cn(locale === "en-US" && "text-[var(--lab-primary)]")}>
+            English
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="zh-CN" className={cn(locale === "zh-CN" && "text-[var(--lab-primary)]")}>
+            中文
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

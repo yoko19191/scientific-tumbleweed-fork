@@ -53,13 +53,6 @@ export function LandingToc() {
                   isActive && "font-semibold text-[var(--lab-primary)]",
                 )}
               >
-                {/* Hover tooltip */}
-                <span className="pointer-events-none absolute right-full mr-3 top-1/2 z-50 -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--lab-border-soft)] bg-[var(--lab-surface)] px-3 py-1.5 text-xs font-medium text-[var(--lab-text-main)] opacity-0 shadow-[0_4px_12px_hsla(210,30%,20%,0.08)] transition-opacity group-hover:opacity-100">
-                  {item.label}
-                  {/* Arrow */}
-                  <span className="absolute -right-1 top-1/2 size-2 -translate-y-1/2 rotate-45 border-r border-t border-[var(--lab-border-soft)] bg-[var(--lab-surface)]" />
-                </span>
-
                 <span
                   className={cn(
                     "h-5 rounded-full bg-[var(--lab-primary)]/20 transition-all",

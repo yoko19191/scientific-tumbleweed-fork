@@ -4,6 +4,7 @@ import { ArrowRightIcon, CheckCircle2Icon } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode } from "react";
 
+import { BioAgentHeroScene } from "@/components/landing/bio-agent-hero-scene";
 import { LandingToc } from "@/components/landing/landing-toc";
 import { LandingScrollEffects } from "@/components/landing/scroll-effects";
 import { SiteFooter } from "@/components/landing/site-footer";
@@ -11,19 +12,6 @@ import { SiteHeader } from "@/components/landing/site-header";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
-
-const DNA_PAIRS = [
-  ["A", "T"],
-  ["C", "G"],
-  ["G", "C"],
-  ["T", "A"],
-  ["A", "T"],
-  ["G", "C"],
-  ["C", "G"],
-  ["T", "A"],
-] as const;
-
-const SIGNALS = ["ATCG", "OMICS", "MODEL", "VERIFY", "REPORT"];
 
 export function LandingPage() {
   const { t } = useI18n();
@@ -39,17 +27,17 @@ export function LandingPage() {
         <section
           id="hero"
           data-landing-section
-          className="landing-hero-field relative isolate overflow-hidden px-4 pb-14 pt-14 sm:px-6 sm:pb-20 sm:pt-20 lg:px-8"
+          className="landing-hero-field relative isolate overflow-hidden px-4 pt-4 pb-10 sm:px-6 sm:pt-6 sm:pb-14 lg:px-8 lg:pt-4"
         >
-          <div className="mx-auto grid min-h-[calc(100dvh-7rem)] max-w-7xl items-center gap-12 lg:grid-cols-[0.88fr_1.12fr]">
-            <div className="landing-reveal relative z-10 max-w-3xl">
+          <div className="landing-hero-composition mx-auto grid min-h-[calc(100dvh-5rem)] max-w-7xl items-center gap-8 pt-6 lg:grid-cols-[0.88fr_1.12fr] lg:gap-10 lg:pt-8">
+            <div className="landing-reveal relative z-10 max-w-3xl lg:-mt-20">
               <p className="mb-6 inline-flex rounded-[4px] border border-[var(--lab-text-main)]/20 bg-[var(--lab-surface)]/62 px-3 py-1 font-mono text-xs text-[var(--lab-text-muted)]">
                 {landing.hero.badge}
               </p>
-              <h1 className="max-w-4xl whitespace-pre-line text-balance font-sans text-5xl font-semibold leading-[1.02] sm:text-6xl">
+              <h1 className="max-w-4xl font-sans text-5xl leading-[1.02] font-semibold text-balance whitespace-pre-line sm:text-6xl">
                 {landing.hero.headline}
               </h1>
-              <p className="mt-6 max-w-xl text-pretty text-lg leading-8 text-[var(--lab-text-sub)] sm:text-xl">
+              <p className="mt-6 max-w-xl text-lg leading-8 text-pretty text-[var(--lab-text-sub)] sm:text-xl">
                 {landing.hero.subhead}
               </p>
               <div className="mt-9 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
@@ -72,7 +60,7 @@ export function LandingPage() {
               </div>
             </div>
 
-            <CollaborationAsciiScene />
+            <BioAgentHeroScene />
           </div>
         </section>
 
@@ -121,7 +109,9 @@ export function LandingPage() {
                     <span>phase 0{index + 1}</span>
                     <CheckCircle2Icon className="size-4 text-[var(--lab-primary)]" />
                   </div>
-                  <h3 className="mt-7 text-2xl font-semibold leading-tight">{card.title}</h3>
+                  <h3 className="mt-7 text-2xl leading-tight font-semibold">
+                    {card.title}
+                  </h3>
                   {card.quote ? (
                     <p className="mt-5 border-l border-[var(--lab-accent)] pl-4 font-mono text-sm leading-7 text-[var(--lab-text-main)]">
                       {card.quote}
@@ -136,7 +126,10 @@ export function LandingPage() {
           </div>
         </Section>
 
-        <Section id="capability" className="bg-[var(--lab-ink-dark)] text-[var(--lab-on-dark)]">
+        <Section
+          id="capability"
+          className="bg-[var(--lab-ink-dark)] text-[var(--lab-on-dark)]"
+        >
           <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
             <div>
               <SectionIntro
@@ -182,7 +175,9 @@ export function LandingPage() {
                       ))}
                     </div>
                   </div>
-                  <h3 className="mt-6 text-2xl font-semibold leading-tight">{column.title}</h3>
+                  <h3 className="mt-6 text-2xl leading-tight font-semibold">
+                    {column.title}
+                  </h3>
                   <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--lab-on-dark-muted)]">
                     {column.body}
                   </p>
@@ -199,8 +194,10 @@ export function LandingPage() {
         >
           <div className="mx-auto max-w-7xl border-t border-[var(--lab-border-soft)] pt-12">
             <div>
-              <p className="mb-4 font-mono text-xs text-[var(--lab-text-muted)]">next run</p>
-              <h2 className="max-w-4xl text-balance text-4xl font-semibold leading-tight sm:text-5xl">
+              <p className="mb-4 font-mono text-xs text-[var(--lab-text-muted)]">
+                next run
+              </p>
+              <h2 className="max-w-4xl text-4xl leading-tight font-semibold text-balance sm:text-5xl">
                 {landing.finalCta.headline}
               </h2>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-[var(--lab-text-sub)]">
@@ -211,59 +208,6 @@ export function LandingPage() {
         </section>
       </main>
       <SiteFooter />
-    </div>
-  );
-}
-
-function CollaborationAsciiScene() {
-  return (
-    <div
-      className="landing-reveal landing-ascii-stage relative z-10 min-h-[34rem] overflow-hidden rounded-[8px] border border-[var(--lab-border-soft)] bg-[var(--lab-surface)]/66 p-5 shadow-[0_28px_80px_rgb(40_59_44/0.14)]"
-      aria-label="Animated ASCII scene showing biology and an agent collaborating"
-    >
-      <div className="landing-stage-grid" aria-hidden="true" />
-      <div className="landing-dna-column" aria-hidden="true">
-        <div className="font-mono text-xs text-[var(--lab-text-muted)]">DNA</div>
-        <div className="mt-5 space-y-2">
-          {DNA_PAIRS.map(([left, right], index) => (
-            <div key={`${left}-${right}-${index}`} className="landing-dna-row">
-              <span>{left}</span>
-              <span className="landing-dna-rung">---</span>
-              <span>{right}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="landing-signal-rail" aria-hidden="true">
-        {SIGNALS.map((signal) => (
-          <span key={signal} className="landing-signal-token">
-            {signal}
-          </span>
-        ))}
-      </div>
-
-      <div className="landing-macintosh" aria-hidden="true">
-        <pre>{`+----------------+
-|  ST AGENT  01  |
-|                |
-|   [ o   o ]    |
-|      ___       |
-|                |
-| > read biology |
-| > run tools    |
-| > cite truth   |
-+----------------+
-       |  |
-   +----------+`}</pre>
-        <span className="landing-cursor" />
-      </div>
-
-      <div className="landing-stage-caption">
-        <span>biology</span>
-        <span>agent</span>
-        <span>evidence</span>
-      </div>
     </div>
   );
 }
@@ -311,7 +255,7 @@ function SectionIntro({
       </p>
       <h2
         className={cn(
-          "max-w-4xl text-balance text-4xl font-semibold leading-tight sm:text-5xl",
+          "max-w-4xl text-4xl leading-tight font-semibold text-balance sm:text-5xl",
           inverted && "text-[var(--lab-on-dark)]",
         )}
       >
@@ -319,7 +263,7 @@ function SectionIntro({
       </h2>
       <p
         className={cn(
-          "mt-5 max-w-2xl text-pretty text-lg leading-8 text-[var(--lab-text-sub)]",
+          "mt-5 max-w-2xl text-lg leading-8 text-pretty text-[var(--lab-text-sub)]",
           inverted && "text-[var(--lab-on-dark-muted)]",
         )}
       >

@@ -367,6 +367,29 @@
     }
   }
 
+  .research-data-workbench-grid {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  @media (width >= 80rem) {
+    .research-data-workbench-grid {
+      grid-template-columns: 320px minmax(0, 1fr) 360px;
+      overflow: hidden;
+    }
+
+    .research-data-workbench-grid > [data-workbench-pane] {
+      min-height: 0;
+      overflow-y: auto;
+    }
+
+    .research-data-workbench-grid > [data-workbench-pane="filters"],
+    .research-data-workbench-grid > [data-workbench-pane="results"] {
+      border-right: 1px solid var(--border);
+      border-bottom-width: 0;
+    }
+  }
+
   .ambilight {
     pointer-events: none;
     opacity: 0;

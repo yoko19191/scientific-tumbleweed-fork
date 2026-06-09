@@ -9,6 +9,7 @@ from app.gateway.config import get_gateway_config
 from app.gateway.csrf_middleware import get_configured_cors_origins
 from app.gateway.deps import langgraph_runtime
 from app.gateway.routers import (
+    academic_data_search,
     agents,
     apps,
     artifacts,
@@ -309,7 +310,7 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
             },
             {
                 "name": "apps",
-                "description": "List modular workspace app definitions",
+                "description": "List modular workspace app definitions and serve workspace app APIs",
             },
             {
                 "name": "suggestions",
@@ -388,6 +389,9 @@ This gateway provides runtime endpoints for agent runs plus custom endpoints for
 
     # Apps API is mounted at /api/apps
     app.include_router(apps.router)
+
+    # Academic data search App API is mounted at /api/apps/research-data-search
+    app.include_router(academic_data_search.router)
 
     # Suggestions API is mounted at /api/threads/{thread_id}/suggestions
     app.include_router(suggestions.router)

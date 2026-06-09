@@ -605,6 +605,8 @@ External evidence tools expose canonical citation fields (`citationUrl`, `citati
 
 Gateway-generated follow-up suggestions now normalize both plain-string model output and block/list-style rich content before parsing the JSON array response, so provider-specific content wrappers do not silently drop suggestions.
 
+Workspace Apps surface focused scientific utilities inside `/workspace/apps`. The built-in `学术数据搜索` app provides an authenticated workbench for paper search, paper recommendations, patent search, and organization or venue lookup through internal Gateway APIs.
+
 ```
 # Paths inside the sandbox container
 /mnt/skills/public

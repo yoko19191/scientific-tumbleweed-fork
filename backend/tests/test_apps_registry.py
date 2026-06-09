@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from app.gateway import authz
 from app.gateway.authz import AuthContext
 from app.gateway.routers import apps as apps_router
-from deerflow.apps import AppDefinition, AppLaunch, clear_apps, list_apps, register_app
+from deerflow.apps import AppDefinition, AppLaunch, clear_apps, list_apps, load_builtin_apps, register_app
 
 
 def _request():
@@ -24,6 +24,20 @@ def teardown_function():
 
 def test_apps_registry_starts_empty():
     assert list_apps() == []
+
+
+def test_builtin_research_data_search_app_loader_registers_single_app():
+    load_builtin_apps()
+    load_builtin_apps()
+
+    matching_apps = [app for app in list_apps() if app.id == "research-data-search"]
+    assert len(matching_apps) == 1
+
+    app = matching_apps[0]
+    assert app.title == "学术数据搜索"
+    assert app.category == "科研工具"
+    assert app.launch is not None
+    assert app.launch.href == "/workspace/apps/research-data-search"
 
 
 def test_register_app_returns_sorted_apps():
@@ -99,11 +113,18 @@ def test_apps_router_lists_registered_apps(monkeypatch):
 
     response = asyncio.run(apps_router.list_apps(request=_request()))
 
-    assert len(response.apps) == 1
-    app = response.apps[0]
+    apps_by_id = {app.id: app for app in response.apps}
+    assert set(apps_by_id) == {"real-app", "research-data-search"}
+
+    app = apps_by_id["real-app"]
     assert app.id == "real-app"
     assert app.featured is True
     assert app.tags == ["rna-seq", "review"]
     assert app.launch is not None
     assert app.launch.href == "/workspace/chats/new?app=real-app"
     assert app.launch.mode == "computer"
+
+    research_app = apps_by_id["research-data-search"]
+    assert research_app.title == "学术数据搜索"
+    assert research_app.launch is not None
+    assert research_app.launch.href == "/workspace/apps/research-data-search"

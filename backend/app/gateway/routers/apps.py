@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 from app.gateway.authz import require_auth
-from deerflow.apps import AppDefinition, AppLaunch
+from deerflow.apps import AppDefinition, AppLaunch, load_builtin_apps
 from deerflow.apps import list_apps as list_registered_apps
 from deerflow.apps.types import AppLaunchMode, AppStatus
 
@@ -69,4 +69,5 @@ def _app_to_response(app: AppDefinition) -> AppResponse:
 @require_auth
 async def list_apps(request: Request) -> AppsListResponse:
     """List all registered workspace app modules."""
+    load_builtin_apps()
     return AppsListResponse(apps=[_app_to_response(app) for app in list_registered_apps()])

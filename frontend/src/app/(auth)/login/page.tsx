@@ -108,6 +108,15 @@ export default function LoginPage() {
           className="object-cover"
           priority
         />
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-10">
+          <Image
+            src="/lzlab/wechat-group.jpg"
+            alt="WeChat group"
+            width={966}
+            height={1518}
+            className="h-auto max-h-[72vh] w-[min(64%,22rem)] object-contain opacity-80"
+          />
+        </div>
       </div>
 
       {/* Right: form */}

@@ -265,7 +265,7 @@ sandbox:
 ```yaml
 sandbox:
   use: deerflow.community.aio_sandbox:AioSandboxProvider
-  port: 8080
+  port: 28080
   auto_start: true
   container_prefix: deer-flow-sandbox
 
@@ -383,7 +383,7 @@ Scientific Tumbleweed searches for configuration in this order:
 
 ### "Docker sandbox fails to start"
 - Ensure Docker is running
-- Check port 8080 (or configured port) is available
+- Check port 28080 (or configured port) is available
 - Verify Docker image is accessible
 
 ## Examples

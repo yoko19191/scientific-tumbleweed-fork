@@ -17,12 +17,12 @@ services:
   # ── PostgreSQL (ParadeDB: includes pgvector + pg_search for BM25) ──────
   # Persistent state for LangGraph checkpointer/store and application
   # tables (users, user_memory, tool_cache, channel_threads).
-  # Port 5432 is exposed to the host so you can inspect the schema with psql.
+  # Port 55432 (default) is exposed to the host so you can inspect the schema with psql.
   paradedb:
     image: paradedb/paradedb:0.23.4-pg18
     container_name: scientific-tumbleweed-paradedb
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-scientifictumbleweed}
       - POSTGRES_USER=${POSTGRES_USER:-scientifictumbleweed}

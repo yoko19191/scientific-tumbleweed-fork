@@ -610,7 +610,8 @@ sandbox:
   # Container image to use (works with both Docker and Apple Container)
   # Default: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest
   # Recommended: enterprise-public-cn-beijing.cr.volces.com/vefaas-public/all-in-one-sandbox:latest (works on both x86_64 and arm64)
-  image: scientific-tumbleweed-aio-sandbox:arm64-20260427
+  #image: crpi-bqm4eowz32k2a7x7.cn-hangzhou.personal.cr.aliyuncs.com/yoko19191/scientific-tumbleweed:arm64-20260427
+  image: crpi-bqm4eowz32k2a7x7.cn-hangzhou.personal.cr.aliyuncs.com/yoko19191/scientific-tumbleweed:amd64-20260514
 
   # Base port for sandbox containers.
   port: 28080
@@ -741,26 +742,26 @@ sandbox:
 subagents:
   timeout_seconds: 900
   max_turns: null
-  model: null
+  model: inherit
   agents:
     verification:
-      model: gpt-5.5
+      model: inherit
       timeout_seconds: 600
       max_turns: null
     plan:
-      model: claude-opus-4-6
+      model: inherit
       timeout_seconds: 600
       max_turns: null
     general-purpose:
-      model: kimi-k2.6
+      model: inherit
       timeout_seconds: 1800
       max_turns: null
     explore:
-      model: deepseek-v4-flash
+      model: inherit
       timeout_seconds: 1800
       max_turns: null
     bash:
-      model: gpt-5.5
+      model: inherit
       timeout_seconds: 1800
       max_turns: null
 
@@ -931,14 +932,14 @@ circuit_breaker:
 #   type: memory
 #
 # SQLite (file-based, single-process):
-checkpointer:
-  type: sqlite
-  connection_string: checkpoints.db
+# checkpointer:
+#   type: sqlite
+#   connection_string: checkpoints.db
 #
 # PostgreSQL (multi-process, production):
-# checkpointer:
-#   type: postgres
-#   connection_string: postgresql://user:password@localhost:55432/scientifictumbleweed
+checkpointer:
+  type: postgres
+  connection_string: $POSTGRES_DSN
 
 # ============================================================================
 # Stream Bridge Configuration

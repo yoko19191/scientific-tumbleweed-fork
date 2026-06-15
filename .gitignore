@@ -58,3 +58,9 @@ config.yaml.bak
 .playwright-mcp
 .gstack/
 .worktrees
+
+# 临时工作产物
+.sisyphus/
+findings.md
+progress.md
+task_plan.md

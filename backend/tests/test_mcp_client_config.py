@@ -83,6 +83,33 @@ def test_build_server_params_rejects_unsupported_transport():
         build_server_params("bad-transport", config)
 
 
+@pytest.mark.parametrize("transport", ["sse", "http"])
+def test_mcp_server_config_accepts_transport_alias(transport: str):
+    config = McpServerConfig.model_validate(
+        {
+            "transport": transport,
+            "url": "https://example.com/mcp",
+        }
+    )
+
+    assert config.type == transport
+    params = build_server_params("aliased-server", config)
+    assert params["transport"] == transport
+    assert params["url"] == "https://example.com/mcp"
+
+
+def test_mcp_server_config_type_takes_precedence_over_transport():
+    config = McpServerConfig.model_validate(
+        {
+            "type": "http",
+            "transport": "sse",
+            "url": "https://example.com/mcp",
+        }
+    )
+
+    assert config.type == "http"
+
+
 def test_build_servers_config_returns_empty_when_no_enabled_servers():
     extensions = ExtensionsConfig(
         mcp_servers={

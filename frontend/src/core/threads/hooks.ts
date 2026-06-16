@@ -5,4 +5,9 @@ export {
   type ThreadStreamOptions,
 } from "./use-thread-stream";
 export { useThreadTokenUsage } from "./use-thread-token-usage";
-export { useThreads, useDeleteThread, useRenameThread } from "./use-threads";
+export {
+  useThreads,
+  useInfiniteThreads,
+  useDeleteThread,
+  useRenameThread,
+} from "./use-threads";

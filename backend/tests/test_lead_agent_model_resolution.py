@@ -103,7 +103,7 @@ def test_make_computer_lead_agent_disables_thinking_when_model_does_not_support_
 
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
     monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
-    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None, **_kwargs: [])
 
     captured: dict[str, object] = {}
 
@@ -147,7 +147,7 @@ def test_make_computer_lead_agent_reads_runtime_options_from_context(monkeypatch
     get_available_tools = MagicMock(return_value=[])
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
     monkeypatch.setattr(tools_module, "get_available_tools", get_available_tools)
-    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None, **_kwargs: [])
 
     captured: dict[str, object] = {}
 
@@ -192,7 +192,7 @@ def test_make_chat_lead_agent_uses_chat_defaults_and_file_tools(monkeypatch):
     get_available_tools = MagicMock(return_value=[])
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
     monkeypatch.setattr(tools_module, "get_available_tools", get_available_tools)
-    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None, **_kwargs: [])
     monkeypatch.setattr(lead_agent_module, "_load_enabled_skills_for_tool_policy", lambda available_skills, *, app_config: [])
     monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: object())
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
@@ -221,7 +221,7 @@ def test_make_computer_lead_agent_uses_computer_defaults(monkeypatch):
     get_available_tools = MagicMock(return_value=[])
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
     monkeypatch.setattr(tools_module, "get_available_tools", get_available_tools)
-    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None, **_kwargs: [])
     monkeypatch.setattr(lead_agent_module, "_load_enabled_skills_for_tool_policy", lambda available_skills, *, app_config: [])
     monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: object())
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
@@ -252,7 +252,7 @@ def test_make_computer_lead_agent_attaches_tracing_callbacks_at_graph_root(monke
 
     monkeypatch.setattr(lead_agent_module, "get_app_config", lambda: app_config)
     monkeypatch.setattr(tools_module, "get_available_tools", lambda **kwargs: [])
-    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None: [])
+    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name, agent_name=None, **_kwargs: [])
     monkeypatch.setattr(lead_agent_module, "build_tracing_callbacks", lambda: [sentinel_callback])
     monkeypatch.setattr(lead_agent_module, "_load_enabled_skills_for_tool_policy", lambda available_skills, *, app_config: [])
 

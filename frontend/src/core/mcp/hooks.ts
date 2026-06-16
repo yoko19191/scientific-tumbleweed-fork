@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { loadMCPConfig, updateMCPConfig } from "./api";
+import { loadMCPConfig, setMCPServerEnabled } from "./api";
 
 export function useMCPConfig() {
   const { data, isLoading, error } = useQuery({
@@ -27,15 +27,7 @@ export function useEnableMCPServer() {
       if (!config.mcp_servers[serverName]) {
         throw new Error(`MCP server ${serverName} not found`);
       }
-      await updateMCPConfig({
-        mcp_servers: {
-          ...config.mcp_servers,
-          [serverName]: {
-            ...config.mcp_servers[serverName],
-            enabled,
-          },
-        },
-      });
+      await setMCPServerEnabled(serverName, enabled);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["mcpConfig"] });

@@ -79,10 +79,11 @@ models:
 ```
 
 **Auth behavior for CLI-backed providers**:
-- `CodexChatModel` loads Codex CLI auth from `~/.codex/auth.json`
+- `CodexChatModel` loads Codex CLI auth from `CODEX_AUTH_PATH` when set, then falls back to `~/.codex/auth.json`
 - The Codex Responses endpoint currently rejects `max_tokens` and `max_output_tokens`, so `CodexChatModel` does not expose a request-level token cap
 - `ClaudeChatModel` accepts `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR`, `CLAUDE_CODE_CREDENTIALS_PATH`, or plaintext `~/.claude/.credentials.json`
 - On macOS, Scientific Tumbleweed does not probe Keychain automatically. Use `scripts/export_claude_code_oauth.py` to export Claude Code auth explicitly when needed
+- Docker compose no longer bind-mounts host `~/.claude` or `~/.codex` by default. Prefer env tokens or single-file paths. If a CLI-backed provider or ACP adapter truly requires the full host directory, explicitly add `-f docker/docker-compose.cli-auth.yaml` to the compose command.
 
 To use OpenAI's `/v1/responses` endpoint with LangChain, keep using `langchain_openai:ChatOpenAI` and set:
 

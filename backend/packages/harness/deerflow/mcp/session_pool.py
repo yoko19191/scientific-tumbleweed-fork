@@ -1,13 +1,9 @@
-"""Persistent MCP session pool for stateful tool calls.
+"""Persistent MCP session pool for stateful stdio tool calls.
 
-When MCP tools are loaded via langchain-mcp-adapters with ``session=None``,
-each tool call creates a new MCP session. For stateful servers like Playwright,
-this means browser state (opened pages, filled forms) is lost between calls.
-
-This module provides a session pool that maintains persistent MCP sessions,
-scoped by ``(server_name, scope_key)`` — typically scope_key is the thread_id —
-so that consecutive tool calls share the same session and server-side state.
-Sessions are evicted in LRU order when the pool reaches capacity.
+MCP ``ClientSession`` objects are backed by anyio task groups, so the task that
+enters the session context must also exit it. The pool therefore gives every
+session an owner task: callers receive the initialized session, while shutdown
+paths only signal the owner task to close itself.
 """
 
 from __future__ import annotations
@@ -27,156 +23,242 @@ class MCPSessionPool:
     """Manages persistent MCP sessions scoped by ``(server_name, scope_key)``."""
 
     MAX_SESSIONS = 256
-    SESSION_CLOSE_TIMEOUT = 5.0  # seconds to wait when closing a session via run_coroutine_threadsafe
+    SESSION_CLOSE_TIMEOUT = 5.0
 
     def __init__(self) -> None:
         self._entries: OrderedDict[
             tuple[str, str],
-            tuple[ClientSession, asyncio.AbstractEventLoop],
+            tuple[ClientSession, asyncio.AbstractEventLoop, asyncio.Task[Any], asyncio.Event],
         ] = OrderedDict()
-        self._context_managers: dict[tuple[str, str], Any] = {}
-        # threading.Lock is not bound to any event loop, so it is safe to
-        # acquire from both async paths and sync/worker-thread paths.
+        self._inflight: dict[
+            tuple[str, str],
+            tuple[asyncio.AbstractEventLoop, asyncio.Future[ClientSession], asyncio.Task[Any], asyncio.Event],
+        ] = {}
         self._lock = threading.Lock()
 
-    async def get_session(
+    async def _run_session(
         self,
-        server_name: str,
-        scope_key: str,
         connection: dict[str, Any],
-    ) -> ClientSession:
-        """Get or create a persistent MCP session.
-
-        If an existing session was created in a different event loop (e.g.
-        the sync-wrapper path), it is closed and replaced with a fresh one
-        in the current loop.
-
-        Args:
-            server_name: MCP server name.
-            scope_key: Isolation key (typically thread_id).
-            connection: Connection configuration for ``create_session``.
-
-        Returns:
-            An initialized ``ClientSession``.
-        """
-        key = (server_name, scope_key)
-        current_loop = asyncio.get_running_loop()
-
-        # Phase 1: inspect/mutate the registry under the thread lock (no awaits).
-        cms_to_close: list[tuple[tuple[str, str], Any]] = []
-        with self._lock:
-            if key in self._entries:
-                session, loop = self._entries[key]
-                if loop is current_loop:
-                    self._entries.move_to_end(key)
-                    return session
-                # Session belongs to a different event loop – evict it.
-                cm = self._context_managers.pop(key, None)
-                self._entries.pop(key)
-                if cm is not None:
-                    cms_to_close.append((key, cm))
-
-            # Evict LRU entries when at capacity.
-            while len(self._entries) >= self.MAX_SESSIONS:
-                oldest_key = next(iter(self._entries))
-                cm = self._context_managers.pop(oldest_key, None)
-                self._entries.pop(oldest_key)
-                if cm is not None:
-                    cms_to_close.append((oldest_key, cm))
-
-        # Phase 2: async cleanup outside the lock so we never await while holding it.
-        for close_key, cm in cms_to_close:
-            try:
-                await cm.__aexit__(None, None, None)
-            except Exception:
-                logger.warning("Error closing MCP session %s", close_key, exc_info=True)
-
+        ready: asyncio.Future[ClientSession],
+        close_evt: asyncio.Event,
+    ) -> None:
+        """Enter, initialize, and later exit one MCP session in the same task."""
         from langchain_mcp_adapters.sessions import create_session
 
         cm = create_session(connection)
-        session = await cm.__aenter__()
-        await session.initialize()
+        try:
+            session = await cm.__aenter__()
+        except BaseException as exc:
+            if not ready.done():
+                ready.set_exception(exc)
+            return
 
-        # Phase 3: register the new session under the lock.
+        try:
+            await session.initialize()
+            if not ready.done():
+                ready.set_result(session)
+            await close_evt.wait()
+        except BaseException as exc:
+            if not ready.done():
+                ready.set_exception(exc)
+        finally:
+            try:
+                await cm.__aexit__(None, None, None)
+            except Exception:
+                logger.warning("Error closing MCP session", exc_info=True)
+
+    async def get_session(self, server_name: str, scope_key: str, connection: dict[str, Any]) -> ClientSession:
+        """Get or create a persistent MCP session."""
+        key = (server_name, scope_key)
+        current_loop = asyncio.get_running_loop()
+        evicted: list[tuple[asyncio.AbstractEventLoop, asyncio.Task[Any], asyncio.Event, bool]] = []
+        join: asyncio.Future[ClientSession] | None = None
+        ready: asyncio.Future[ClientSession] | None = None
+        close_evt: asyncio.Event | None = None
+        task: asyncio.Task[Any] | None = None
+
         with self._lock:
-            self._entries[key] = (session, current_loop)
-            self._context_managers[key] = cm
+            if key in self._entries:
+                session, loop, owner_task, owner_close = self._entries[key]
+                if loop is current_loop and not loop.is_closed():
+                    self._entries.move_to_end(key)
+                    return session
+                self._entries.pop(key)
+                evicted.append((loop, owner_task, owner_close, False))
+
+            inflight = self._inflight.get(key)
+            if inflight is not None and inflight[0] is current_loop and not inflight[0].is_closed():
+                join = inflight[1]
+            else:
+                if inflight is not None:
+                    self._inflight.pop(key)
+                    evicted.append((inflight[0], inflight[2], inflight[3], True))
+
+                ready = current_loop.create_future()
+                close_evt = asyncio.Event()
+                task = current_loop.create_task(self._run_session(connection, ready, close_evt))
+                self._inflight[key] = (current_loop, ready, task, close_evt)
+
+            while len(self._entries) >= self.MAX_SESSIONS:
+                _oldest_key, (_session, loop, owner_task, owner_close) = next(iter(self._entries.items()))
+                self._entries.pop(_oldest_key)
+                evicted.append((loop, owner_task, owner_close, False))
+
+        for loop, owner_task, owner_close, cancel in evicted:
+            if loop is current_loop and not loop.is_closed():
+                await self._shutdown(owner_close, owner_task, cancel)
+            elif cancel:
+                await self._shutdown_entry(loop, owner_task, owner_close, cancel=True)
+            else:
+                self._signal_close(loop, owner_close)
+
+        if join is not None:
+            return await asyncio.shield(join)
+
+        assert ready is not None and close_evt is not None and task is not None
+        try:
+            session = await asyncio.shield(ready)
+        except BaseException:
+            owner_failed = ready.done() and not ready.cancelled() and ready.exception() is not None
+            if not owner_failed:
+                close_evt.set()
+                task.cancel()
+            try:
+                await asyncio.shield(task)
+            except BaseException:
+                logger.debug("Owner task ended during get_session unwind", exc_info=True)
+            with self._lock:
+                if self._inflight.get(key) == (current_loop, ready, task, close_evt):
+                    self._inflight.pop(key)
+            raise
+
+        with self._lock:
+            still_ours = self._inflight.get(key) == (current_loop, ready, task, close_evt)
+            if still_ours:
+                self._inflight.pop(key)
+                self._entries[key] = (session, current_loop, task, close_evt)
+        if not still_ours:
+            await self._shutdown(close_evt, task)
+            raise asyncio.CancelledError("MCP session pool was closed while the session was being created")
+
         logger.info("Created persistent MCP session for %s/%s", server_name, scope_key)
         return session
 
-    # ------------------------------------------------------------------
-    # Cleanup helpers
-    # ------------------------------------------------------------------
-
-    async def _close_cm(self, key: tuple[str, str], cm: Any) -> None:
-        """Close a single context manager (must be called WITHOUT the lock)."""
+    @staticmethod
+    def _signal_close(loop: asyncio.AbstractEventLoop, close_evt: asyncio.Event) -> None:
+        if loop.is_closed():
+            return
         try:
-            await cm.__aexit__(None, None, None)
-        except Exception:
-            logger.warning("Error closing MCP session %s", key, exc_info=True)
+            loop.call_soon_threadsafe(close_evt.set)
+        except RuntimeError:
+            pass
+
+    async def _shutdown(self, close_evt: asyncio.Event, task: asyncio.Task[Any], cancel: bool = False) -> None:
+        close_evt.set()
+        if cancel:
+            task.cancel()
+        try:
+            await task
+        except (Exception, asyncio.CancelledError):
+            logger.debug("Owner task ended during shutdown", exc_info=True)
+
+    async def _shutdown_entry(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        task: asyncio.Task[Any],
+        close_evt: asyncio.Event,
+        cancel: bool = False,
+    ) -> None:
+        if loop.is_closed():
+            return
+        current_loop = asyncio.get_running_loop()
+        if loop is current_loop:
+            await self._shutdown(close_evt, task, cancel)
+        elif loop.is_running():
+            future = asyncio.run_coroutine_threadsafe(self._shutdown(close_evt, task, cancel), loop)
+            try:
+                await asyncio.wrap_future(future)
+            except Exception:
+                logger.warning("Error closing MCP session on owning loop", exc_info=True)
+        else:
+            logger.warning("Owning loop for MCP session is idle; signalling close best-effort")
+            self._signal_close(loop, close_evt)
+            if cancel:
+                try:
+                    loop.call_soon_threadsafe(task.cancel)
+                except RuntimeError:
+                    pass
 
     async def close_scope(self, scope_key: str) -> None:
-        """Close all sessions for a given scope (e.g. thread_id)."""
+        """Close all sessions for a given scope."""
         with self._lock:
-            keys = [k for k in self._entries if k[1] == scope_key]
-            cms = [(k, self._context_managers.pop(k, None)) for k in keys]
-            for k in keys:
-                self._entries.pop(k, None)
-        for key, cm in cms:
-            if cm is not None:
-                await self._close_cm(key, cm)
+            keys = [key for key in self._entries if key[1] == scope_key]
+            entries = [self._entries.pop(key) for key in keys]
+            inflight_keys = [key for key in self._inflight if key[1] == scope_key]
+            inflight = [self._inflight.pop(key) for key in inflight_keys]
+
+        for _session, loop, task, close_evt in entries:
+            await self._shutdown_entry(loop, task, close_evt)
+        for loop, _ready, task, close_evt in inflight:
+            await self._shutdown_entry(loop, task, close_evt, cancel=True)
 
     async def close_server(self, server_name: str) -> None:
         """Close all sessions for a given server."""
         with self._lock:
-            keys = [k for k in self._entries if k[0] == server_name]
-            cms = [(k, self._context_managers.pop(k, None)) for k in keys]
-            for k in keys:
-                self._entries.pop(k, None)
-        for key, cm in cms:
-            if cm is not None:
-                await self._close_cm(key, cm)
+            keys = [key for key in self._entries if key[0] == server_name]
+            entries = [self._entries.pop(key) for key in keys]
+            inflight_keys = [key for key in self._inflight if key[0] == server_name]
+            inflight = [self._inflight.pop(key) for key in inflight_keys]
+
+        for _session, loop, task, close_evt in entries:
+            await self._shutdown_entry(loop, task, close_evt)
+        for loop, _ready, task, close_evt in inflight:
+            await self._shutdown_entry(loop, task, close_evt, cancel=True)
 
     async def close_all(self) -> None:
         """Close every managed session."""
         with self._lock:
-            cms = list(self._context_managers.items())
-            self._context_managers.clear()
+            entries = list(self._entries.values())
             self._entries.clear()
-        for key, cm in cms:
-            await self._close_cm(key, cm)
+            inflight = list(self._inflight.values())
+            self._inflight.clear()
+
+        for _session, loop, task, close_evt in entries:
+            await self._shutdown_entry(loop, task, close_evt)
+        for loop, _ready, task, close_evt in inflight:
+            await self._shutdown_entry(loop, task, close_evt, cancel=True)
 
     def close_all_sync(self) -> None:
-        """Close all sessions using their owning event loops (synchronous).
-
-        Each session is closed on the loop it was created in, avoiding
-        cross-loop resource leaks.  Safe to call from any thread without an
-        active event loop.
-        """
+        """Synchronously signal all owner tasks to close on their own loops."""
         with self._lock:
-            entries = list(self._entries.items())
-            cms = dict(self._context_managers)
+            entries = list(self._entries.values())
             self._entries.clear()
-            self._context_managers.clear()
+            inflight = list(self._inflight.values())
+            self._inflight.clear()
 
-        for key, (_, loop) in entries:
-            cm = cms.get(key)
-            if cm is None or loop.is_closed():
+        owners = [(loop, task, close_evt, False) for _session, loop, task, close_evt in entries]
+        owners += [(loop, task, close_evt, True) for loop, _ready, task, close_evt in inflight]
+        try:
+            current_running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_running_loop = None
+
+        for loop, task, close_evt, cancel in owners:
+            if loop.is_closed():
                 continue
             try:
-                if loop.is_running():
-                    # Schedule on the owning loop from this (different) thread.
-                    future = asyncio.run_coroutine_threadsafe(cm.__aexit__(None, None, None), loop)
+                if loop is current_running_loop:
+                    close_evt.set()
+                    if cancel:
+                        task.cancel()
+                elif loop.is_running():
+                    future = asyncio.run_coroutine_threadsafe(self._shutdown(close_evt, task, cancel), loop)
                     future.result(timeout=self.SESSION_CLOSE_TIMEOUT)
                 else:
-                    loop.run_until_complete(cm.__aexit__(None, None, None))
+                    loop.run_until_complete(self._shutdown(close_evt, task, cancel))
             except Exception:
-                logger.debug("Error closing MCP session %s during sync close", key, exc_info=True)
+                logger.debug("Error closing MCP session during sync close", exc_info=True)
 
-
-# ------------------------------------------------------------------
-# Module-level singleton
-# ------------------------------------------------------------------
 
 _pool: MCPSessionPool | None = None
 _pool_lock = threading.Lock()

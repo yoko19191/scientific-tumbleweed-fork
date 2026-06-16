@@ -176,6 +176,14 @@ SEARCH_PROVIDERS: list[SearchProvider] = [
         extra_config={"max_results": 5},
     ),
     SearchProvider(
+        name="brave",
+        display_name="Brave Search",
+        description="Official Brave Search API, API key required",
+        use="deerflow.community.brave.tools:web_search_tool",
+        env_var="BRAVE_SEARCH_API_KEY",
+        extra_config={"max_results": 5},
+    ),
+    SearchProvider(
         name="tavily",
         display_name="Tavily",
         description="Recommended, free tier available",

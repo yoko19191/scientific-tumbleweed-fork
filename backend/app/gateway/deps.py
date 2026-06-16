@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_RUN_MANAGER_SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
 
 def get_config() -> AppConfig:
     """Return the freshest AppConfig for request-time Gateway dependencies."""
@@ -57,7 +59,17 @@ async def langgraph_runtime(app: FastAPI, startup_config: AppConfig) -> AsyncGen
         app.state.store = await stack.enter_async_context(make_store(startup_config))
         app.state.run_store = LangGraphRunStore(app.state.store) if app.state.store is not None else MemoryRunStore()
         app.state.run_manager = RunManager(store=app.state.run_store)
-        yield
+        try:
+            yield
+        finally:
+            run_manager = getattr(app.state, "run_manager", None)
+            if run_manager is not None:
+                interrupted = await run_manager.shutdown(timeout=_RUN_MANAGER_SHUTDOWN_TIMEOUT_SECONDS)
+                if interrupted:
+                    logger.info(
+                        "Gateway runtime shutdown interrupted %d in-flight run(s)",
+                        len(interrupted),
+                    )
 
 
 # ---------------------------------------------------------------------------

@@ -483,6 +483,38 @@ class TestStream:
         assert tool_events[0].data["name"] == "bash"
         assert tool_events[0].data["tool_call_id"] == "tc-1"
 
+    def test_messages_mode_task_tool_message_adds_subagent_status(self, client):
+        """Task ToolMessage chunks include structured subagent status metadata."""
+        agent = MagicMock()
+        agent.stream.return_value = iter(
+            [
+                (
+                    "messages",
+                    (
+                        ToolMessage(
+                            content="Task Succeeded. Result: done",
+                            id="tm-1",
+                            tool_call_id="task-1",
+                            name="task",
+                        ),
+                        {},
+                    ),
+                )
+            ]
+        )
+
+        with (
+            patch.object(client, "_ensure_agent"),
+            patch.object(client, "_agent", agent),
+        ):
+            events = list(client.stream("delegate", thread_id="t-tool-stream"))
+
+        tool_event = next(e for e in events if e.type == "messages-tuple" and e.data.get("type") == "tool")
+        assert tool_event.data["additional_kwargs"]["subagent_status"] == {
+            "status": "completed",
+            "result": "done",
+        }
+
     def test_list_content_blocks(self, client):
         """stream() handles AIMessage with list-of-blocks content."""
         ai = AIMessage(
@@ -909,7 +941,7 @@ class TestEnsureAgent:
         """_ensure_agent does not recreate if config key unchanged."""
         mock_agent = MagicMock()
         client._agent = mock_agent
-        client._agent_config_key = (None, True, False, False, None, None)
+        client._agent_config_key = (None, True, False, False, None, None, "normal")
 
         config = client._get_runnable_config("t1")
         client._ensure_agent(config)
@@ -1334,6 +1366,7 @@ class TestMemoryManagement:
         config.fact_confidence_threshold = 0.7
         config.injection_enabled = True
         config.max_injection_tokens = 2000
+        config.token_counting = "tiktoken"
 
         with patch("deerflow.config.memory_config.get_memory_config", return_value=config):
             result = client.get_memory_config()
@@ -1350,6 +1383,7 @@ class TestMemoryManagement:
         config.fact_confidence_threshold = 0.7
         config.injection_enabled = True
         config.max_injection_tokens = 2000
+        config.token_counting = "tiktoken"
 
         data = {"version": "1.0", "facts": []}
 
@@ -2007,6 +2041,7 @@ class TestScenarioMemoryWorkflow:
         config.fact_confidence_threshold = 0.7
         config.injection_enabled = True
         config.max_injection_tokens = 2000
+        config.token_counting = "tiktoken"
 
         with patch("deerflow.agents.memory.updater.get_memory_data", return_value=initial_data):
             mem = client.get_memory()
@@ -2363,6 +2398,7 @@ class TestGatewayConformance:
         mem_cfg.fact_confidence_threshold = 0.7
         mem_cfg.injection_enabled = True
         mem_cfg.max_injection_tokens = 2000
+        mem_cfg.token_counting = "char"
 
         with patch("deerflow.config.memory_config.get_memory_config", return_value=mem_cfg):
             result = client.get_memory_config()
@@ -2370,6 +2406,7 @@ class TestGatewayConformance:
         parsed = MemoryConfigResponse(**result)
         assert parsed.enabled is True
         assert parsed.max_facts == 100
+        assert parsed.token_counting == "char"
 
     def test_get_memory_status(self, client):
         mem_cfg = MagicMock()
@@ -2380,6 +2417,7 @@ class TestGatewayConformance:
         mem_cfg.fact_confidence_threshold = 0.7
         mem_cfg.injection_enabled = True
         mem_cfg.max_injection_tokens = 2000
+        mem_cfg.token_counting = "tiktoken"
 
         memory_data = {
             "version": "1.0",

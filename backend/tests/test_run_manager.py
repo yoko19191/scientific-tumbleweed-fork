@@ -1,5 +1,7 @@
 """Tests for RunManager."""
 
+import asyncio
+import contextlib
 import re
 
 import pytest
@@ -178,6 +180,36 @@ async def test_cleanup_removes_live_record_but_preserves_store_hydration():
     assert hydrated.store_only is True
     assert [run.run_id for run in runs] == [record.run_id]
     assert runs[0].store_only is True
+
+
+@pytest.mark.anyio
+async def test_shutdown_interrupts_remaining_inflight_run():
+    """Shutdown should bounded-drain and interrupt runs that are still active."""
+    store = MemoryRunStore()
+    manager = RunManager(store=store)
+    record = await manager.create_or_reject("thread-1", metadata={"user_id": "user-1"})
+    await manager.set_status(record.run_id, RunStatus.running)
+
+    async def never_finishes():
+        await asyncio.sleep(60)
+
+    task = asyncio.create_task(never_finishes())
+    record.task = task
+
+    interrupted = await manager.shutdown(timeout=0.01)
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert interrupted == [record.run_id]
+    assert record.status == RunStatus.interrupted
+    assert record.abort_event.is_set()
+    assert task.cancelled()
+
+    restarted = RunManager(store=store)
+    hydrated = await restarted.get(record.run_id, user_id="user-1")
+    assert hydrated is not None
+    assert hydrated.status == RunStatus.interrupted
+    assert hydrated.error == "Gateway shutdown interrupted run"
 
 
 @pytest.mark.anyio

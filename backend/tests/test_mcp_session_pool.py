@@ -1,5 +1,6 @@
 """Tests for the MCP persistent-session pool."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -53,6 +54,35 @@ async def test_get_session_reuses_existing():
     assert s1 is s2
     # Only one session should have been created.
     assert mock_cm.__aenter__.await_count == 1
+
+
+@pytest.mark.anyio
+async def test_concurrent_get_session_dedupes_inflight_creation():
+    """Concurrent callers for the same key should share one owner task."""
+    pool = MCPSessionPool()
+    session = AsyncMock()
+    enter_count = 0
+
+    class SlowContext:
+        async def __aenter__(self):
+            nonlocal enter_count
+            enter_count += 1
+            await asyncio.sleep(0.01)
+            return session
+
+        async def __aexit__(self, *args):
+            return False
+
+    with patch("langchain_mcp_adapters.sessions.create_session", return_value=SlowContext()):
+        first, second = await asyncio.gather(
+            pool.get_session("server", "thread-1", {"transport": "stdio", "command": "x", "args": []}),
+            pool.get_session("server", "thread-1", {"transport": "stdio", "command": "x", "args": []}),
+        )
+
+    assert first is session
+    assert second is session
+    assert enter_count == 1
+    await pool.close_all()
 
 
 @pytest.mark.anyio
@@ -406,3 +436,54 @@ def test_session_pool_tool_sync_wrapper_path_is_safe():
         wrapped.func(url="https://example.com")
 
     mock_session.call_tool.assert_called_once_with("navigate", {"url": "https://example.com"})
+
+
+@pytest.mark.anyio
+async def test_http_transport_tools_not_pooled():
+    """HTTP/SSE transport tools should not be wrapped with the stdio session pool."""
+    from langchain_core.tools import StructuredTool
+    from pydantic import BaseModel, Field
+
+    from deerflow.mcp.tools import get_mcp_tools
+
+    class Args(BaseModel):
+        query: str = Field(..., description="query")
+
+    http_tool = StructuredTool(
+        name="remote_search",
+        description="Remote search",
+        args_schema=Args,
+        coroutine=AsyncMock(),
+        response_format="content_and_artifact",
+    )
+    stdio_tool = StructuredTool(
+        name="local_search",
+        description="Local search",
+        args_schema=Args,
+        coroutine=AsyncMock(),
+        response_format="content_and_artifact",
+    )
+
+    extensions_config = MagicMock()
+    extensions_config.model_extra = {}
+    servers_config = {
+        "remote": {"transport": "http", "url": "https://example.com/mcp"},
+        "local": {"transport": "stdio", "command": "npx", "args": ["server"]},
+    }
+
+    with (
+        patch("deerflow.mcp.tools.ExtensionsConfig.from_file", return_value=extensions_config),
+        patch("deerflow.mcp.tools.build_servers_config", return_value=servers_config),
+        patch("deerflow.mcp.tools.get_initial_oauth_headers", return_value={}),
+        patch("deerflow.mcp.tools.build_oauth_tool_interceptor", return_value=None),
+        patch("langchain_mcp_adapters.client.MultiServerMCPClient") as mock_client,
+    ):
+        mock_client.return_value.get_tools = AsyncMock(return_value=[http_tool, stdio_tool])
+        tools = await get_mcp_tools()
+
+    remote_tool = next(tool for tool in tools if tool.name == "remote_search")
+    local_tool = next(tool for tool in tools if tool.name == "local_search")
+
+    assert remote_tool.coroutine is http_tool.coroutine
+    assert local_tool.coroutine is not stdio_tool.coroutine
+    assert list(get_session_pool()._entries.keys()) == []

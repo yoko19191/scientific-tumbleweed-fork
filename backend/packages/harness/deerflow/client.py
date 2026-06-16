@@ -44,6 +44,8 @@ from deerflow.config.paths import get_paths
 from deerflow.models import create_chat_model
 from deerflow.runtime.user_context import get_effective_user_id
 from deerflow.skills.installer import install_skill_from_archive
+from deerflow.subagents.status_contract import stamp_subagent_status
+from deerflow.tools.builtins.tool_search import assemble_deferred_tools
 from deerflow.tracing import build_tracing_callbacks, inject_langfuse_metadata
 from deerflow.uploads.manager import (
     claim_unique_filename,
@@ -253,10 +255,13 @@ class DeerFlowClient:
         subagent_enabled = cfg.get("subagent_enabled", False)
         max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
 
+        tools = self._get_tools(model_name=model_name, subagent_enabled=subagent_enabled)
+        final_tools, deferred_setup = assemble_deferred_tools(tools, enabled=self._app_config.tool_search.enabled)
+
         kwargs: dict[str, Any] = {
             "model": create_chat_model(name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False),
-            "tools": self._get_tools(model_name=model_name, subagent_enabled=subagent_enabled),
-            "middleware": _build_middlewares(config, model_name=model_name, agent_name=self._agent_name, custom_middlewares=self._middlewares),
+            "tools": final_tools,
+            "middleware": _build_middlewares(config, model_name=model_name, agent_name=self._agent_name, custom_middlewares=self._middlewares, deferred_setup=deferred_setup),
             "system_prompt": apply_prompt_template(
                 subagent_enabled=subagent_enabled,
                 max_concurrent_subagents=max_concurrent_subagents,
@@ -264,6 +269,7 @@ class DeerFlowClient:
                 user_id=config.get("metadata", {}).get("user_id"),
                 available_skills=self._available_skills,
                 tone_style=tone_style,
+                deferred_names=deferred_setup.deferred_names,
             ),
             "state_schema": ThreadState,
         }
@@ -315,15 +321,18 @@ class DeerFlowClient:
     @staticmethod
     def _tool_message_event(msg: ToolMessage) -> "StreamEvent":
         """Build a ``messages-tuple`` tool-result event from a ToolMessage."""
-        return StreamEvent(
-            type="messages-tuple",
-            data={
+        data = stamp_subagent_status(
+            {
                 "type": "tool",
                 "content": DeerFlowClient._extract_text(msg.content),
                 "name": msg.name,
                 "tool_call_id": msg.tool_call_id,
                 "id": msg.id,
-            },
+            }
+        )
+        return StreamEvent(
+            type="messages-tuple",
+            data=data,
         )
 
     @staticmethod
@@ -337,13 +346,15 @@ class DeerFlowClient:
                 d["usage_metadata"] = msg.usage_metadata
             return d
         if isinstance(msg, ToolMessage):
-            return {
-                "type": "tool",
-                "content": DeerFlowClient._extract_text(msg.content),
-                "name": getattr(msg, "name", None),
-                "tool_call_id": getattr(msg, "tool_call_id", None),
-                "id": getattr(msg, "id", None),
-            }
+            return stamp_subagent_status(
+                {
+                    "type": "tool",
+                    "content": DeerFlowClient._extract_text(msg.content),
+                    "name": getattr(msg, "name", None),
+                    "tool_call_id": getattr(msg, "tool_call_id", None),
+                    "id": getattr(msg, "id", None),
+                }
+            )
         if isinstance(msg, HumanMessage):
             return {"type": "human", "content": msg.content, "id": getattr(msg, "id", None)}
         if isinstance(msg, SystemMessage):
@@ -1057,6 +1068,7 @@ class DeerFlowClient:
             "fact_confidence_threshold": config.fact_confidence_threshold,
             "injection_enabled": config.injection_enabled,
             "max_injection_tokens": config.max_injection_tokens,
+            "token_counting": config.token_counting,
         }
 
     def get_memory_status(self) -> dict:
@@ -1134,7 +1146,7 @@ class DeerFlowClient:
 
                 info: dict[str, Any] = {
                     "filename": dest_name,
-                    "size": str(dest.stat().st_size),
+                    "size": dest.stat().st_size,
                     "path": str(dest),
                     "virtual_path": upload_virtual_path(dest_name),
                     "artifact_url": upload_artifact_url(thread_id, dest_name),
@@ -1171,6 +1183,7 @@ class DeerFlowClient:
             "success": True,
             "files": uploaded_files,
             "message": f"Successfully uploaded {len(uploaded_files)} file(s)",
+            "skipped_files": [],
         }
 
     def list_uploads(self, thread_id: str) -> dict:

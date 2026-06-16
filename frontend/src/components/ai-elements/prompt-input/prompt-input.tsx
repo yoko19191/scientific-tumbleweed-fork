@@ -53,6 +53,15 @@ import type { AttachmentsContext, PromptInputMessage } from "./types";
 
 const LocalAttachmentsContext = createContext<AttachmentsContext | null>(null);
 
+function minPositiveLimit(
+  values: Array<number | null | undefined>,
+): number | undefined {
+  const positive = values.filter(
+    (value): value is number => typeof value === "number" && value > 0,
+  );
+  return positive.length > 0 ? Math.min(...positive) : undefined;
+}
+
 export const usePromptInputAttachments = () => {
   // Dual-mode: prefer provider if present, otherwise use local
   const provider = useOptionalProviderAttachments();
@@ -397,8 +406,20 @@ export const PromptInput = ({
   const maxUploadBodyBytes = uploadConfig.data
     ? uploadConfig.data.max_body_bytes
     : DEFAULT_UPLOAD_MAX_BODY_BYTES;
+  const effectiveMaxFiles = minPositiveLimit([
+    maxFiles,
+    uploadConfig.data?.max_files,
+  ]);
+  const effectiveMaxFileSize = minPositiveLimit([
+    maxFileSize,
+    uploadConfig.data?.max_file_size,
+    maxUploadBodyBytes,
+  ]);
+  const effectiveMaxTotalSize =
+    minPositiveLimit([uploadConfig.data?.max_total_size, maxUploadBodyBytes]) ??
+    DEFAULT_UPLOAD_MAX_BODY_BYTES;
   const uploadLimitLabel = formatUploadSize(
-    maxUploadBodyBytes ?? DEFAULT_UPLOAD_MAX_BODY_BYTES,
+    effectiveMaxFileSize ?? effectiveMaxTotalSize,
   );
 
   const sanitizeIncomingFiles = useCallback(
@@ -414,12 +435,26 @@ export const PromptInput = ({
         }
       }
 
+      let candidates = accepted;
+      if (effectiveMaxFiles !== undefined) {
+        const capacity = Math.max(0, effectiveMaxFiles - files.length);
+        candidates = accepted.slice(0, capacity);
+        const countRejected = accepted.length - candidates.length;
+        if (countRejected > 0) {
+          toast.warning(
+            t.uploads.tooManyFilesWarning(countRejected, effectiveMaxFiles),
+          );
+        }
+      }
+
       const currentBytes = files.reduce(
         (total, item) => total + (item.file?.size ?? 0),
         0,
       );
-      const { accepted: sized, rejected } = splitUploadFilesBySize(accepted, {
+      const { accepted: sized, rejected } = splitUploadFilesBySize(candidates, {
         maxBodyBytes: maxUploadBodyBytes,
+        maxFileBytes: effectiveMaxFileSize,
+        maxTotalBytes: effectiveMaxTotalSize,
         currentBytes,
       });
       if (rejected.length > 0 && maxUploadBodyBytes) {
@@ -430,7 +465,16 @@ export const PromptInput = ({
 
       return sized;
     },
-    [files, maxUploadBodyBytes, onError, t.uploads, uploadLimitLabel],
+    [
+      effectiveMaxFileSize,
+      effectiveMaxFiles,
+      effectiveMaxTotalSize,
+      files,
+      maxUploadBodyBytes,
+      onError,
+      t.uploads,
+      uploadLimitLabel,
+    ],
   );
 
   // Let provider know about our hidden file input so external menus can call openFileDialog()

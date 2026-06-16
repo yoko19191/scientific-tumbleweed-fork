@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from deerflow.subagents.status_contract import stamp_subagent_status
+
 
 def serialize_lc_object(obj: Any) -> Any:
     """Recursively serialize a LangChain object to a JSON-serialisable dict."""
@@ -20,19 +22,25 @@ def serialize_lc_object(obj: Any) -> Any:
     if isinstance(obj, (str, int, float, bool)):
         return obj
     if isinstance(obj, dict):
-        return {k: serialize_lc_object(v) for k, v in obj.items()}
+        return stamp_subagent_status({k: serialize_lc_object(v) for k, v in obj.items()})
     if isinstance(obj, (list, tuple)):
         return [serialize_lc_object(item) for item in obj]
     # Pydantic v2
     if hasattr(obj, "model_dump"):
         try:
-            return obj.model_dump()
+            dumped = obj.model_dump()
+            if isinstance(dumped, dict):
+                return stamp_subagent_status(dumped)
+            return dumped
         except Exception:
             pass
     # Pydantic v1 / older objects
     if hasattr(obj, "dict"):
         try:
-            return obj.dict()
+            dumped = obj.dict()
+            if isinstance(dumped, dict):
+                return stamp_subagent_status(dumped)
+            return dumped
         except Exception:
             pass
     # Last resort
@@ -53,6 +61,57 @@ def serialize_channel_values(channel_values: dict[str, Any]) -> dict[str, Any]:
         if key.startswith("__pregel_") or key == "__interrupt__":
             continue
         result[key] = serialize_lc_object(value)
+    return result
+
+
+def _hidden_data_url_image_block(block: Any) -> bool:
+    if not isinstance(block, dict):
+        return False
+    if block.get("type") != "image_url":
+        return False
+    image_url = block.get("image_url")
+    if not isinstance(image_url, dict):
+        return False
+    url = image_url.get("url")
+    return isinstance(url, str) and url.startswith("data:")
+
+
+def strip_data_url_image_blocks(messages: Any) -> Any:
+    """Remove hidden ``data:`` image blocks from serialized messages.
+
+    Hidden view-image messages must stay in checkpoints and SSE/internal state
+    for model context, but REST state/history responses should not replay large
+    base64 image payloads back to clients.
+    """
+    if not isinstance(messages, list):
+        return messages
+
+    stripped_messages: list[Any] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            stripped_messages.append(message)
+            continue
+
+        additional_kwargs = message.get("additional_kwargs") or {}
+        hidden = isinstance(additional_kwargs, dict) and additional_kwargs.get("hide_from_ui") is True
+        content = message.get("content")
+        if not hidden or not isinstance(content, list):
+            stripped_messages.append(dict(message))
+            continue
+
+        cleaned = [block for block in content if not _hidden_data_url_image_block(block)]
+        message_copy = dict(message)
+        message_copy["content"] = cleaned
+        stripped_messages.append(message_copy)
+
+    return stripped_messages
+
+
+def serialize_channel_values_for_api(channel_values: dict[str, Any]) -> dict[str, Any]:
+    """Serialize channel values for REST APIs, hiding bulky hidden images."""
+    result = serialize_channel_values(channel_values)
+    if "messages" in result:
+        result["messages"] = strip_data_url_image_blocks(result["messages"])
     return result
 
 

@@ -4,9 +4,11 @@ Verifies that memory and current date are injected as a <system-reminder> into
 the first HumanMessage exactly once per session (frozen-snapshot pattern).
 """
 
+import time
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from deerflow.agents.middlewares.dynamic_context_middleware import (
@@ -232,6 +234,44 @@ def test_message_without_id_gets_stable_uuid():
     assert reminder_id is not None
     assert reminder_id != "None"
     assert user_id == f"{reminder_id}__user"
+
+
+@pytest.mark.anyio
+async def test_abefore_agent_returns_same_result_as_before_agent():
+    mw = _make_middleware()
+    state = {"messages": [HumanMessage(content="Hello", id="msg-1")]}
+    runtime = _fake_runtime()
+
+    with mock.patch("deerflow.agents.lead_agent.prompt._get_memory_context", return_value=""), mock.patch("deerflow.agents.middlewares.dynamic_context_middleware.datetime") as mock_dt:
+        mock_dt.now.return_value.strftime.return_value = "2026-05-08, Friday"
+        sync_result = mw.before_agent(state, runtime)
+        async_result = await mw.abefore_agent(state, runtime)
+
+    assert sync_result is not None
+    assert async_result is not None
+    assert len(sync_result["messages"]) == 2
+    assert len(async_result["messages"]) == 2
+    assert sync_result["messages"][0].content == async_result["messages"][0].content
+    assert sync_result["messages"][1].content == async_result["messages"][1].content
+
+
+@pytest.mark.anyio
+async def test_abefore_agent_returns_none_on_timeout(monkeypatch):
+    mw = _make_middleware()
+
+    def blocking_inject(_state, _runtime):
+        time.sleep(0.1)
+        return {"messages": [HumanMessage(content="should not reach")]}
+
+    monkeypatch.setattr(mw, "_inject", blocking_inject)
+    monkeypatch.setattr(
+        "deerflow.agents.middlewares.dynamic_context_middleware._INJECT_TIMEOUT_SECONDS",
+        0.01,
+    )
+
+    result = await mw.abefore_agent({"messages": [HumanMessage(content="Hello", id="msg-1")]}, _fake_runtime())
+
+    assert result is None
 
 
 def test_user_message_containing_system_reminder_tag_does_not_prevent_injection():

@@ -214,6 +214,7 @@ class TestMemoryPromptInjectionIsolation:
             mock_cfg.return_value.enabled = True
             mock_cfg.return_value.injection_enabled = True
             mock_cfg.return_value.max_injection_tokens = 2000
+            mock_cfg.return_value.token_counting = "tiktoken"
             mock_storage.return_value.load.side_effect = _get_memory_data
 
             context_a = _get_memory_context(user_id=USER_A)
@@ -261,6 +262,7 @@ class TestMemoryPromptInjectionIsolation:
             mock_cfg.return_value.enabled = True
             mock_cfg.return_value.injection_enabled = True
             mock_cfg.return_value.max_injection_tokens = 2000
+            mock_cfg.return_value.token_counting = "tiktoken"
             mock_storage.return_value.load.side_effect = _get_memory_data
 
             prompt_b = apply_prompt_template(user_id=USER_B)

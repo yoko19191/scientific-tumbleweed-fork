@@ -202,51 +202,41 @@ def test_duplicate_triggers_warning(mock_bash, mock_cfg, caplog):
 
 @patch("deerflow.tools.tools.get_app_config")
 @patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
-def test_tool_search_registry_preserves_promotions(mock_bash, mock_cfg):
-    """Re-entrant tool loading should not re-hide already promoted MCP tools."""
-    from deerflow.tools.builtins.tool_search import DeferredToolRegistry, get_deferred_registry, reset_deferred_registry, set_deferred_registry
+def test_mcp_tools_are_tagged_for_deferred_setup(mock_bash, mock_cfg):
+    """Tool loading tags MCP tools; deferred assembly happens at agent build time."""
+    from deerflow.tools.builtins.tool_search import build_deferred_tool_setup
+    from deerflow.tools.mcp_metadata import is_mcp_tool
 
+    _tool_alpha.metadata = None
+    _tool_beta.metadata = None
     config = _make_minimal_config([])
     config.tool_search.enabled = True
     mock_cfg.return_value = config
 
-    registry = DeferredToolRegistry()
-    registry.register(_tool_alpha)
-    registry.register(_tool_beta)
-    registry.promote({_tool_alpha.name})
-    set_deferred_registry(registry)
-
     extensions = MagicMock()
     extensions.get_enabled_mcp_servers.return_value = {"server": object()}
 
-    try:
-        with (
-            patch("deerflow.config.extensions_config.ExtensionsConfig.from_file", return_value=extensions),
-            patch("deerflow.mcp.cache.get_cached_mcp_tools", return_value=[_tool_alpha, _tool_beta]),
-        ):
-            get_available_tools(include_mcp=True)
+    with (
+        patch("deerflow.config.extensions_config.ExtensionsConfig.from_file", return_value=extensions),
+        patch("deerflow.mcp.cache.get_cached_mcp_tools", return_value=[_tool_alpha, _tool_beta]),
+    ):
+        result = get_available_tools(include_mcp=True)
 
-        assert get_deferred_registry() is registry
-        assert _tool_alpha.name not in registry.deferred_names
-        assert _tool_beta.name in registry.deferred_names
-    finally:
-        reset_deferred_registry()
+    assert is_mcp_tool(_tool_alpha) is True
+    assert is_mcp_tool(_tool_beta) is True
+    setup = build_deferred_tool_setup(result, enabled=True)
+    assert setup.deferred_names == frozenset({_tool_alpha.name, _tool_beta.name})
 
 
 @patch("deerflow.tools.tools.get_app_config")
 @patch("deerflow.tools.tools.is_host_bash_allowed", return_value=True)
 def test_mcp_duplicate_of_config_tool_does_not_hide_config_tool(mock_bash, mock_cfg):
-    """A deferred MCP duplicate must not hide the higher-priority config tool.
+    """A duplicate MCP tool must not mark the higher-priority config tool deferred."""
+    from deerflow.tools.builtins.tool_search import build_deferred_tool_setup
 
-    Regression guard for a subtle interaction between tool deduplication and
-    DeferredToolFilterMiddleware: config tools win in the final tool list, but
-    MCP tools were registered in the deferred registry before deduplication.
-    If an MCP server also exposed ``web_search``, the registry's name-based
-    filter stripped the real config ``web_search`` schema from bind_tools, so
-    the model genuinely saw no web-search interface.
-    """
-    from deerflow.tools.builtins.tool_search import get_deferred_registry, reset_deferred_registry
-
+    _tool_alpha.metadata = None
+    _tool_alpha_dup.metadata = None
+    _tool_beta.metadata = None
     tool_cfg = MagicMock()
     tool_cfg.name = _tool_alpha.name
     tool_cfg.group = "web"
@@ -259,21 +249,17 @@ def test_mcp_duplicate_of_config_tool_does_not_hide_config_tool(mock_bash, mock_
     extensions = MagicMock()
     extensions.get_enabled_mcp_servers.return_value = {"server": object()}
 
-    try:
-        with (
-            patch("deerflow.tools.tools.resolve_variable", return_value=_tool_alpha),
-            patch("deerflow.config.extensions_config.ExtensionsConfig.from_file", return_value=extensions),
-            patch("deerflow.mcp.cache.get_cached_mcp_tools", return_value=[_tool_alpha_dup, _tool_beta]),
-        ):
-            result = get_available_tools(include_mcp=True)
+    with (
+        patch("deerflow.tools.tools.resolve_variable", return_value=_tool_alpha),
+        patch("deerflow.config.extensions_config.ExtensionsConfig.from_file", return_value=extensions),
+        patch("deerflow.mcp.cache.get_cached_mcp_tools", return_value=[_tool_alpha_dup, _tool_beta]),
+    ):
+        result = get_available_tools(include_mcp=True)
 
-        names = [tool.name for tool in result]
-        assert names.count(_tool_alpha.name) == 1
-        assert _tool_alpha.name in names
+    names = [tool.name for tool in result]
+    assert names.count(_tool_alpha.name) == 1
+    assert _tool_alpha.name in names
 
-        registry = get_deferred_registry()
-        assert registry is not None
-        assert _tool_alpha.name not in registry.deferred_names
-        assert _tool_beta.name in registry.deferred_names
-    finally:
-        reset_deferred_registry()
+    setup = build_deferred_tool_setup(result, enabled=True)
+    assert _tool_alpha.name not in setup.deferred_names
+    assert _tool_beta.name in setup.deferred_names

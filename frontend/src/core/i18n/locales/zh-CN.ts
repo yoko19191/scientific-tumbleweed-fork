@@ -37,6 +37,7 @@ export const zhCN: Translations = {
     custom: "自定义",
     notAvailableInDemoMode: "在演示模式下不可用",
     loading: "加载中...",
+    retry: "重试",
     version: "版本",
     lastUpdated: "最后更新",
     code: "代码",
@@ -515,6 +516,8 @@ export const zhCN: Translations = {
     demoChats: "演示对话",
     agents: "智能体",
     apps: "Apps",
+    gatewayUnavailable: "网关暂时不可用。",
+    gatewayUnavailableRetrying: "正在后台重试。",
   },
 
   // Agents
@@ -614,6 +617,9 @@ export const zhCN: Translations = {
   chats: {
     description: "查看、搜索和继续你在工作区中的历史对话。",
     searchChats: "搜索对话",
+    loadMoreToSearch: "加载更多以搜索更早的对话",
+    loadingMore: "正在加载...",
+    loadOlderChats: "加载更早的对话",
   },
 
   // Page titles (document title)
@@ -665,6 +671,10 @@ export const zhCN: Translations = {
       count === 1
         ? `这个文件超过上传限制（${limit}），没有加入附件。`
         : `${count} 个文件超过上传限制（${limit}），没有加入附件。`,
+    tooManyFilesWarning: (count: number, limit: number) =>
+      count === 1
+        ? `最多只能添加 ${limit} 个上传文件，已有 1 个文件没有加入附件。`
+        : `最多只能添加 ${limit} 个上传文件，已有 ${count} 个文件没有加入附件。`,
   },
 
   subtasks: {

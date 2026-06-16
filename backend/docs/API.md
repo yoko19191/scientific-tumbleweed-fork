@@ -426,7 +426,8 @@ Content-Type: multipart/form-data
       "markdown_artifact_url": "/api/threads/abc123/artifacts/mnt/user-data/uploads/document.md"
     }
   ],
-  "message": "Successfully uploaded 1 file(s)"
+  "message": "Successfully uploaded 1 file(s)",
+  "skipped_files": []
 }
 ```
 

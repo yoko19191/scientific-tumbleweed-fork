@@ -400,6 +400,42 @@ def test_search_threads_pushes_status_filter_but_keeps_metadata_filtering_in_pyt
     assert [item["thread_id"] for item in response.json()] == ["idle-old"]
 
 
+def test_list_by_user_applies_limit_offset_after_sorting() -> None:
+    app, store, _checkpointer = _build_thread_app()
+
+    async def _seed() -> None:
+        from app.gateway.thread_ownership import bind_thread_to_user
+
+        ns = user_threads_namespace(_TEST_USER_ID)
+        for thread_id, updated_at in [
+            ("oldest", "2026-04-27T00:00:01+00:00"),
+            ("middle", "2026-04-27T00:00:02+00:00"),
+            ("newest", "2026-04-27T00:00:03+00:00"),
+        ]:
+            await store.aput(
+                ns,
+                thread_id,
+                {
+                    "thread_id": thread_id,
+                    "status": "idle",
+                    "created_at": "2026-04-27T00:00:00+00:00",
+                    "updated_at": updated_at,
+                    "metadata": {},
+                    "values": {"title": thread_id},
+                },
+            )
+            await bind_thread_to_user(store, _TEST_USER_ID, thread_id)
+
+    asyncio.run(_seed())
+
+    with patch("app.gateway.deps.get_current_user_id", new=AsyncMock(return_value=_TEST_USER_ID)):
+        with TestClient(app) as client:
+            response = client.get("/api/threads/listByUser?limit=2&offset=1")
+
+    assert response.status_code == 200, response.text
+    assert [item["thread_id"] for item in response.json()] == ["middle", "oldest"]
+
+
 def test_search_threads_unauthenticated_does_not_query_store() -> None:
     store = RecordingInMemoryStore()
     app, _checkpointer = _build_thread_app_with_store(store)

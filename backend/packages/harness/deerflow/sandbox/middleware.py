@@ -1,10 +1,15 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import replace as dc_replace
 from typing import NotRequired, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import ToolMessage
+from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
+from langgraph.types import Command
 
 from deerflow.agents.thread_state import SandboxState, ThreadDataState
 from deerflow.sandbox import get_sandbox_provider
@@ -121,3 +126,62 @@ class SandboxMiddleware(AgentMiddleware[SandboxMiddlewareState]):
 
         # No sandbox to release
         return await super().aafter_agent(state, runtime)
+
+    @staticmethod
+    def _read_sandbox_id_from_state(state: object) -> str | None:
+        if not isinstance(state, dict):
+            return None
+        sandbox_state = state.get("sandbox")
+        if not isinstance(sandbox_state, dict):
+            return None
+        sandbox_id = sandbox_state.get("sandbox_id")
+        return sandbox_id if isinstance(sandbox_id, str) else None
+
+    @staticmethod
+    def _read_sandbox_id_from_request(request: ToolCallRequest) -> str | None:
+        runtime = request.runtime
+        if runtime is None or runtime.state is None:
+            return None
+        return SandboxMiddleware._read_sandbox_id_from_state(runtime.state)
+
+    @staticmethod
+    def _attach_sandbox_update(result: ToolMessage | Command, sandbox_id: str) -> ToolMessage | Command:
+        sandbox_update = {"sandbox": {"sandbox_id": sandbox_id}}
+
+        if isinstance(result, ToolMessage):
+            return Command(update={**sandbox_update, "messages": [result]})
+
+        existing_update = result.update
+        if isinstance(existing_update, dict):
+            return dc_replace(result, update={**existing_update, **sandbox_update})
+        return result
+
+    @override
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command],
+    ) -> ToolMessage | Command:
+        prev_sandbox_id = self._read_sandbox_id_from_request(request)
+        result = handler(request)
+        if prev_sandbox_id is not None:
+            return result
+        curr_sandbox_id = self._read_sandbox_id_from_request(request)
+        if curr_sandbox_id is None:
+            return result
+        return self._attach_sandbox_update(result, curr_sandbox_id)
+
+    @override
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command]],
+    ) -> ToolMessage | Command:
+        prev_sandbox_id = self._read_sandbox_id_from_request(request)
+        result = await handler(request)
+        if prev_sandbox_id is not None:
+            return result
+        curr_sandbox_id = self._read_sandbox_id_from_request(request)
+        if curr_sandbox_id is None:
+            return result
+        return self._attach_sandbox_update(result, curr_sandbox_id)

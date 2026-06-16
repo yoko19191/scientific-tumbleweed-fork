@@ -5,6 +5,25 @@ import { useEffect, useState } from "react";
 
 import { uuid } from "@/core/utils/uuid";
 
+export const THREAD_CHAT_RESET_EVENT = "scientific-tumbleweed:thread-chat-reset";
+
+type ThreadChatResetDetail = {
+  deletedThreadId: string;
+  nextPath: string;
+  force?: boolean;
+};
+
+export function resetThreadChatAfterDelete(detail: ThreadChatResetDetail) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent<ThreadChatResetDetail>(THREAD_CHAT_RESET_EVENT, {
+      detail,
+    }),
+  );
+}
+
 /** Validate that a string looks like a UUID (v4). */
 function isValidUUID(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -28,6 +47,33 @@ export function useThreadChat() {
   const [isNewThread, setIsNewThread] = useState(
     () => threadIdFromPath === "new" || !isValidUUID(threadIdFromPath ?? ""),
   );
+
+  useEffect(() => {
+    const resetToNewThread = (event: Event) => {
+      const detail = (event as CustomEvent<ThreadChatResetDetail>).detail;
+      if (!detail?.nextPath) {
+        return;
+      }
+
+      const currentPathname = window.location.pathname;
+      const deletingCurrentThread =
+        detail.force === true ||
+        detail.deletedThreadId === threadId ||
+        detail.deletedThreadId === threadIdFromPath ||
+        currentPathname.endsWith(`/${detail.deletedThreadId}`);
+
+      if (!deletingCurrentThread) {
+        return;
+      }
+
+      setIsNewThread(true);
+      setThreadId(uuid());
+    };
+
+    window.addEventListener(THREAD_CHAT_RESET_EVENT, resetToNewThread);
+    return () =>
+      window.removeEventListener(THREAD_CHAT_RESET_EVENT, resetToNewThread);
+  }, [threadId, threadIdFromPath]);
 
   useEffect(() => {
     if (pathname.endsWith("/new")) {

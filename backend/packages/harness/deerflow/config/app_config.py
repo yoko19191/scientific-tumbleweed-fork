@@ -24,13 +24,14 @@ from deerflow.config.safety_finish_reason_config import SafetyFinishReasonConfig
 from deerflow.config.sandbox_config import SandboxConfig
 from deerflow.config.skill_evolution_config import SkillEvolutionConfig
 from deerflow.config.skills_config import SkillsConfig
-from deerflow.config.stream_bridge_config import StreamBridgeConfig, load_stream_bridge_config_from_dict
 from deerflow.config.storage_config import StorageConfig, load_storage_config_from_dict
+from deerflow.config.stream_bridge_config import StreamBridgeConfig, load_stream_bridge_config_from_dict
 from deerflow.config.subagents_config import SubagentsAppConfig, load_subagents_config_from_dict
 from deerflow.config.summarization_config import SummarizationConfig, load_summarization_config_from_dict
 from deerflow.config.title_config import TitleConfig, load_title_config_from_dict
 from deerflow.config.token_usage_config import TokenUsageConfig
 from deerflow.config.tool_config import ToolConfig, ToolGroupConfig
+from deerflow.config.tool_output_config import ToolOutputConfig
 from deerflow.config.tool_search_config import ToolSearchConfig, load_tool_search_config_from_dict
 
 load_dotenv()
@@ -88,6 +89,7 @@ class AppConfig(BaseModel):
     skills: SkillsConfig = Field(default_factory=SkillsConfig, description="Skills configuration")
     skill_evolution: SkillEvolutionConfig = Field(default_factory=SkillEvolutionConfig, description="Agent-managed skill evolution configuration")
     extensions: ExtensionsConfig = Field(default_factory=ExtensionsConfig, description="Extensions configuration (MCP servers and skills state)")
+    tool_output: ToolOutputConfig = Field(default_factory=ToolOutputConfig, description="Tool output budget protection configuration")
     tool_search: ToolSearchConfig = Field(default_factory=ToolSearchConfig, description="Tool search / deferred loading configuration")
     title: TitleConfig = Field(default_factory=TitleConfig, description="Automatic title generation configuration")
     summarization: SummarizationConfig = Field(default_factory=SummarizationConfig, description="Conversation summarization configuration")

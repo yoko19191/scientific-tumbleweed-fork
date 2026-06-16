@@ -32,6 +32,7 @@ def _slot_items(slot: MiddlewareSlot) -> list[AgentMiddleware]:
 
 def build_ordered_middleware_chain(
     *,
+    tool_output_budget: MiddlewareSlot = None,
     sandbox: MiddlewareSlot = None,
     dangling_tool_call_patch: MiddlewareSlot = None,
     llm_error_handling: MiddlewareSlot = None,
@@ -59,6 +60,7 @@ def build_ordered_middleware_chain(
     """Build the canonical middleware order from concrete slot contents."""
     chain: list[AgentMiddleware] = []
     for slot in (
+        tool_output_budget,
         sandbox,
         dangling_tool_call_patch,
         llm_error_handling,
@@ -181,6 +183,7 @@ class MiddlewareFeatures:
     """Feature flags controlling which middlewares are included."""
 
     sandbox: bool = True
+    tool_output_budget: bool = True
     uploads: bool = True
     dangling_tool_call_patch: bool = True
     permissions: bool = True
@@ -206,6 +209,9 @@ class MiddlewareFeatures:
     agent_name: str | None = None
     model_name: str | None = None
     max_concurrent_subagents: int = 3
+    deferred_names: frozenset[str] = frozenset()
+    deferred_catalog_hash: str | None = None
+    app_config: object | None = None
 
     custom_middlewares: list[AgentMiddleware] = field(default_factory=list)
 
@@ -213,6 +219,7 @@ class MiddlewareFeatures:
 def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[AgentMiddleware]:
     """Assemble concrete middleware slots and delegate canonical ordering."""
     sandbox: list[AgentMiddleware] = []
+    tool_output_budget: list[AgentMiddleware] = []
     dangling_tool_call_patch: list[AgentMiddleware] = []
     llm_error_handling: list[AgentMiddleware] = []
     permissions: list[AgentMiddleware] = []
@@ -233,6 +240,14 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
     loop_detection: list[AgentMiddleware] = []
     safety_finish_reason: list[AgentMiddleware] = []
     clarification: list[AgentMiddleware] = []
+
+    if features.tool_output_budget:
+        from deerflow.agents.middlewares.tool_output_budget_middleware import ToolOutputBudgetMiddleware
+
+        if features.app_config is not None:
+            tool_output_budget.append(ToolOutputBudgetMiddleware.from_app_config(features.app_config))
+        else:
+            tool_output_budget.append(ToolOutputBudgetMiddleware())
 
     if features.sandbox:
         from deerflow.agents.middlewares.thread_data_middleware import ThreadDataMiddleware
@@ -314,7 +329,7 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
     if features.deferred_tool_filter:
         from deerflow.agents.middlewares.deferred_tool_filter_middleware import DeferredToolFilterMiddleware
 
-        deferred_tool_filter.append(DeferredToolFilterMiddleware())
+        deferred_tool_filter.append(DeferredToolFilterMiddleware(features.deferred_names, features.deferred_catalog_hash))
 
     if features.subagent_limit:
         from deerflow.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
@@ -345,6 +360,7 @@ def build_canonical_middleware_chain(features: MiddlewareFeatures) -> list[Agent
         clarification.append(ClarificationMiddleware())
 
     return build_ordered_middleware_chain(
+        tool_output_budget=tool_output_budget,
         sandbox=sandbox,
         dangling_tool_call_patch=dangling_tool_call_patch,
         llm_error_handling=llm_error_handling,

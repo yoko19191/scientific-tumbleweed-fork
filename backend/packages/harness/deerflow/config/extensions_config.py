@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,16 @@ class McpServerConfig(BaseModel):
     oauth: McpOAuthConfig | None = Field(default=None, description="OAuth configuration (for sse or http type)")
     description: str = Field(default="", description="Human-readable description of what this MCP server provides")
     model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_transport_alias(cls, data: Any) -> Any:
+        """Accept MCP-spec ``transport`` as an alias for ``type``."""
+        if isinstance(data, dict):
+            transport = data.get("transport")
+            if transport and not data.get("type"):
+                data = {**data, "type": transport}
+        return data
 
 
 class SkillStateConfig(BaseModel):
@@ -432,10 +442,6 @@ async def aset_user_mcp_server_enabled(user_id: str, server_name: str, enabled: 
         if not isinstance(mcp_servers, dict):
             mcp_servers = {}
             data["mcpServers"] = mcp_servers
-        server_entry = mcp_servers.setdefault(server_name, {})
-        if not isinstance(server_entry, dict):
-            server_entry = {}
-            mcp_servers[server_name] = server_entry
-        server_entry["enabled"] = enabled
+        mcp_servers[server_name] = {"enabled": enabled}
 
     return await aupdate_user_extensions_override(user_id, _mutate)

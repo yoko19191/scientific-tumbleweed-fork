@@ -23,6 +23,7 @@ from deerflow.agents.middleware_builder import build_ordered_middleware_chain, i
 from deerflow.agents.middlewares.clarification_middleware import ClarificationMiddleware
 from deerflow.agents.middlewares.dangling_tool_call_middleware import DanglingToolCallMiddleware
 from deerflow.agents.middlewares.tool_error_handling_middleware import ToolErrorHandlingMiddleware
+from deerflow.agents.middlewares.tool_output_budget_middleware import ToolOutputBudgetMiddleware
 from deerflow.agents.thread_state import ThreadState
 from deerflow.tools.builtins import ask_clarification_tool
 
@@ -189,6 +190,7 @@ def _assemble_from_features(
     """
     extra_tools: list[BaseTool] = []
     sandbox: list[AgentMiddleware] = []
+    tool_output_budget: list[AgentMiddleware] = [ToolOutputBudgetMiddleware()]
     permissions: list[AgentMiddleware] = []
     guardrail: list[AgentMiddleware] = []
     hooks: list[AgentMiddleware] = []
@@ -316,6 +318,7 @@ def _assemble_from_features(
     # --- [13] Clarification (always last among built-ins) ---
     extra_tools.append(ask_clarification_tool)
     chain = build_ordered_middleware_chain(
+        tool_output_budget=tool_output_budget,
         sandbox=sandbox,
         dangling_tool_call_patch=[DanglingToolCallMiddleware()],
         guardrail=guardrail,

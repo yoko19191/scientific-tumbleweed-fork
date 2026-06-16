@@ -50,6 +50,23 @@ def test_serialize_dict():
     assert result == {"a": {"key": "v2"}, "b": [1, "two"]}
 
 
+def test_serialize_tool_message_dict_adds_subagent_status():
+    from deerflow.runtime.serialization import serialize_lc_object
+
+    result = serialize_lc_object(
+        {
+            "type": "tool",
+            "content": "Task Succeeded. Result: done",
+            "tool_call_id": "task-1",
+        }
+    )
+
+    assert result["additional_kwargs"]["subagent_status"] == {
+        "status": "completed",
+        "result": "done",
+    }
+
+
 def test_serialize_list():
     from deerflow.runtime.serialization import serialize_lc_object
 
@@ -112,6 +129,78 @@ def test_serialize_channel_values_serializes_objects():
 
     result = serialize_channel_values({"obj": _FakePydanticV2()})
     assert result == {"obj": {"key": "v2"}}
+
+
+def test_strip_data_url_image_blocks_removes_hidden_data_images():
+    from deerflow.runtime.serialization import strip_data_url_image_blocks
+
+    result = strip_data_url_image_blocks(
+        [
+            {
+                "content": [
+                    {"type": "text", "text": "keep"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+                ],
+                "additional_kwargs": {"hide_from_ui": True},
+            }
+        ]
+    )
+
+    assert result == [
+        {
+            "content": [{"type": "text", "text": "keep"}],
+            "additional_kwargs": {"hide_from_ui": True},
+        }
+    ]
+
+
+def test_strip_data_url_image_blocks_keeps_visible_data_images():
+    from deerflow.runtime.serialization import strip_data_url_image_blocks
+
+    messages = [
+        {
+            "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}],
+            "additional_kwargs": {},
+        }
+    ]
+
+    assert strip_data_url_image_blocks(messages) == messages
+
+
+def test_strip_data_url_image_blocks_keeps_hidden_remote_images():
+    from deerflow.runtime.serialization import strip_data_url_image_blocks
+
+    messages = [
+        {
+            "content": [{"type": "image_url", "image_url": {"url": "https://example.com/image.png"}}],
+            "additional_kwargs": {"hide_from_ui": True},
+        }
+    ]
+
+    assert strip_data_url_image_blocks(messages) == messages
+
+
+def test_serialize_channel_values_for_api_strips_internal_keys_and_hidden_data_images():
+    from deerflow.runtime.serialization import serialize_channel_values_for_api
+
+    raw = {
+        "messages": [
+            {
+                "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}],
+                "additional_kwargs": {"hide_from_ui": True},
+            },
+            "plain string message",
+        ],
+        "__pregel_tasks": "internal",
+        "__interrupt__": "stop",
+    }
+
+    assert serialize_channel_values_for_api(raw) == {
+        "messages": [
+            {"content": [], "additional_kwargs": {"hide_from_ui": True}},
+            "plain string message",
+        ]
+    }
 
 
 def test_serialize_messages_tuple():

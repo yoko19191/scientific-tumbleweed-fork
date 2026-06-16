@@ -76,12 +76,35 @@ test("rejects files larger than the configured upload body limit", () => {
   );
 });
 
+test("rejects files larger than the configured single-file limit", () => {
+  const small = new File(["small"], "small.txt", { type: "text/plain" });
+  const large = new File(["larger-content"], "large.txt", {
+    type: "text/plain",
+  });
+
+  const result = splitUploadFilesBySize([small, large], {
+    maxBodyBytes: 100,
+    maxFileBytes: small.size + 1,
+    maxTotalBytes: 100,
+  });
+
+  assert.deepEqual(
+    result.accepted.map((file) => file.name),
+    ["small.txt"],
+  );
+  assert.deepEqual(
+    result.rejected.map((file) => file.name),
+    ["large.txt"],
+  );
+});
+
 test("rejects files that would push the upload request over the limit", () => {
   const first = new File(["aaaa"], "first.txt", { type: "text/plain" });
   const second = new File(["bbbb"], "second.txt", { type: "text/plain" });
 
   const result = splitUploadFilesBySize([first, second], {
     maxBodyBytes: 6,
+    maxTotalBytes: 6,
     currentBytes: 2,
   });
 

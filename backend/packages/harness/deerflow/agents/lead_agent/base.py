@@ -51,7 +51,7 @@ from deerflow.skills.types import Skill
 from deerflow.tracing import build_tracing_callbacks
 
 if TYPE_CHECKING:
-    pass
+    from deerflow.tools.builtins.tool_search import DeferredToolSetup
 
 logger = logging.getLogger(__name__)
 
@@ -381,6 +381,7 @@ def _build_middlewares(
     custom_middlewares: list[AgentMiddleware] | None = None,
     *,
     app_config: AppConfig | None = None,
+    deferred_setup: "DeferredToolSetup | None" = None,
 ):
     """Build middleware chain based on runtime configuration.
 
@@ -404,10 +405,10 @@ def _build_middlewares(
     vision_middleware = ViewImageMiddleware() if model_config is not None and model_config.supports_vision else None
 
     deferred_tool_filter = None
-    if resolved_app_config.tool_search.enabled:
+    if deferred_setup is not None and deferred_setup.deferred_names:
         from deerflow.agents.middlewares.deferred_tool_filter_middleware import DeferredToolFilterMiddleware
 
-        deferred_tool_filter = DeferredToolFilterMiddleware()
+        deferred_tool_filter = DeferredToolFilterMiddleware(deferred_setup.deferred_names, deferred_setup.catalog_hash)
 
     subagent_enabled = cfg.get("subagent_enabled", False)
     subagent_limit_middleware = None
@@ -427,7 +428,10 @@ def _build_middlewares(
 
     from langchain_dev_utils.agents.middleware import FormatPromptMiddleware
 
+    from deerflow.agents.middlewares.tool_output_budget_middleware import ToolOutputBudgetMiddleware
+
     return build_ordered_middleware_chain(
+        tool_output_budget=[ToolOutputBudgetMiddleware.from_app_config(resolved_app_config)],
         sandbox=[
             ThreadDataMiddleware(lazy_init=True),
             UploadsMiddleware(),
@@ -516,6 +520,7 @@ def build_lead_agent(profile: LeadProfile, config: RunnableConfig):
     # Lazy import to avoid circular dependency
     from deerflow.tools import get_available_tools
     from deerflow.tools.builtins import setup_agent, update_agent
+    from deerflow.tools.builtins.tool_search import assemble_deferred_tools
 
     cfg = _get_runtime_config(config)
     runtime_app_config = cfg.get("app_config")
@@ -609,11 +614,13 @@ def build_lead_agent(profile: LeadProfile, config: RunnableConfig):
         available_tools_kwargs = {"model_name": model_name, "groups": tool_groups, "subagent_enabled": subagent_enabled}
         if has_runtime_app_config:
             available_tools_kwargs["app_config"] = app_config
-        tools = get_available_tools(**available_tools_kwargs) + [setup_agent]
+        raw_tools = get_available_tools(**available_tools_kwargs) + [setup_agent]
+        filtered_tools = filter_tools_by_skill_allowed_tools(raw_tools, skills_for_tool_policy)
+        final_tools, deferred_setup = assemble_deferred_tools(filtered_tools, enabled=app_config.tool_search.enabled)
         return create_agent(
             model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, attach_tracing=False, app_config=app_config_for_child_calls),
-            tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
-            middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, app_config=app_config_for_child_calls),
+            tools=final_tools,
+            middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, app_config=app_config_for_child_calls, deferred_setup=deferred_setup),
             system_prompt=apply_prompt_template(
                 subagent_enabled=subagent_enabled,
                 max_concurrent_subagents=max_concurrent_subagents,
@@ -621,6 +628,7 @@ def build_lead_agent(profile: LeadProfile, config: RunnableConfig):
                 user_id=user_id,
                 available_skills=set(["bootstrap"]),
                 app_config=app_config_for_child_calls,
+                deferred_names=deferred_setup.deferred_names,
             ),
             state_schema=ThreadState,
         )
@@ -633,13 +641,15 @@ def build_lead_agent(profile: LeadProfile, config: RunnableConfig):
     }
     if has_runtime_app_config:
         available_tools_kwargs["app_config"] = app_config
-    tools = get_available_tools(**available_tools_kwargs)
+    raw_tools = get_available_tools(**available_tools_kwargs)
     if agent_name:
-        tools = tools + [update_agent]
+        raw_tools = raw_tools + [update_agent]
+    filtered_tools = filter_tools_by_skill_allowed_tools(raw_tools, skills_for_tool_policy)
+    final_tools, deferred_setup = assemble_deferred_tools(filtered_tools, enabled=app_config.tool_search.enabled)
     return create_agent(
         model=_call_with_optional_app_config(create_chat_model, name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, attach_tracing=False, app_config=app_config_for_child_calls),
-        tools=filter_tools_by_skill_allowed_tools(tools, skills_for_tool_policy),
-        middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, agent_name=agent_name, app_config=app_config_for_child_calls),
+        tools=final_tools,
+        middleware=_call_with_optional_app_config(_build_middlewares, config, model_name=model_name, agent_name=agent_name, app_config=app_config_for_child_calls, deferred_setup=deferred_setup),
         system_prompt=apply_prompt_template(
             subagent_enabled=subagent_enabled,
             max_concurrent_subagents=max_concurrent_subagents,
@@ -648,6 +658,7 @@ def build_lead_agent(profile: LeadProfile, config: RunnableConfig):
             user_id=user_id,
             available_skills=available_skills,
             app_config=app_config_for_child_calls,
+            deferred_names=deferred_setup.deferred_names,
         ),
         state_schema=ThreadState,
     )

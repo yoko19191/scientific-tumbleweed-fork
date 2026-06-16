@@ -58,12 +58,18 @@ export function splitUploadFilesBySize(
   fileList: File[] | FileList,
   options: {
     maxBodyBytes: number | null | undefined;
+    maxFileBytes?: number | null | undefined;
+    maxTotalBytes?: number | null | undefined;
     currentBytes?: number;
   },
 ) {
   const incoming = Array.from(fileList);
-  const maxBodyBytes = options.maxBodyBytes;
-  if (!maxBodyBytes || maxBodyBytes <= 0) {
+  const maxFileBytes = options.maxFileBytes ?? options.maxBodyBytes;
+  const maxTotalBytes = options.maxTotalBytes ?? options.maxBodyBytes;
+  if (
+    (!maxFileBytes || maxFileBytes <= 0) &&
+    (!maxTotalBytes || maxTotalBytes <= 0)
+  ) {
     return {
       accepted: incoming,
       rejected: [] as File[],
@@ -75,7 +81,12 @@ export function splitUploadFilesBySize(
   let usedBytes = options.currentBytes ?? 0;
 
   for (const file of incoming) {
-    if (file.size > maxBodyBytes || usedBytes + file.size > maxBodyBytes) {
+    if (
+      (maxFileBytes && maxFileBytes > 0 && file.size > maxFileBytes) ||
+      (maxTotalBytes &&
+        maxTotalBytes > 0 &&
+        usedBytes + file.size > maxTotalBytes)
+    ) {
       rejected.push(file);
       continue;
     }

@@ -12,7 +12,7 @@ import {
   getNodeText,
   normalizeCitationUrl,
 } from "@/core/messages/citations";
-import { streamdownPlugins } from "@/core/streamdown";
+import { capMarkdownNesting, streamdownPlugins } from "@/core/streamdown";
 import { cn } from "@/lib/utils";
 
 import { CitationLink } from "../citations/citation-link";
@@ -43,6 +43,10 @@ export function MarkdownContent({
   components: componentsFromProps,
 }: MarkdownContentProps) {
   const registry = useCitationRegistry();
+  const displayContent = useMemo(
+    () => capMarkdownNesting(content),
+    [content],
+  );
 
   const components = useMemo(() => {
     // The citation-aware `a` must win over any caller-provided `a`, otherwise
@@ -106,17 +110,17 @@ export function MarkdownContent({
     };
   }, [componentsFromProps, registry]);
 
-  if (!content) return null;
+  if (!displayContent) return null;
 
   return (
-    <CitationNumberingProvider content={content}>
+    <CitationNumberingProvider content={displayContent}>
       <MessageResponse
         className={className}
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
         components={components}
       >
-        {content}
+        {displayContent}
       </MessageResponse>
     </CitationNumberingProvider>
   );

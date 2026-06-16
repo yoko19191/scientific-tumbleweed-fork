@@ -5,9 +5,11 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import UploadFile
+import pytest
+from fastapi import HTTPException, UploadFile
 
 from app.gateway.routers import uploads
+from deerflow.uploads.limits import UploadLimits
 
 USER_A = "user-aaaa-1111"
 USER_B = "user-bbbb-2222"
@@ -58,6 +60,7 @@ def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_pat
     assert result.success is True
     assert len(result.files) == 1
     assert result.files[0]["filename"] == "notes.txt"
+    assert result.files[0]["size"] == len(b"hello uploads")
     assert (thread_uploads_dir / "notes.txt").read_bytes() == b"hello uploads"
 
     sandbox.update_file.assert_not_called()
@@ -116,10 +119,105 @@ def test_upload_files_auto_renames_duplicate_form_filenames(tmp_path):
 
     assert result.success is True
     assert [file_info["filename"] for file_info in result.files] == ["data.txt", "data_1.txt"]
+    assert [file_info["size"] for file_info in result.files] == [5, 6]
     assert "original_filename" not in result.files[0]
     assert result.files[1]["original_filename"] == "data.txt"
     assert (thread_uploads_dir / "data.txt").read_bytes() == b"first"
     assert (thread_uploads_dir / "data_1.txt").read_bytes() == b"second"
+
+
+def test_upload_files_rejects_too_many_files_before_writing(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+
+    with (
+        _patch_require_owner(),
+        patch.object(uploads, "get_upload_limits", return_value=UploadLimits(max_files=1)),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir) as ensure_dir,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(
+                uploads.upload_files(
+                    "thread-local",
+                    _mock_request(),
+                    files=[
+                        UploadFile(filename="a.txt", file=BytesIO(b"a")),
+                        UploadFile(filename="b.txt", file=BytesIO(b"b")),
+                    ],
+                )
+            )
+
+    assert exc_info.value.status_code == 413
+    assert "Too many files" in exc_info.value.detail
+    ensure_dir.assert_not_called()
+    assert list(thread_uploads_dir.iterdir()) == []
+
+
+def test_upload_files_rejects_single_file_over_limit_and_cleans_partial(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        _patch_require_owner(),
+        patch.object(
+            uploads,
+            "get_upload_limits",
+            return_value=UploadLimits(max_file_size=4, max_total_size=100),
+        ),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(
+                uploads.upload_files(
+                    "thread-local",
+                    _mock_request(),
+                    files=[UploadFile(filename="large.txt", file=BytesIO(b"12345"))],
+                )
+            )
+
+    assert exc_info.value.status_code == 413
+    assert "maximum upload size" in exc_info.value.detail
+    assert list(thread_uploads_dir.iterdir()) == []
+    provider.acquire.assert_not_called()
+
+
+def test_upload_files_rejects_total_size_over_limit_and_cleans_request(tmp_path):
+    thread_uploads_dir = tmp_path / "uploads"
+    thread_uploads_dir.mkdir(parents=True)
+
+    provider = MagicMock()
+    provider.uses_thread_data_mounts = True
+
+    with (
+        _patch_require_owner(),
+        patch.object(
+            uploads,
+            "get_upload_limits",
+            return_value=UploadLimits(max_file_size=100, max_total_size=6),
+        ),
+        patch.object(uploads, "ensure_uploads_dir", return_value=thread_uploads_dir),
+        patch.object(uploads, "get_sandbox_provider", return_value=provider),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(
+                uploads.upload_files(
+                    "thread-local",
+                    _mock_request(),
+                    files=[
+                        UploadFile(filename="a.txt", file=BytesIO(b"1234")),
+                        UploadFile(filename="b.txt", file=BytesIO(b"5678")),
+                    ],
+                )
+            )
+
+    assert exc_info.value.status_code == 413
+    assert "maximum total size" in exc_info.value.detail
+    assert list(thread_uploads_dir.iterdir()) == []
+    provider.acquire.assert_not_called()
 
 
 def test_upload_files_skips_acquire_when_thread_data_is_mounted(tmp_path):

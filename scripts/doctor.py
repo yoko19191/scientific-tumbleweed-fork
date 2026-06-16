@@ -443,6 +443,17 @@ def check_web_search(config_path: Path) -> CheckResult:
     return check_web_tool(config_path, tool_name="web_search", label="web search configured")
 
 
+def _configured_api_key(tool_entry: dict, default_env_var: str) -> tuple[bool, str]:
+    raw_api_key = tool_entry.get("api_key")
+    if isinstance(raw_api_key, str) and raw_api_key.strip():
+        value = raw_api_key.strip()
+        if value.startswith("$"):
+            env_var = value[1:]
+            return bool(os.environ.get(env_var)), env_var
+        return True, "inline api_key"
+    return bool(os.environ.get(default_env_var)), default_env_var
+
+
 def check_web_tool(config_path: Path, *, tool_name: str, label: str) -> CheckResult:
     """Warn (not fail) if a web capability is not configured."""
     if not config_path.exists():
@@ -457,8 +468,8 @@ def check_web_tool(config_path: Path, *, tool_name: str, label: str) -> CheckRes
 
         data = _load_yaml_file(config_path)
 
-        tool_uses = [t.get("use", "") for t in data.get("tools", []) if t.get("name") == tool_name]
-        if not tool_uses:
+        tool_entries = [t for t in data.get("tools", []) if t.get("name") == tool_name]
+        if not tool_entries:
             return CheckResult(
                 label,
                 "warn",
@@ -467,11 +478,18 @@ def check_web_tool(config_path: Path, *, tool_name: str, label: str) -> CheckRes
             )
 
         free_providers = {
-            "web_search": {"ddg_search": "DuckDuckGo (no key needed)"},
-            "web_fetch": {"jina_ai": "Jina AI Reader (no key needed)"},
+            "web_search": {
+                "ddg_search": "DuckDuckGo (no key needed)",
+                "searxng": "SearXNG (self-hosted)",
+            },
+            "web_fetch": {
+                "browserless": "Browserless (self-hosted)",
+                "jina_ai": "Jina AI Reader (no key needed)",
+            },
         }
         key_providers = {
             "web_search": {
+                "brave": "BRAVE_SEARCH_API_KEY",
                 "tavily": "TAVILY_API_KEY",
                 "infoquest": "INFOQUEST_API_KEY",
                 "exa": "EXA_API_KEY",
@@ -483,26 +501,53 @@ def check_web_tool(config_path: Path, *, tool_name: str, label: str) -> CheckRes
                 "firecrawl": "FIRECRAWL_API_KEY",
             },
         }
+        import_checked_free_providers = {
+            "browserless",
+            "searxng",
+        }
 
-        for use in tool_uses:
+        for tool_entry in tool_entries:
+            use = tool_entry.get("use", "")
             for provider, detail in free_providers.get(tool_name, {}).items():
                 if provider in use:
+                    if provider in import_checked_free_providers:
+                        split = _split_use_path(use)
+                        if split is None:
+                            return CheckResult(
+                                label,
+                                "fail",
+                                f"invalid use path: {use}",
+                                fix="Use a valid module:path provider from config.example.yaml",
+                            )
+                        module_name, attr_name = split
+                        try:
+                            module = import_module(module_name)
+                            getattr(module, attr_name)
+                        except Exception as exc:
+                            return CheckResult(
+                                label,
+                                "fail",
+                                f"provider import failed: {use} ({exc})",
+                                fix="Install the provider dependency or pick a valid provider in `make setup`",
+                            )
                     return CheckResult(label, "ok", detail)
 
-        for use in tool_uses:
+        for tool_entry in tool_entries:
+            use = tool_entry.get("use", "")
             for provider, var in key_providers.get(tool_name, {}).items():
                 if provider in use:
-                    val = os.environ.get(var)
-                    if val:
-                        return CheckResult(label, "ok", f"{provider} ({var} set)")
+                    has_key, source = _configured_api_key(tool_entry, var)
+                    if has_key:
+                        return CheckResult(label, "ok", f"{provider} ({source} set)")
                     return CheckResult(
                         label,
                         "warn",
-                        f"{provider} configured but {var} not set",
-                        fix=f"Add {var}=<your-key> to .env, or run 'make setup'",
+                        f"{provider} configured but {source} not set",
+                        fix=f"Add {source}=<your-key> to .env, or run 'make setup'",
                     )
 
-        for use in tool_uses:
+        for tool_entry in tool_entries:
+            use = tool_entry.get("use", "")
             split = _split_use_path(use)
             if split is None:
                 return CheckResult(

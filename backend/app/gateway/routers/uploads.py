@@ -3,6 +3,7 @@
 import logging
 import os
 import stat
+from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.gateway.thread_resources import get_authenticated_thread_resource
 from deerflow.config.app_config import get_app_config
 from deerflow.sandbox.sandbox_provider import SandboxProvider, get_sandbox_provider
+from deerflow.uploads.limits import UploadLimits, get_upload_limits
 from deerflow.uploads.manager import (
     PathTraversalError,
     UnsafeUploadPathError,
@@ -35,7 +37,7 @@ class UploadResponse(BaseModel):
     """Response model for file upload."""
 
     success: bool
-    files: list[dict[str, str]]
+    files: list[dict[str, Any]]
     message: str
     skipped_files: list[str] = Field(default_factory=list)
 
@@ -86,12 +88,24 @@ async def _write_upload_file_no_symlink(
     *,
     uploads_dir: os.PathLike[str] | str,
     display_filename: str,
+    limits: UploadLimits,
+    current_total_size: int,
 ) -> tuple[os.PathLike[str] | str, int]:
     file_size = 0
     file_path, fh = open_upload_file_no_symlink(uploads_dir, display_filename)
     try:
         while chunk := await file.read(8192):
             file_size += len(chunk)
+            if file_size > limits.max_file_size:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds maximum upload size of {limits.max_file_size} bytes",
+                )
+            if current_total_size + file_size > limits.max_total_size:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Upload request exceeds maximum total size of {limits.max_total_size} bytes",
+                )
             fh.write(chunk)
     except Exception:
         fh.close()
@@ -131,6 +145,13 @@ async def upload_files(
         raise HTTPException(status_code=400, detail="No files provided")
 
     thread_resource = await get_authenticated_thread_resource(request, thread_id)
+    limits = get_upload_limits()
+    named_files = [file for file in files if file.filename]
+    if len(named_files) > limits.max_files:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many files. Maximum allowed is {limits.max_files}",
+        )
 
     try:
         uploads_dir = ensure_uploads_dir(thread_resource.thread_id, thread_resource.user_id)
@@ -145,6 +166,7 @@ async def upload_files(
     # silently truncate each other. Existing uploads keep the historical
     # overwrite behavior for a single replacement upload.
     seen_filenames: set[str] = set()
+    total_size = 0
 
     sandbox_provider = get_sandbox_provider()
     sync_to_sandbox = not _uses_thread_data_mounts(sandbox_provider)
@@ -170,8 +192,11 @@ async def upload_files(
                 file,
                 uploads_dir=uploads_dir,
                 display_filename=safe_filename,
+                limits=limits,
+                current_total_size=total_size,
             )
             written_paths.append(file_path)
+            total_size += file_size
 
             virtual_path = upload_virtual_path(safe_filename)
 
@@ -180,7 +205,7 @@ async def upload_files(
 
             file_info = {
                 "filename": safe_filename,
-                "size": str(file_size),
+                "size": file_size,
                 "path": str(sandbox_uploads / safe_filename),
                 "virtual_path": virtual_path,
                 "artifact_url": upload_artifact_url(thread_id, safe_filename),

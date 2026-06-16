@@ -37,6 +37,7 @@ export const enUS: Translations = {
     custom: "Custom",
     notAvailableInDemoMode: "Not available in demo mode",
     loading: "Loading...",
+    retry: "Retry",
     version: "Version",
     lastUpdated: "Last updated",
     code: "Code",
@@ -520,6 +521,8 @@ export const enUS: Translations = {
     demoChats: "Demo chats",
     agents: "Agents",
     apps: "Apps",
+    gatewayUnavailable: "Gateway is temporarily unavailable.",
+    gatewayUnavailableRetrying: "Retrying in the background.",
   },
 
   // Agents
@@ -626,6 +629,9 @@ export const enUS: Translations = {
   chats: {
     description: "Review, search, and continue workspace conversations.",
     searchChats: "Search chats",
+    loadMoreToSearch: "Load more to search older conversations",
+    loadingMore: "Loading more...",
+    loadOlderChats: "Load older chats",
   },
 
   // Page titles (document title)
@@ -679,6 +685,10 @@ export const enUS: Translations = {
       count === 1
         ? `This file is larger than the upload limit (${limit}) and was not added.`
         : `${count} files are larger than the upload limit (${limit}) and were not added.`,
+    tooManyFilesWarning: (count: number, limit: number) =>
+      count === 1
+        ? `Only ${limit} upload file${limit === 1 ? "" : "s"} can be attached, so 1 file was not added.`
+        : `Only ${limit} upload file${limit === 1 ? "" : "s"} can be attached, so ${count} files were not added.`,
   },
 
   subtasks: {

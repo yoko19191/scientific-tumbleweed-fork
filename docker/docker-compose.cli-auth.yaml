@@ -1,0 +1,37 @@
+# Optional CLI auth overlay.
+#
+# The default compose files do not bind-mount host CLI auth directories because
+# they can contain session history, project state, and broad credentials. Prefer
+# env tokens or single-file credential paths. Load this overlay only when a
+# CLI-backed provider or ACP adapter truly needs the full directory.
+
+services:
+  gateway:
+    volumes:
+      - type: bind
+        source: ${HOME:?HOME must be set}/.claude
+        target: /root/.claude
+        read_only: true
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${HOME:?HOME must be set}/.codex
+        target: /root/.codex
+        read_only: true
+        bind:
+          create_host_path: true
+
+  langgraph:
+    volumes:
+      - type: bind
+        source: ${HOME:?HOME must be set}/.claude
+        target: /root/.claude
+        read_only: true
+        bind:
+          create_host_path: true
+      - type: bind
+        source: ${HOME:?HOME must be set}/.codex
+        target: /root/.codex
+        read_only: true
+        bind:
+          create_host_path: true

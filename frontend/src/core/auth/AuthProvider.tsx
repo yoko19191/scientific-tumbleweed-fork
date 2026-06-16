@@ -55,6 +55,7 @@ function clearAllCaches(userId?: string | null): void {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unavailable, setUnavailable] = useState(false);
   // Track previous user ID to detect user switches
   const prevUserIdRef = useRef<string | null>(null);
 
@@ -62,8 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const u = await fetchCurrentUser();
       setUser(u);
+      setUnavailable(false);
     } catch {
-      setUser(null);
+      setUnavailable(true);
     } finally {
       setLoading(false);
     }
@@ -114,15 +116,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     const loggedOutUserId = user?.id ?? null;
-    await apiLogout();
+    try {
+      await apiLogout();
+    } catch {
+      // Still clear local state so users can recover during gateway outages.
+    }
     // Clear all cached data so the next user sees a clean slate
     clearAllCaches(loggedOutUserId);
     setUser(null);
+    setUnavailable(false);
   }, [user]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading, login, register, logout, refreshUser }),
-    [user, loading, login, register, logout, refreshUser],
+    () => ({
+      user,
+      loading,
+      unavailable,
+      login,
+      register,
+      logout,
+      refreshUser,
+    }),
+    [user, loading, unavailable, login, register, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

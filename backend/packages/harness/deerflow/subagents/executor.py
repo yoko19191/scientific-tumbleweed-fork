@@ -24,11 +24,13 @@ from deerflow.models import create_chat_model
 from deerflow.prompts import PromptContext, build_prompt
 from deerflow.skills.tool_policy import filter_tools_by_skill_allowed_tools
 from deerflow.skills.types import Skill
+from deerflow.subagents import constants as subagent_constants
 from deerflow.subagents.config import SubagentConfig
 from deerflow.subagents.token_collector import SubagentTokenCollector
 
 if TYPE_CHECKING:
     from deerflow.config.app_config import AppConfig
+    from deerflow.tools.builtins.tool_search import DeferredToolSetup
 
 logger = logging.getLogger(__name__)
 
@@ -339,7 +341,7 @@ class SubagentExecutor:
 
         logger.info(f"[trace={self.trace_id}] SubagentExecutor initialized: {config.name} with {len(self.tools)} tools")
 
-    def _create_agent(self, tools: list[BaseTool] | None = None):
+    def _create_agent(self, tools: list[BaseTool] | None = None, *, deferred_setup: "DeferredToolSetup | None" = None):
         """Create the agent instance."""
         model_name = _get_model_name(self.config, self.parent_model)
         model = create_chat_model(name=model_name, thinking_enabled=False, app_config=self.app_config)
@@ -347,7 +349,12 @@ class SubagentExecutor:
         from deerflow.agents.middlewares.tool_error_handling_middleware import build_subagent_runtime_middlewares
 
         # Reuse shared middleware composition with lead agent.
-        middlewares = build_subagent_runtime_middlewares(lazy_init=True)
+        middlewares = build_subagent_runtime_middlewares(
+            lazy_init=True,
+            app_config=self.app_config,
+            model_name=model_name,
+            deferred_setup=deferred_setup,
+        )
 
         # system_prompt is included in initial state messages (see _build_initial_state)
         # to avoid multiple SystemMessages which some LLM APIs don't support.
@@ -357,6 +364,7 @@ class SubagentExecutor:
             middleware=middlewares,
             system_prompt=None,
             state_schema=ThreadState,
+            checkpointer=False,
         )
 
     async def _load_skills(self) -> list[Skill]:
@@ -418,19 +426,23 @@ class SubagentExecutor:
 
         return messages
 
-    async def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool]]:
+    async def _build_initial_state(self, task: str) -> tuple[dict[str, Any], list[BaseTool], "DeferredToolSetup"]:
         """Build the initial state for agent execution.
 
         Args:
             task: The task description.
 
         Returns:
-            Initial state dictionary and tools filtered by loaded skill metadata.
+            Initial state dictionary, final tools, and deferred-tool setup.
         """
+        from deerflow.config import get_app_config
+        from deerflow.tools.builtins.tool_search import assemble_deferred_tools, get_deferred_tools_prompt_section
 
         # Load skills as conversation items (Codex pattern)
         skills = await self._load_skills()
         filtered_tools = self._apply_skill_allowed_tools(skills)
+        config = self.app_config or get_app_config()
+        final_tools, deferred_setup = assemble_deferred_tools(filtered_tools, enabled=config.tool_search.enabled)
         skill_messages = await self._load_skill_messages(skills)
 
         # Combine the factory-rendered prompt and skills into a single
@@ -444,6 +456,9 @@ class SubagentExecutor:
                 skill_messages=skill_messages_text,
             ),
         )
+        deferred_section = get_deferred_tools_prompt_section(deferred_names=deferred_setup.deferred_names)
+        if deferred_section:
+            system_prompt = "\n\n".join(part for part in (system_prompt, deferred_section) if part)
 
         # Combine system prompt and skills into a single SystemMessage.
         # Some LLM APIs reject multiple SystemMessages with
@@ -465,7 +480,7 @@ class SubagentExecutor:
         if self.thread_data is not None:
             state["thread_data"] = self.thread_data
 
-        return state, filtered_tools
+        return state, final_tools, deferred_setup
 
     async def _aexecute(self, task: str, result_holder: SubagentResult | None = None) -> SubagentResult:
         """Execute a task asynchronously.
@@ -491,8 +506,8 @@ class SubagentExecutor:
             )
 
         try:
-            state, filtered_tools = await self._build_initial_state(task)
-            agent = self._create_agent(filtered_tools)
+            state, final_tools, deferred_setup = await self._build_initial_state(task)
+            agent = self._create_agent(final_tools, deferred_setup=deferred_setup)
             recursion_limit = _effective_recursion_limit(self.config.max_turns)
 
             # Build config with thread_id for sandbox access and recursion limit
@@ -804,7 +819,7 @@ class SubagentExecutor:
         return task_id
 
 
-MAX_CONCURRENT_SUBAGENTS = 3
+MAX_CONCURRENT_SUBAGENTS = subagent_constants.MAX_CONCURRENT_SUBAGENTS
 
 
 def request_cancel_background_task(task_id: str) -> None:

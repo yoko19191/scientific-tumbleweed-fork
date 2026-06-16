@@ -40,6 +40,7 @@ import {
   urlOfArtifact,
   urlOfHtmlArtifactPreview,
 } from "@/core/artifacts/utils";
+import { writeTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
 import { installSkill } from "@/core/skills/api";
 import { streamdownPlugins } from "@/core/streamdown";
@@ -269,7 +270,12 @@ export function ArtifactFileDetail({
                 disabled={!content}
                 onClick={async () => {
                   try {
-                    await navigator.clipboard.writeText(displayContent ?? "");
+                    const copied = await writeTextToClipboard(
+                      displayContent ?? "",
+                    );
+                    if (!copied) {
+                      throw new Error("Clipboard copy failed");
+                    }
                     toast.success(t.clipboard.copiedToClipboard);
                   } catch (error) {
                     toast.error("Failed to copy to clipboard");

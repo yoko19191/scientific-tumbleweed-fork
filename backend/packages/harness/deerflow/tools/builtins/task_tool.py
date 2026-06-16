@@ -1,6 +1,7 @@
 """Task tool for delegating work to subagents."""
 
 import asyncio
+import importlib
 import logging
 import uuid
 from dataclasses import replace
@@ -12,8 +13,7 @@ from langgraph.config import get_stream_writer
 from deerflow.agents.lead_agent.prompt import get_skills_prompt_section
 from deerflow.config.app_config import get_app_config
 from deerflow.sandbox.security import LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE, is_host_bash_allowed
-from deerflow.subagents import SubagentExecutor, get_available_subagent_names, get_subagent_config
-from deerflow.subagents.executor import SubagentStatus, cleanup_background_task, get_background_task_result, request_cancel_background_task
+from deerflow.subagents.registry import get_available_subagent_names, get_subagent_config
 from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
@@ -21,8 +21,41 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from deerflow.config.app_config import AppConfig
 
+SubagentExecutor = None
+SubagentStatus = None
+cleanup_background_task = None
+get_background_task_result = None
+request_cancel_background_task = None
+
 
 _subagent_usage_cache: dict[str, dict[str, int]] = {}
+
+
+def _load_subagent_executor_api() -> None:
+    global SubagentExecutor, SubagentStatus, cleanup_background_task, get_background_task_result, request_cancel_background_task
+    if all(
+        value is not None
+        for value in (
+            SubagentExecutor,
+            SubagentStatus,
+            cleanup_background_task,
+            get_background_task_result,
+            request_cancel_background_task,
+        )
+    ):
+        return
+
+    executor_api = importlib.import_module("deerflow.subagents.executor")
+    if SubagentExecutor is None:
+        SubagentExecutor = executor_api.SubagentExecutor
+    if SubagentStatus is None:
+        SubagentStatus = executor_api.SubagentStatus
+    if cleanup_background_task is None:
+        cleanup_background_task = executor_api.cleanup_background_task
+    if get_background_task_result is None:
+        get_background_task_result = executor_api.get_background_task_result
+    if request_cancel_background_task is None:
+        request_cancel_background_task = executor_api.request_cancel_background_task
 
 
 def _get_runtime_app_config(runtime: Any) -> "AppConfig | None":
@@ -154,6 +187,8 @@ async def task_tool(
         host_bash_allowed = is_host_bash_allowed(runtime_app_config) if runtime_app_config is not None else is_host_bash_allowed()
         if not host_bash_allowed:
             return f"Error: {LOCAL_BASH_SUBAGENT_DISABLED_MESSAGE}"
+
+    _load_subagent_executor_api()
 
     # Build config overrides
     overrides: dict = {}

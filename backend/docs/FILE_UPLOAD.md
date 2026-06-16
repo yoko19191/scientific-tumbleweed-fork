@@ -39,7 +39,8 @@ POST /api/threads/{thread_id}/uploads
       "markdown_artifact_url": "/api/threads/{thread_id}/artifacts/mnt/user-data/uploads/document.md"
     }
   ],
-  "message": "Successfully uploaded 1 file(s)"
+  "message": "Successfully uploaded 1 file(s)",
+  "skipped_files": []
 }
 ```
 
@@ -206,7 +207,9 @@ backend/.deer-flow/threads/
 
 ## 限制
 
-- 最大文件大小：100MB（可在 nginx.conf 中配置 `client_max_body_size`）
+- 最大文件数量：默认 10 个，可通过 `uploads.max_files` 配置
+- 单文件大小：默认 50MiB，可通过 `uploads.max_file_size` 配置
+- 单次上传总大小：默认 100MiB，可通过 `uploads.max_total_size` 配置，并受 nginx `client_max_body_size` 的更严格值约束
 - 文件名安全性：系统会自动验证文件路径，防止目录遍历攻击
 - 线程隔离：每个线程的上传文件相互隔离，无法跨线程访问
 - 自动文档转换默认关闭；如需启用，需在 `config.yaml` 中显式设置 `uploads.auto_convert_documents: true`

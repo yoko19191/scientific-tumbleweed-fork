@@ -1,5 +1,7 @@
 """Configuration for memory mechanism."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -64,6 +66,14 @@ class MemoryConfig(BaseModel):
         ge=100,
         le=8000,
         description="Maximum tokens to use for memory injection",
+    )
+    token_counting: Literal["tiktoken", "char"] = Field(
+        default="tiktoken",
+        description=(
+            "Token counting strategy for memory-injection budgeting. "
+            "'tiktoken' is accurate but may download encoding data on first use; "
+            "'char' uses a network-free CJK-aware character estimate."
+        ),
     )
 
 

@@ -82,6 +82,7 @@ def test_features_mode(mock_create_agent):
     middleware = call_kwargs["middleware"]
     assert len(middleware) > 0
     mw_types = [type(m).__name__ for m in middleware]
+    assert "ToolOutputBudgetMiddleware" in mw_types
     assert "ThreadDataMiddleware" in mw_types
     assert "SandboxMiddleware" in mw_types
     assert "TitleMiddleware" in mw_types
@@ -107,6 +108,7 @@ def test_features_mode_delegates_to_shared_middleware_builder(mock_create_agent,
 
     call_kwargs = mock_create_agent.call_args[1]
     assert call_kwargs["middleware"] is ordered_chain
+    assert type(captured_slots["tool_output_budget"][0]).__name__ == "ToolOutputBudgetMiddleware"
     assert type(captured_slots["dangling_tool_call_patch"][0]).__name__ == "DanglingToolCallMiddleware"
     assert type(captured_slots["tool_error_handling"][0]).__name__ == "ToolErrorHandlingMiddleware"
     assert type(captured_slots["clarification"][0]).__name__ == "ClarificationMiddleware"
@@ -816,6 +818,7 @@ def test_full_chain_order(mock_create_agent):
     mw_types = [type(m).__name__ for m in call_kwargs["middleware"]]
 
     expected_order = [
+        "ToolOutputBudgetMiddleware",
         "ThreadDataMiddleware",
         "UploadsMiddleware",
         "SandboxMiddleware",

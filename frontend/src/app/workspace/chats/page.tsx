@@ -2,30 +2,60 @@
 
 import { MessagesSquare, SearchIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { WorkspacePageHeader } from "@/components/workspace/workspace-page-header";
 import { useI18n } from "@/core/i18n/hooks";
-import { useThreads } from "@/core/threads/hooks";
+import { useInfiniteThreads } from "@/core/threads/hooks";
 import { pathOfThread, titleOfThread } from "@/core/threads/utils";
 import { formatTimeAgo } from "@/core/utils/datetime";
 
 export default function ChatsPage() {
   const { t } = useI18n();
-  const { data: threads } = useThreads();
+  const {
+    data: infiniteThreads,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteThreads();
+  const threads = useMemo(
+    () => infiniteThreads?.pages.flat() ?? [],
+    [infiniteThreads],
+  );
   const [search, setSearch] = useState("");
+  const isSearching = search.trim().length > 0;
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     document.title = `${t.pages.chats} - ${t.pages.appName}`;
   }, [t.pages.chats, t.pages.appName]);
 
   const filteredThreads = useMemo(() => {
-    return threads?.filter((thread) => {
+    return threads.filter((thread) => {
       return titleOfThread(thread).toLowerCase().includes(search.toLowerCase());
     });
   }, [threads, search]);
+
+  useEffect(() => {
+    const element = sentinelRef.current;
+    if (!element || !hasNextPage || isSearching) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          void fetchNextPage();
+        }
+      },
+      { rootMargin: "200px 0px 200px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isSearching]);
+
   return (
     <div className="flex size-full flex-col">
       <WorkspacePageHeader
@@ -50,7 +80,7 @@ export default function ChatsPage() {
         <main className="min-h-0 flex-1">
           <ScrollArea className="size-full">
             <div className="flex size-full flex-col px-6 py-4">
-              {filteredThreads?.map((thread) => (
+              {filteredThreads.map((thread) => (
                 <Link key={thread.thread_id} href={pathOfThread(thread)}>
                   <div className="hover:bg-muted/45 flex flex-col gap-2 rounded-md border-b px-3 py-4 transition-colors">
                     <div>
@@ -64,6 +94,26 @@ export default function ChatsPage() {
                   </div>
                 </Link>
               ))}
+              {hasNextPage && !isSearching && (
+                <div
+                  ref={sentinelRef}
+                  aria-hidden="true"
+                  className="h-px w-full"
+                />
+              )}
+              {hasNextPage && isSearching && (
+                <div className="flex justify-center p-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => void fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                  >
+                    {isFetchingNextPage
+                      ? t.chats.loadingMore
+                      : t.chats.loadMoreToSearch}
+                  </Button>
+                </div>
+              )}
             </div>
           </ScrollArea>
         </main>

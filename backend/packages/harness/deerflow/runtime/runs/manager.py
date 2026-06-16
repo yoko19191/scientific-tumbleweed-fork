@@ -126,14 +126,16 @@ class RunManager:
         except Exception:
             logger.warning("Failed to persist run %s to store", record.run_id, exc_info=True)
 
-    async def _persist_status(self, run_id: str, status: RunStatus, *, error: str | None = None) -> None:
+    async def _persist_status(self, run_id: str, status: RunStatus, *, error: str | None = None) -> bool:
         """Best-effort persist a status transition to the backing store."""
         if self._store is None:
-            return
+            return True
         try:
             await self._store.update_status(run_id, status.value, error=error)
+            return True
         except Exception:
             logger.warning("Failed to persist status update for run %s", run_id, exc_info=True)
+            return False
 
     async def _persist_model_name(self, run_id: str, model_name: str | None) -> None:
         """Best-effort persist a model_name transition to the backing store."""
@@ -441,6 +443,54 @@ class RunManager:
         async with self._lock:
             self._unregister_locked(run_id)
         logger.debug("Run record %s cleaned up", run_id)
+
+    async def shutdown(self, *, timeout: float = 5.0) -> list[str]:
+        """Bounded drain of in-flight runs before runtime resources close.
+
+        Returns the run IDs that were still in-flight after the drain timeout and
+        were therefore marked ``interrupted``.
+        """
+        async with self._lock:
+            inflight_records = [
+                record
+                for thread_runs in self._inflight_by_thread.values()
+                for record in thread_runs.values()
+            ]
+            tasks = [
+                record.task
+                for record in inflight_records
+                if record.task is not None and not record.task.done()
+            ]
+
+        if tasks and timeout > 0:
+            await asyncio.wait(tasks, timeout=timeout)
+
+        interrupted: list[tuple[str, str]] = []
+        async with self._lock:
+            remaining = [
+                record
+                for thread_runs in self._inflight_by_thread.values()
+                for record in thread_runs.values()
+                if self._is_inflight(record.status)
+            ]
+            for record in remaining:
+                record.abort_action = "interrupt"
+                record.abort_event.set()
+                if record.task is not None and not record.task.done():
+                    record.task.cancel()
+                record.status = RunStatus.interrupted
+                record.updated_at = _now_iso()
+                if record.error is None:
+                    record.error = "Gateway shutdown interrupted run"
+                self._sync_inflight_locked(record)
+                interrupted.append((record.run_id, record.error))
+
+        for run_id, error in interrupted:
+            await self._persist_status(run_id, RunStatus.interrupted, error=error)
+
+        if interrupted:
+            logger.info("Interrupted %d in-flight run(s) during shutdown", len(interrupted))
+        return [run_id for run_id, _error in interrupted]
 
 
 class ConflictError(Exception):

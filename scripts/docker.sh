@@ -186,6 +186,17 @@ start() {
     echo -e "${BLUE}Detected sandbox mode: $sandbox_mode${NC}"
     if [ "$sandbox_mode" = "provisioner" ]; then
         echo -e "${BLUE}Provisioner enabled (Kubernetes mode).${NC}"
+    elif [ "$sandbox_mode" = "aio" ]; then
+        if [ -z "$DEER_FLOW_DOCKER_SOCKET" ]; then
+            export DEER_FLOW_DOCKER_SOCKET="/var/run/docker.sock"
+        fi
+        if [ ! -S "$DEER_FLOW_DOCKER_SOCKET" ]; then
+            echo -e "${YELLOW}⚠ Docker socket not found at $DEER_FLOW_DOCKER_SOCKET${NC}"
+            echo "  AioSandboxProvider (DooD) requires host Docker access."
+            exit 1
+        fi
+        COMPOSE_CMD="$COMPOSE_CMD -f docker-compose.dood.yaml"
+        echo -e "${BLUE}DooD overlay enabled: $DEER_FLOW_DOCKER_SOCKET${NC}"
     else
         echo -e "${BLUE}Provisioner disabled (not required for this sandbox mode).${NC}"
     fi

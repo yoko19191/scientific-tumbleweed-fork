@@ -6,7 +6,7 @@ import logging
 
 from deerflow.config.agents_config import load_agent_soul
 from deerflow.prompts.render import render_partial
-from deerflow.subagents import get_available_subagent_names
+from deerflow.subagents.registry import get_available_subagent_names
 
 logger = logging.getLogger(__name__)
 
@@ -51,29 +51,11 @@ def get_agent_soul(agent_name: str | None, user_id: str | None = None) -> str:
     return ""
 
 
-def get_deferred_tools_prompt_section(*, app_config=None) -> str:
-    """Generate <available-deferred-tools> block for the system prompt."""
-    from deerflow.tools.builtins.tool_search import get_deferred_registry
+def get_deferred_tools_prompt_section(*, deferred_names: frozenset[str] = frozenset()) -> str:
+    """Generate <available-deferred-tools> from an explicit deferred-name set."""
+    from deerflow.tools.builtins.tool_search import get_deferred_tools_prompt_section as render_deferred_tools
 
-    if app_config is None:
-        try:
-            from deerflow.config import get_app_config
-
-            config = get_app_config()
-        except Exception:
-            return ""
-    else:
-        config = app_config
-
-    if not config.tool_search.enabled:
-        return ""
-
-    registry = get_deferred_registry()
-    if not registry:
-        return ""
-
-    names = "\n".join(e.name for e in registry.entries)
-    return f"<available-deferred-tools>\n{names}\n</available-deferred-tools>"
+    return render_deferred_tools(deferred_names=deferred_names)
 
 
 def build_acp_section(*, app_config=None) -> str:

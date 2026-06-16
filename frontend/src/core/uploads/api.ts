@@ -24,6 +24,7 @@ export interface UploadResponse {
   success: boolean;
   files: UploadedFileInfo[];
   message: string;
+  skipped_files: string[];
 }
 
 export interface ListFilesResponse {
@@ -32,6 +33,9 @@ export interface ListFilesResponse {
 }
 
 export interface UploadConfigResponse {
+  max_files: number;
+  max_file_size: number;
+  max_total_size: number;
   max_body_bytes: number | null;
   max_body_size: string | null;
 }

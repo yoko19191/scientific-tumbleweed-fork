@@ -13,6 +13,7 @@ export interface User {
 export interface AuthState {
   user: User | null;
   loading: boolean;
+  unavailable: boolean;
 }
 
 export interface LoginCredentials {

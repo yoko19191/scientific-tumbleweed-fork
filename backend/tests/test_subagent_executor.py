@@ -214,6 +214,43 @@ def msg(classes):
 class TestAgentConstruction:
     """Test subagent agent construction and initial state message wiring."""
 
+    def test_create_agent_disables_checkpointer(
+        self,
+        classes,
+        base_config,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Subagents must not inherit the parent graph checkpointer."""
+        SubagentExecutor = classes["SubagentExecutor"]
+        import deerflow.subagents.executor as executor_module
+
+        middleware_module = ModuleType("deerflow.agents.middlewares.tool_error_handling_middleware")
+        middleware_module.build_subagent_runtime_middlewares = lambda **_kwargs: ["middleware"]
+        monkeypatch.setitem(
+            sys.modules,
+            "deerflow.agents.middlewares.tool_error_handling_middleware",
+            middleware_module,
+        )
+        monkeypatch.setattr(executor_module, "create_chat_model", lambda **_kwargs: "model")
+
+        captured: dict[str, object] = {}
+
+        def fake_create_agent(**kwargs):
+            captured.update(kwargs)
+            return object()
+
+        monkeypatch.setattr(executor_module, "create_agent", fake_create_agent)
+
+        executor = SubagentExecutor(
+            config=base_config,
+            tools=[],
+            thread_id="test-thread",
+        )
+
+        executor._create_agent()
+
+        assert captured["checkpointer"] is False
+
     @pytest.mark.anyio
     async def test_build_initial_state_consolidates_system_prompt_and_skills(
         self,
@@ -241,7 +278,8 @@ class TestAgentConstruction:
 
         monkeypatch.setattr(executor, "_load_skills", load_skills)
 
-        state, _filtered_tools = await executor._build_initial_state("Do the task")
+        state, _filtered_tools, deferred_setup = await executor._build_initial_state("Do the task")
+        assert deferred_setup.deferred_names == frozenset()
 
         messages = state["messages"]
         # Should have exactly 2 messages: one combined SystemMessage + one HumanMessage
@@ -278,7 +316,8 @@ class TestAgentConstruction:
 
         monkeypatch.setattr(executor, "_load_skills", load_skills)
 
-        state, _filtered_tools = await executor._build_initial_state("Do the task")
+        state, _filtered_tools, deferred_setup = await executor._build_initial_state("Do the task")
+        assert deferred_setup.deferred_names == frozenset()
 
         messages = state["messages"]
         from langchain_core.messages import HumanMessage, SystemMessage
@@ -319,7 +358,8 @@ class TestAgentConstruction:
 
         monkeypatch.setattr(executor, "_load_skills", load_skills)
 
-        state, _filtered_tools = await executor._build_initial_state("Do the task")
+        state, _filtered_tools, deferred_setup = await executor._build_initial_state("Do the task")
+        assert deferred_setup.deferred_names == frozenset()
 
         messages = state["messages"]
         from langchain_core.messages import HumanMessage, SystemMessage

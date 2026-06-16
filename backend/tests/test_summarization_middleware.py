@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, ToolMessage
+from langgraph.constants import TAG_NOSTREAM
 
 from deerflow.agents.memory.summarization_hook import memory_flush_hook
 from deerflow.agents.middlewares.dynamic_context_middleware import _DYNAMIC_CONTEXT_REMINDER_KEY, DynamicContextMiddleware
@@ -135,6 +136,7 @@ def test_default_summary_is_structured_five_field_record() -> None:
     assert summary_message.name == "summary"
     assert summary_message.content.startswith("Here is a summary of the conversation to date:")
     _assert_structured_summary(summary_message.content, payload)
+    assert middleware.model.invoke.call_args.kwargs["config"] == {"tags": [TAG_NOSTREAM]}
 
 
 @pytest.mark.parametrize(
@@ -179,6 +181,7 @@ def test_async_default_summary_matches_structured_shape() -> None:
     summary_message = result["messages"][1]
     assert summary_message.name == "summary"
     _assert_structured_summary(summary_message.content, payload)
+    assert middleware.model.ainvoke.call_args.kwargs["config"] == {"tags": [TAG_NOSTREAM]}
 
 
 def test_before_summarization_hook_receives_messages_before_compression() -> None:

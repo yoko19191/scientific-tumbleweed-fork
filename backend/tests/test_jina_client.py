@@ -118,6 +118,32 @@ async def test_crawl_passes_headers(jina_client, monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_crawl_passes_proxy_and_trust_env(jina_client, monkeypatch):
+    """Test that proxy and trust_env are passed to httpx AsyncClient."""
+    captured_client_kwargs = {}
+    original_init = httpx.AsyncClient.__init__
+
+    def mock_init(self, *args, **kwargs):
+        captured_client_kwargs.update(kwargs)
+        original_init(self, *args, **kwargs)
+
+    async def mock_post(self, url, **kwargs):
+        return httpx.Response(200, text="ok", request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", mock_init)
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    await jina_client.crawl(
+        "https://example.com",
+        proxy="http://127.0.0.1:7890",
+        trust_env=False,
+    )
+
+    assert captured_client_kwargs["proxy"] == "http://127.0.0.1:7890"
+    assert captured_client_kwargs["trust_env"] is False
+
+
+@pytest.mark.anyio
 async def test_crawl_includes_api_key_when_set(jina_client, monkeypatch):
     """Test that Authorization header is set when JINA_API_KEY is available."""
     captured_headers = {}
@@ -200,6 +226,67 @@ async def test_web_fetch_tool_returns_markdown_on_success(monkeypatch):
     assert "fetchedAt: " in result
     assert "Hello world" in result
     assert not result.startswith("Error:")
+
+
+@pytest.mark.anyio
+async def test_web_fetch_tool_passes_proxy_and_trust_env_from_config(monkeypatch):
+    """Test that web_fetch_tool forwards proxy settings to JinaClient."""
+    captured = {}
+
+    async def mock_crawl(self, url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return "<html><body><p>proxied</p></body></html>"
+
+    mock_config = MagicMock()
+    mock_config.get_tool_config.return_value = MagicMock(
+        model_extra={
+            "proxy": "http://127.0.0.1:7890",
+            "timeout": 12,
+            "trust_env": "false",
+        }
+    )
+    monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
+    monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
+
+    result = await web_fetch_tool.ainvoke("https://example.com")
+
+    assert captured == {
+        "url": "https://example.com",
+        "return_format": "html",
+        "timeout": 12,
+        "proxy": "http://127.0.0.1:7890",
+        "trust_env": False,
+    }
+    assert "proxied" in result
+
+
+@pytest.mark.anyio
+async def test_web_fetch_tool_cleans_empty_proxy_and_invalid_timeout(monkeypatch):
+    """Invalid timeout falls back to default and empty proxy is not forwarded."""
+    captured = {}
+
+    async def mock_crawl(self, url, **kwargs):
+        captured.update(kwargs)
+        return "<html><body><p>defaults</p></body></html>"
+
+    mock_config = MagicMock()
+    mock_config.get_tool_config.return_value = MagicMock(
+        model_extra={
+            "proxy": "  ",
+            "timeout": "not-a-number",
+            "trust_env": "yes",
+        }
+    )
+    monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
+    monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
+
+    result = await web_fetch_tool.ainvoke("https://example.com")
+
+    assert captured["timeout"] == 10
+    assert captured["proxy"] is None
+    assert captured["trust_env"] is True
+    assert "defaults" in result
 
 
 @pytest.mark.anyio

@@ -123,7 +123,12 @@ export function MessageList({
         const existing = next[message.tool_call_id];
         if (existing) {
           const result = extractTextFromMessage(message);
-          Object.assign(existing, parseSubtaskResult(result));
+          const structuredStatus = (
+            message.additional_kwargs as
+              | { subagent_status?: unknown }
+              | undefined
+          )?.subagent_status;
+          Object.assign(existing, parseSubtaskResult(result, structuredStatus));
         }
       }
     }

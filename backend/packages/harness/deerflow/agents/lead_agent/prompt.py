@@ -84,8 +84,16 @@ def _get_memory_context(user_id: str | None = None) -> str:
         if not config.enabled or not config.injection_enabled:
             return ""
 
+        token_counting = getattr(config, "token_counting", "tiktoken")
+        if token_counting not in ("tiktoken", "char"):
+            token_counting = "tiktoken"
+
         memory_data = get_memory_data(user_id)
-        memory_content = format_memory_for_injection(memory_data, max_tokens=config.max_injection_tokens)
+        memory_content = format_memory_for_injection(
+            memory_data,
+            max_tokens=config.max_injection_tokens,
+            use_tiktoken=token_counting == "tiktoken",
+        )
 
         if not memory_content.strip():
             return ""
@@ -109,6 +117,7 @@ def _apply_prompt_via_builder(
     available_skills: set[str] | None = None,
     tone_style: str = "normal",
     app_config=None,
+    deferred_names: frozenset[str] = frozenset(),
 ) -> str:
     """Build system prompt using the unified Jinja2 prompt factory."""
 
@@ -121,8 +130,14 @@ def _apply_prompt_via_builder(
     # Skills
     skills = _call_with_optional_app_config(get_skills_prompt_section, available_skills, user_id=user_id, app_config=app_config)
 
-    # Deferred tools
-    deferred = _call_with_optional_app_config(get_deferred_tools_prompt_section, app_config=app_config)
+    # Deferred tools. Some tests monkeypatch this symbol with the historical
+    # no-arg callable, so keep a narrow compatibility fallback.
+    try:
+        deferred = get_deferred_tools_prompt_section(deferred_names=deferred_names)
+    except TypeError as exc:
+        if "deferred_names" not in str(exc):
+            raise
+        deferred = get_deferred_tools_prompt_section()
 
     # Subagent section
     subagent_section = ""
@@ -184,6 +199,7 @@ def apply_prompt_template(
     available_skills: set[str] | None = None,
     tone_style: str = "normal",
     app_config=None,
+    deferred_names: frozenset[str] = frozenset(),
 ) -> str:
     """Build the lead agent system prompt.
 
@@ -199,4 +215,5 @@ def apply_prompt_template(
         available_skills=available_skills,
         tone_style=tone_style,
         app_config=app_config,
+        deferred_names=deferred_names,
     )

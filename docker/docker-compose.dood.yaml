@@ -1,0 +1,16 @@
+# Docker-outside-of-Docker overlay for AIO sandbox mode.
+#
+# This file is intentionally not loaded by default. scripts/deploy.sh and
+# scripts/docker.sh add it only when config.yaml selects AioSandboxProvider
+# without a provisioner_url.
+
+services:
+  gateway:
+    volumes:
+      # AioSandboxProvider may run in Gateway mode and needs host Docker access.
+      - ${DEER_FLOW_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+
+  langgraph:
+    volumes:
+      # Standard mode runs agent execution in the LangGraph service.
+      - ${DEER_FLOW_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock

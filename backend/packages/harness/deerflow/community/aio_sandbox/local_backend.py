@@ -172,6 +172,16 @@ def _resolve_docker_bind_host(sandbox_host: str | None = None, bind_host: str | 
     return "0.0.0.0"
 
 
+def _is_no_such_container_error(stderr: str, container_name: str) -> bool:
+    """Return True only when stderr definitively says the container is gone."""
+    message = stderr.lower()
+    if "no such object" in message or "no such container" in message:
+        return True
+    if "not found" not in message:
+        return False
+    return container_name.lower() in message or "container" in message or "object" in message
+
+
 def _resource_section(resources: Mapping[str, Any] | None, section: str) -> Mapping[str, Any]:
     value = (resources or {}).get(section)
     return value if isinstance(value, Mapping) else {}
@@ -449,7 +459,13 @@ class LocalContainerBackend(SandboxBackend):
         """
         container_name = f"{self._container_prefix}-{sandbox_id}"
 
-        if not self._is_container_running(container_name):
+        try:
+            running = self._is_container_running(container_name)
+        except RuntimeError as e:
+            logger.warning(f"Could not verify container {container_name} during discovery; not adopting it: {e}")
+            return None
+
+        if not running:
             return None
 
         port = self._get_container_port(container_name)
@@ -697,6 +713,9 @@ class LocalContainerBackend(SandboxBackend):
 
         This enables cross-process container discovery — any process can detect
         containers started by another process via the deterministic container name.
+
+        Raises:
+            RuntimeError: If the runtime cannot answer the inspect query.
         """
         try:
             result = subprocess.run(
@@ -705,9 +724,14 @@ class LocalContainerBackend(SandboxBackend):
                 text=True,
                 timeout=5,
             )
-            return result.returncode == 0 and result.stdout.strip().lower() == "true"
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Timed out checking container {container_name}") from exc
+
+        if result.returncode == 0:
+            return result.stdout.strip().lower() == "true"
+        if _is_no_such_container_error(result.stderr or "", container_name):
             return False
+        raise RuntimeError(f"Failed to inspect container {container_name}: {(result.stderr or '').strip()}")
 
     def _get_container_port(self, container_name: str) -> int | None:
         """Get the host port of a running container.

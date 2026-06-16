@@ -41,6 +41,11 @@ class TestProviders:
         assert any(provider.name == "firecrawl" for provider in SEARCH_PROVIDERS)
         assert any(provider.name == "firecrawl" for provider in WEB_FETCH_PROVIDERS)
 
+    def test_search_includes_brave_but_not_self_hosted_providers(self):
+        assert any(provider.name == "brave" and provider.env_var == "BRAVE_SEARCH_API_KEY" for provider in SEARCH_PROVIDERS)
+        assert all(provider.name != "searxng" for provider in SEARCH_PROVIDERS)
+        assert all(provider.name != "browserless" for provider in WEB_FETCH_PROVIDERS)
+
     def test_web_fetch_providers_have_required_fields(self):
         for provider in WEB_FETCH_PROVIDERS:
             assert provider.name
@@ -407,7 +412,9 @@ class TestSearchStep:
         monkeypatch.setattr(search_step, "print_success", lambda *_args, **_kwargs: None)
         monkeypatch.setattr(search_step, "print_info", lambda *_args, **_kwargs: None)
 
-        choices = iter([3, 1])
+        exa_search_index = next(index for index, provider in enumerate(SEARCH_PROVIDERS) if provider.name == "exa")
+        exa_fetch_index = next(index for index, provider in enumerate(WEB_FETCH_PROVIDERS) if provider.name == "exa")
+        choices = iter([exa_search_index, exa_fetch_index])
         prompts: list[str] = []
 
         def fake_choice(_prompt, _options, default=0):

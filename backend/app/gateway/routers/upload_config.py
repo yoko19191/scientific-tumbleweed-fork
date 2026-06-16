@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from deerflow.uploads.limits import get_upload_limits
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -21,6 +22,18 @@ _CLIENT_MAX_BODY_SIZE_RE = re.compile(
 class UploadConfigResponse(BaseModel):
     """Upload limits reflected from nginx configuration."""
 
+    max_files: int = Field(
+        default=10,
+        description="Maximum number of files accepted in one upload request.",
+    )
+    max_file_size: int = Field(
+        default=50 * 1024 * 1024,
+        description="Maximum size of one uploaded file in bytes.",
+    )
+    max_total_size: int = Field(
+        default=100 * 1024 * 1024,
+        description="Maximum total upload request size in bytes, after applying app and nginx limits.",
+    )
     max_body_bytes: int | None = Field(
         default=None,
         description="Maximum upload request body size in bytes. Null means nginx limit is disabled or unknown.",
@@ -109,6 +122,7 @@ def _find_client_max_body_size(content: str) -> str | None:
 
 
 def _read_upload_limit() -> UploadConfigResponse:
+    limits = get_upload_limits()
     for path in _nginx_config_candidates():
         try:
             content = path.read_text(encoding="utf-8")
@@ -121,12 +135,21 @@ def _read_upload_limit() -> UploadConfigResponse:
         if raw_size is None:
             continue
 
+        max_body_bytes = _parse_nginx_size(raw_size)
+        max_total_size = min(limits.max_total_size, max_body_bytes) if max_body_bytes else limits.max_total_size
         return UploadConfigResponse(
-            max_body_bytes=_parse_nginx_size(raw_size),
+            max_files=limits.max_files,
+            max_file_size=limits.max_file_size,
+            max_total_size=max_total_size,
+            max_body_bytes=max_body_bytes,
             max_body_size=raw_size,
         )
 
-    return UploadConfigResponse()
+    return UploadConfigResponse(
+        max_files=limits.max_files,
+        max_file_size=limits.max_file_size,
+        max_total_size=limits.max_total_size,
+    )
 
 
 @router.get(

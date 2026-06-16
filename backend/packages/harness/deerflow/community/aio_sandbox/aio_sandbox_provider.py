@@ -555,13 +555,30 @@ class AioSandboxProvider(SandboxProvider):
 
             existing_id = self._thread_sandboxes[cache_key]
             if existing_id in self._sandboxes:
-                suffix = " (post-lock check)" if post_lock else ""
-                logger.info(f"Reusing in-process sandbox {existing_id} for thread {thread_id}{suffix}")
-                self._last_activity[existing_id] = time.time()
-                return existing_id
+                info = self._sandbox_infos.get(existing_id)
+            else:
+                del self._thread_sandboxes[cache_key]
+                return None
 
-            del self._thread_sandboxes[cache_key]
+        alive = self._check_tracked_sandbox_alive(existing_id, info) if info is not None else True
+        if alive is False:
+            self._drop_unhealthy_sandbox(
+                existing_id,
+                "in-process cache failed health check",
+                expected_info=info,
+            )
             return None
+
+        with self._lock:
+            if self._thread_sandboxes.get(cache_key) != existing_id:
+                return None
+            if existing_id not in self._sandboxes:
+                self._thread_sandboxes.pop(cache_key, None)
+                return None
+            suffix = " (post-lock check)" if post_lock else ""
+            logger.info(f"Reusing in-process sandbox {existing_id} for thread {thread_id}{suffix}")
+            self._last_activity[existing_id] = time.time()
+            return existing_id
 
     def _reclaim_warm_pool_sandbox(self, cache_key: str | None, thread_id: str | None, sandbox_id: str, *, post_lock: bool = False) -> str | None:
         """Promote a warm-pool sandbox back to active tracking if available."""
@@ -571,8 +588,38 @@ class AioSandboxProvider(SandboxProvider):
         with self._lock:
             if sandbox_id not in self._warm_pool:
                 return None
+            info, _ = self._warm_pool[sandbox_id]
 
-            info, _ = self._warm_pool.pop(sandbox_id)
+        if not info.sandbox_url:
+            logger.warning(f"Warm-pool sandbox {sandbox_id} has no sandbox_url; discarding")
+            self._drop_unhealthy_sandbox(
+                sandbox_id,
+                "warm-pool cache missing sandbox_url",
+                expected_info=info,
+            )
+            return None
+
+        alive = self._check_tracked_sandbox_alive(sandbox_id, info)
+        if alive is False:
+            self._drop_unhealthy_sandbox(
+                sandbox_id,
+                "warm-pool cache failed health check",
+                expected_info=info,
+            )
+            return None
+        if not wait_for_sandbox_ready(info.sandbox_url, timeout=5):
+            self._drop_unhealthy_sandbox(
+                sandbox_id,
+                "warm-pool cache failed readiness check",
+                expected_info=info,
+            )
+            return None
+
+        with self._lock:
+            warm_item = self._warm_pool.pop(sandbox_id, None)
+            if warm_item is None:
+                return None
+            info, _ = warm_item
             sandbox = AioSandbox(id=sandbox_id, base_url=info.sandbox_url)
             self._sandboxes[sandbox_id] = sandbox
             self._sandbox_infos[sandbox_id] = info
@@ -588,6 +635,61 @@ class AioSandboxProvider(SandboxProvider):
         return self._reuse_in_process_sandbox(cache_key, thread_id, post_lock=True) or self._reclaim_warm_pool_sandbox(
             cache_key, thread_id, sandbox_id, post_lock=True
         )
+
+    def _check_tracked_sandbox_alive(self, sandbox_id: str, info: SandboxInfo) -> bool | None:
+        """Return whether a tracked sandbox appears alive, or None if unknown."""
+        try:
+            return self._backend.is_alive(info)
+        except Exception as e:
+            logger.warning(f"Failed to check sandbox {sandbox_id} health: {e}")
+            return None
+
+    def _remove_tracked_sandbox(
+        self,
+        sandbox_id: str,
+        *,
+        expected_info: SandboxInfo | None = None,
+    ) -> tuple[Sandbox | None, SandboxInfo | None, bool]:
+        """Remove a sandbox from active and warm-pool tracking maps."""
+        with self._lock:
+            active_info = self._sandbox_infos.get(sandbox_id)
+            warm_item = self._warm_pool.get(sandbox_id)
+            warm_info = warm_item[0] if warm_item is not None else None
+            if expected_info is not None and active_info is not expected_info and warm_info is not expected_info:
+                return None, None, False
+
+            sandbox = self._sandboxes.pop(sandbox_id, None)
+            info = self._sandbox_infos.pop(sandbox_id, None)
+            for thread_key in [key for key, value in self._thread_sandboxes.items() if value == sandbox_id]:
+                del self._thread_sandboxes[thread_key]
+            self._last_activity.pop(sandbox_id, None)
+            if info is None and sandbox_id in self._warm_pool:
+                info, _ = self._warm_pool.pop(sandbox_id)
+            else:
+                self._warm_pool.pop(sandbox_id, None)
+
+        return sandbox, info, True
+
+    def _drop_unhealthy_sandbox(self, sandbox_id: str, reason: str, *, expected_info: SandboxInfo | None = None) -> None:
+        """Remove and destroy a sandbox after a definitive failed health check."""
+        sandbox, info, removed = self._remove_tracked_sandbox(sandbox_id, expected_info=expected_info)
+        if not removed:
+            logger.info(f"Skipped dropping sandbox {sandbox_id}: tracked info changed after health check")
+            return
+
+        if sandbox is not None:
+            try:
+                sandbox.close()
+            except Exception as e:
+                logger.warning(f"Error closing unhealthy sandbox {sandbox_id}: {e}")
+
+        if info is not None:
+            try:
+                self._backend.destroy(info)
+            except Exception as e:
+                logger.warning(f"Error destroying unhealthy sandbox {sandbox_id}: {e}")
+
+        logger.warning(f"Dropped unhealthy sandbox {sandbox_id}: {reason}")
 
     def _register_discovered_sandbox(self, cache_key: str, thread_id: str, info: SandboxInfo) -> str:
         """Track a sandbox discovered through the backend."""
@@ -706,13 +808,13 @@ class AioSandboxProvider(SandboxProvider):
 
     async def _acquire_internal_async(self, thread_id: str | None, user_id: str | None, cache_key: str | None) -> str:
         """Async counterpart to ``_acquire_internal``."""
-        cached_id = self._reuse_in_process_sandbox(cache_key, thread_id)
+        cached_id = await asyncio.to_thread(self._reuse_in_process_sandbox, cache_key, thread_id)
         if cached_id is not None:
             return cached_id
 
         sandbox_id = self._sandbox_id_for_cache_key(cache_key)
 
-        reclaimed_id = self._reclaim_warm_pool_sandbox(cache_key, thread_id, sandbox_id)
+        reclaimed_id = await asyncio.to_thread(self._reclaim_warm_pool_sandbox, cache_key, thread_id, sandbox_id)
         if reclaimed_id is not None:
             return reclaimed_id
 
@@ -775,7 +877,7 @@ class AioSandboxProvider(SandboxProvider):
             locked = True
             # Re-check in-process caches under the file lock in case another
             # thread in this process won the race while we were waiting.
-            cached_id = self._recheck_cached_sandbox(cache_key, thread_id, sandbox_id)
+            cached_id = await asyncio.to_thread(self._recheck_cached_sandbox, cache_key, thread_id, sandbox_id)
             if cached_id is not None:
                 return cached_id
 
@@ -956,21 +1058,7 @@ class AioSandboxProvider(SandboxProvider):
         Args:
             sandbox_id: The ID of the sandbox to destroy.
         """
-        info = None
-        thread_ids_to_remove: list[str] = []
-
-        with self._lock:
-            self._sandboxes.pop(sandbox_id, None)
-            info = self._sandbox_infos.pop(sandbox_id, None)
-            thread_ids_to_remove = [tid for tid, sid in self._thread_sandboxes.items() if sid == sandbox_id]
-            for tid in thread_ids_to_remove:
-                del self._thread_sandboxes[tid]
-            self._last_activity.pop(sandbox_id, None)
-            # Also pull from warm pool if it was parked there
-            if info is None and sandbox_id in self._warm_pool:
-                info, _ = self._warm_pool.pop(sandbox_id)
-            else:
-                self._warm_pool.pop(sandbox_id, None)
+        _sandbox, info, _removed = self._remove_tracked_sandbox(sandbox_id)
 
         if info:
             self._backend.destroy(info)

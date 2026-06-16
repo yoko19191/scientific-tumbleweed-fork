@@ -127,6 +127,32 @@ def test_apply_prompt_template_includes_anti_template_conversation_rules(monkeyp
     assert "作为一个 AI" in prompt
 
 
+def test_get_memory_context_passes_char_token_counting_to_formatter(monkeypatch):
+    calls = {}
+    config = SimpleNamespace(
+        enabled=True,
+        injection_enabled=True,
+        max_injection_tokens=123,
+        token_counting="char",
+    )
+
+    def fake_format(memory_data, max_tokens=2000, *, use_tiktoken=True):
+        calls["memory_data"] = memory_data
+        calls["max_tokens"] = max_tokens
+        calls["use_tiktoken"] = use_tiktoken
+        return "User memory"
+
+    monkeypatch.setattr("deerflow.config.memory_config.get_memory_config", lambda: config)
+    monkeypatch.setattr("deerflow.agents.memory.get_memory_data", lambda user_id=None: {"facts": []})
+    monkeypatch.setattr("deerflow.agents.memory.format_memory_for_injection", fake_format)
+
+    context = prompt_module._get_memory_context(user_id="user-1")
+
+    assert "User memory" in context
+    assert calls["max_tokens"] == 123
+    assert calls["use_tiktoken"] is False
+
+
 def test_apply_prompt_template_includes_collaboration_mechanics(monkeypatch):
     _patch_prompt_dependencies(monkeypatch)
 

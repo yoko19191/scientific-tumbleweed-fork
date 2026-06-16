@@ -154,6 +154,37 @@ if [ -z "$BETTER_AUTH_SECRET" ]; then
     fi
 fi
 
+# ── DEER_FLOW_INTERNAL_AUTH_TOKEN ────────────────────────────────────────────
+# Shared by Gateway workers so trusted internal callers authenticate
+# consistently across worker processes.
+
+_internal_auth_file="$DEER_FLOW_HOME/.internal-auth-token"
+if [ -z "$DEER_FLOW_INTERNAL_AUTH_TOKEN" ]; then
+    if [ -f "$_internal_auth_file" ]; then
+        export DEER_FLOW_INTERNAL_AUTH_TOKEN
+        DEER_FLOW_INTERNAL_AUTH_TOKEN="$(cat "$_internal_auth_file")"
+        echo -e "${GREEN}✓ DEER_FLOW_INTERNAL_AUTH_TOKEN loaded from $_internal_auth_file${NC}"
+    else
+        export DEER_FLOW_INTERNAL_AUTH_TOKEN
+        if command -v python3 > /dev/null 2>&1 && \
+            DEER_FLOW_INTERNAL_AUTH_TOKEN="$(python3 -c 'import sys; sys.version_info >= (3, 6) or sys.exit(1); import secrets; print(secrets.token_urlsafe(32))' 2>/dev/null)"; then
+            true
+        elif command -v python > /dev/null 2>&1 && \
+            DEER_FLOW_INTERNAL_AUTH_TOKEN="$(python -c 'import sys; sys.version_info >= (3, 6) or sys.exit(1); import secrets; print(secrets.token_urlsafe(32))' 2>/dev/null)"; then
+            true
+        elif command -v openssl > /dev/null 2>&1; then
+            DEER_FLOW_INTERNAL_AUTH_TOKEN="$(openssl rand -base64 32 | tr -d '\n')"
+        else
+            echo -e "${RED}✗ Cannot generate DEER_FLOW_INTERNAL_AUTH_TOKEN: python3, python, and openssl are all unavailable.${NC}" >&2
+            echo -e "${RED}  Set DEER_FLOW_INTERNAL_AUTH_TOKEN manually before deployment.${NC}" >&2
+            exit 1
+        fi
+        echo "$DEER_FLOW_INTERNAL_AUTH_TOKEN" > "$_internal_auth_file"
+        chmod 600 "$_internal_auth_file"
+        echo -e "${GREEN}✓ DEER_FLOW_INTERNAL_AUTH_TOKEN generated → $_internal_auth_file${NC}"
+    fi
+fi
+
 # ── detect_sandbox_mode ───────────────────────────────────────────────────────
 
 detect_sandbox_mode() {
@@ -197,7 +228,6 @@ if [ "$CMD" = "down" ]; then
     export DEER_FLOW_HOME="${DEER_FLOW_HOME:-$REPO_ROOT/backend/.deer-flow}"
     export DEER_FLOW_CONFIG_PATH="${DEER_FLOW_CONFIG_PATH:-$DEER_FLOW_HOME/config.yaml}"
     export DEER_FLOW_EXTENSIONS_CONFIG_PATH="${DEER_FLOW_EXTENSIONS_CONFIG_PATH:-$DEER_FLOW_HOME/extensions_config.json}"
-    export DEER_FLOW_DOCKER_SOCKET="${DEER_FLOW_DOCKER_SOCKET:-/var/run/docker.sock}"
     export DEER_FLOW_REPO_ROOT="${DEER_FLOW_REPO_ROOT:-$REPO_ROOT}"
     export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-placeholder}"
     "${COMPOSE_CMD[@]}" down
@@ -212,11 +242,6 @@ if [ "$CMD" = "build" ]; then
     echo "  Scientific Tumbleweed — Building Images"
     echo "=========================================="
     echo ""
-
-    # Docker socket is needed for compose to parse volume specs
-    if [ -z "$DEER_FLOW_DOCKER_SOCKET" ]; then
-        export DEER_FLOW_DOCKER_SOCKET="/var/run/docker.sock"
-    fi
 
     "${COMPOSE_CMD[@]}" build
 
@@ -260,13 +285,13 @@ if [ "$sandbox_mode" = "provisioner" ]; then
     services="$services provisioner"
 fi
 
-# ── DEER_FLOW_DOCKER_SOCKET ───────────────────────────────────────────────────
+# ── DEER_FLOW_DOCKER_SOCKET / DooD overlay ───────────────────────────────────
 
-if [ -z "$DEER_FLOW_DOCKER_SOCKET" ]; then
+if [ "$sandbox_mode" = "aio" ] && [ -z "$DEER_FLOW_DOCKER_SOCKET" ]; then
     export DEER_FLOW_DOCKER_SOCKET="/var/run/docker.sock"
 fi
 
-if [ "$sandbox_mode" != "local" ]; then
+if [ "$sandbox_mode" = "aio" ]; then
     if [ ! -S "$DEER_FLOW_DOCKER_SOCKET" ]; then
         echo -e "${RED}⚠ Docker socket not found at $DEER_FLOW_DOCKER_SOCKET${NC}"
         echo "  AioSandboxProvider (DooD) will not work."
@@ -274,6 +299,7 @@ if [ "$sandbox_mode" != "local" ]; then
     else
         echo -e "${GREEN}✓ Docker socket: $DEER_FLOW_DOCKER_SOCKET${NC}"
     fi
+    COMPOSE_CMD+=(-f "$DOCKER_DIR/docker-compose.dood.yaml")
 fi
 
 echo ""

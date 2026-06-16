@@ -57,6 +57,29 @@ def _make_provider(tmp_path):
     return provider
 
 
+def _make_provider_with_active_sandbox(tmp_path, sandbox_id: str):
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    sandbox = MagicMock()
+    sandbox.id = sandbox_id
+    info = aio_mod.SandboxInfo(sandbox_id=sandbox_id, sandbox_url=f"http://{sandbox_id}")
+    provider._config = {"replicas": 3}
+    provider._backend = SimpleNamespace(
+        is_alive=MagicMock(return_value=True),
+        destroy=MagicMock(),
+        discover=MagicMock(return_value=None),
+        create=MagicMock(),
+    )
+    provider._lock = threading.Lock()
+    provider._thread_locks = weakref.WeakValueDictionary()
+    provider._sandboxes = {sandbox_id: sandbox}
+    provider._sandbox_infos = {sandbox_id: info}
+    provider._thread_sandboxes = {}
+    provider._last_activity = {sandbox_id: 1.0}
+    provider._warm_pool = {}
+    return provider, sandbox, info
+
+
 def test_get_thread_mounts_includes_acp_workspace(tmp_path, monkeypatch):
     """_get_thread_mounts must include /mnt/acp-workspace (read-only) for docker sandbox."""
     aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
@@ -331,6 +354,100 @@ async def test_acquire_async_uses_user_scoped_cache_key(monkeypatch):
 
     assert await provider.acquire_async("thread-1", "user-1") == "sandbox-user"
     assert calls == [("thread-1", "user-1", "user-1:thread-1")]
+
+
+@pytest.mark.anyio
+async def test_acquire_internal_async_offloads_cached_reuse_health_check(tmp_path, monkeypatch):
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider, _sandbox, _info = _make_provider_with_active_sandbox(tmp_path, "sandbox-cached-async")
+    provider._thread_sandboxes = {"user-1:thread-1": "sandbox-cached-async"}
+
+    to_thread_calls: list[tuple[object, tuple[object, ...]]] = []
+
+    async def fake_to_thread(func, /, *args, **kwargs):
+        to_thread_calls.append((func, args))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(aio_mod.asyncio, "to_thread", fake_to_thread)
+
+    sandbox_id = await provider._acquire_internal_async("thread-1", "user-1", "user-1:thread-1")
+
+    assert sandbox_id == "sandbox-cached-async"
+    assert to_thread_calls == [(provider._reuse_in_process_sandbox, ("user-1:thread-1", "thread-1"))]
+
+
+def test_get_uses_in_memory_registry_only(tmp_path):
+    provider, sandbox, _info = _make_provider_with_active_sandbox(tmp_path, "sandbox-live")
+    provider._backend.is_alive = MagicMock(side_effect=AssertionError("get must not call backend health checks"))
+
+    assert provider.get("sandbox-live") is sandbox
+
+
+def test_reuse_in_process_drops_dead_cached_sandbox(tmp_path):
+    provider, sandbox, info = _make_provider_with_active_sandbox(tmp_path, "sandbox-dead")
+    provider._thread_sandboxes = {"thread-dead": "sandbox-dead"}
+    provider._backend.is_alive = MagicMock(return_value=False)
+
+    assert provider._reuse_in_process_sandbox("thread-dead", "thread-dead") is None
+
+    sandbox.close.assert_called_once_with()
+    provider._backend.destroy.assert_called_once_with(info)
+    assert "sandbox-dead" not in provider._sandboxes
+    assert "sandbox-dead" not in provider._sandbox_infos
+    assert provider._thread_sandboxes == {}
+
+
+def test_reuse_in_process_keeps_cached_sandbox_when_health_check_errors(tmp_path):
+    provider, sandbox, _info = _make_provider_with_active_sandbox(tmp_path, "sandbox-transient")
+    provider._thread_sandboxes = {"thread-transient": "sandbox-transient"}
+    provider._backend.is_alive = MagicMock(side_effect=OSError("docker daemon busy"))
+
+    assert provider._reuse_in_process_sandbox("thread-transient", "thread-transient") == "sandbox-transient"
+
+    sandbox.close.assert_not_called()
+    provider._backend.destroy.assert_not_called()
+    assert provider._sandboxes["sandbox-transient"] is sandbox
+
+
+def test_drop_unhealthy_sandbox_skips_recreated_entry(tmp_path):
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    old_info = aio_mod.SandboxInfo(sandbox_id="sandbox-toctou", sandbox_url="http://old-sandbox")
+    new_info = aio_mod.SandboxInfo(sandbox_id="sandbox-toctou", sandbox_url="http://new-sandbox")
+    new_sandbox = MagicMock()
+    provider._lock = threading.Lock()
+    provider._backend = SimpleNamespace(destroy=MagicMock())
+    provider._sandboxes = {"sandbox-toctou": new_sandbox}
+    provider._sandbox_infos = {"sandbox-toctou": new_info}
+    provider._thread_sandboxes = {"thread-toctou": "sandbox-toctou"}
+    provider._last_activity = {"sandbox-toctou": 1.0}
+    provider._warm_pool = {}
+
+    provider._drop_unhealthy_sandbox("sandbox-toctou", "stale health check", expected_info=old_info)
+
+    new_sandbox.close.assert_not_called()
+    provider._backend.destroy.assert_not_called()
+    assert provider._sandbox_infos["sandbox-toctou"] is new_info
+    assert provider._sandboxes["sandbox-toctou"] is new_sandbox
+    assert provider._thread_sandboxes == {"thread-toctou": "sandbox-toctou"}
+
+
+def test_reclaim_warm_pool_drops_dead_sandbox(tmp_path):
+    aio_mod = importlib.import_module("deerflow.community.aio_sandbox.aio_sandbox_provider")
+    provider = aio_mod.AioSandboxProvider.__new__(aio_mod.AioSandboxProvider)
+    info = aio_mod.SandboxInfo(sandbox_id="sandbox-warm-dead", sandbox_url="http://stale-sandbox")
+    provider._lock = threading.Lock()
+    provider._backend = SimpleNamespace(is_alive=MagicMock(return_value=False), destroy=MagicMock())
+    provider._sandboxes = {}
+    provider._sandbox_infos = {}
+    provider._thread_sandboxes = {}
+    provider._last_activity = {}
+    provider._warm_pool = {"sandbox-warm-dead": (info, 0.0)}
+
+    assert provider._reclaim_warm_pool_sandbox("thread-warm", "thread-warm", "sandbox-warm-dead") is None
+
+    provider._backend.destroy.assert_called_once_with(info)
+    assert provider._warm_pool == {}
 
 
 def test_remote_backend_posts_configured_image(monkeypatch):

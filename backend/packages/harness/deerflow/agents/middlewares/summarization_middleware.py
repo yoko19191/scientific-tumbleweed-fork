@@ -20,6 +20,7 @@ from langchain_core.messages import (
     get_buffer_string,
 )
 from langgraph.config import get_config
+from langgraph.constants import TAG_NOSTREAM
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.runtime import Runtime
 
@@ -49,6 +50,8 @@ The JSON object must contain exactly these string fields:
 Earlier conversation history:
 {messages}
 """
+
+_SUMMARY_RUN_CONFIG = {"tags": [TAG_NOSTREAM]}
 
 
 @dataclass(frozen=True)
@@ -339,7 +342,10 @@ class DeerFlowSummarizationMiddleware(SummarizationMiddleware):
 
         formatted_messages = get_buffer_string(trimmed_messages)
         try:
-            response = self.model.invoke(_STRUCTURED_SUMMARY_PROMPT.format(messages=formatted_messages))
+            response = self.model.invoke(
+                _STRUCTURED_SUMMARY_PROMPT.format(messages=formatted_messages),
+                config=_SUMMARY_RUN_CONFIG,
+            )
             raw_output = response.text.strip()
         except Exception as exc:
             raw_output = f"Error generating structured summary: {exc!s}"
@@ -355,7 +361,10 @@ class DeerFlowSummarizationMiddleware(SummarizationMiddleware):
 
         formatted_messages = get_buffer_string(trimmed_messages)
         try:
-            response = await self.model.ainvoke(_STRUCTURED_SUMMARY_PROMPT.format(messages=formatted_messages))
+            response = await self.model.ainvoke(
+                _STRUCTURED_SUMMARY_PROMPT.format(messages=formatted_messages),
+                config=_SUMMARY_RUN_CONFIG,
+            )
             raw_output = response.text.strip()
         except Exception as exc:
             raw_output = f"Error generating structured summary: {exc!s}"

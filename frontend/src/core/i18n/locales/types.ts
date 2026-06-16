@@ -132,6 +132,7 @@ export interface Translations {
     custom: string;
     notAvailableInDemoMode: string;
     loading: string;
+    retry: string;
     version: string;
     lastUpdated: string;
     code: string;
@@ -243,6 +244,8 @@ export interface Translations {
     demoChats: string;
     agents: string;
     apps: string;
+    gatewayUnavailable: string;
+    gatewayUnavailableRetrying: string;
   };
 
   // Agents
@@ -333,6 +336,9 @@ export interface Translations {
   chats: {
     description: string;
     searchChats: string;
+    loadMoreToSearch: string;
+    loadingMore: string;
+    loadOlderChats: string;
   };
 
   // Page titles (document title)
@@ -382,6 +388,7 @@ export interface Translations {
     uploading: string;
     uploadingFiles: string;
     fileTooLargeWarning: (count: number, limit: string) => string;
+    tooManyFilesWarning: (count: number, limit: number) => string;
   };
 
   // Subtasks

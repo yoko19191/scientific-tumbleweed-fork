@@ -88,6 +88,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     config = get_gateway_config()
     logger.info(f"Starting API Gateway on {config.host}:{config.port}")
 
+    if startup_config.memory.token_counting == "char":
+        logger.info("memory.token_counting='char'; skipping tiktoken warm-up")
+    else:
+        try:
+            from deerflow.agents.memory.prompt import warm_tiktoken_cache
+
+            warmed = await asyncio.wait_for(
+                asyncio.to_thread(warm_tiktoken_cache),
+                timeout=_SHUTDOWN_HOOK_TIMEOUT_SECONDS,
+            )
+            if warmed:
+                logger.info("tiktoken encoding cache warmed successfully")
+            else:
+                logger.warning(
+                    "tiktoken encoding cache warm-up failed; token counting will use character-based fallback until tiktoken loads successfully"
+                )
+        except TimeoutError:
+            logger.warning(
+                "tiktoken encoding cache warm-up timed out; token counting will use character-based fallback until tiktoken loads successfully"
+            )
+        except Exception:
+            logger.warning("tiktoken warm-up skipped", exc_info=True)
+
     # Initialize auth subsystem
     from app.gateway.auth.config import get_auth_config
     from app.gateway.auth.local_provider import LocalAuthProvider

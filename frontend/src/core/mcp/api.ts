@@ -18,3 +18,17 @@ export async function updateMCPConfig(config: MCPConfig) {
   });
   return response.json();
 }
+
+export async function setMCPServerEnabled(serverName: string, enabled: boolean) {
+  const response = await fetchWithAuth(
+    `${getBackendBaseURL()}/api/mcp/servers/${encodeURIComponent(serverName)}/enabled`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+  return response.json() as Promise<{ success: boolean; name: string; enabled: boolean }>;
+}

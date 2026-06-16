@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.gateway.deps import get_current_user_id
 from app.gateway.routers import memory
+from deerflow.config.memory_config import MemoryConfig
 
 USER_A = "user-aaaa-1111"
 USER_B = "user-bbbb-2222"
@@ -184,6 +185,7 @@ class TestMemoryPerUserIsolation:
                 mock_cfg.return_value.fact_confidence_threshold = 0.7
                 mock_cfg.return_value.injection_enabled = True
                 mock_cfg.return_value.max_injection_tokens = 2000
+                mock_cfg.return_value.token_counting = "tiktoken"
                 with TestClient(app, raise_server_exceptions=False) as client:
                     resp = client.get("/api/memory/status")
 
@@ -194,6 +196,17 @@ class TestMemoryPerUserIsolation:
 # ---------------------------------------------------------------------------
 # Existing functional tests (updated to use dependency_overrides)
 # ---------------------------------------------------------------------------
+
+
+def test_memory_config_route_includes_token_counting() -> None:
+    app = _make_app()
+
+    with patch("app.gateway.routers.memory.get_memory_config", return_value=MemoryConfig(token_counting="char")):
+        with TestClient(app) as client:
+            response = client.get("/api/memory/config")
+
+    assert response.status_code == 200
+    assert response.json()["token_counting"] == "char"
 
 
 def test_export_memory_route_returns_current_memory() -> None:

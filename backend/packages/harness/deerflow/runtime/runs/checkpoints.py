@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from deerflow.runtime.serialization import serialize_channel_values
+from deerflow.runtime.serialization import serialize_channel_values_for_api
 
 ROOT_CHECKPOINT_NS = ""
 
@@ -67,4 +67,4 @@ async def read_thread_final_state(
     )
     if channel_values is None:
         return None
-    return serialize_channel_values(channel_values)
+    return serialize_channel_values_for_api(channel_values)

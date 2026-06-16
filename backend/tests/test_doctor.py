@@ -182,6 +182,37 @@ class TestCheckWebSearch:
         assert result.status == "ok"
         assert "DuckDuckGo" in result.detail
 
+    def test_searxng_self_hosted_ok(self, tmp_path):
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("config_version: 5\ntools:\n  - name: web_search\n    use: deerflow.community.searxng.tools:web_search_tool\n")
+        result = doctor.check_web_search(cfg)
+        assert result.status == "ok"
+        assert "SearXNG" in result.detail
+
+    def test_brave_without_key_warns(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("config_version: 5\ntools:\n  - name: web_search\n    use: deerflow.community.brave.tools:web_search_tool\n")
+        result = doctor.check_web_search(cfg)
+        assert result.status == "warn"
+        assert "BRAVE_SEARCH_API_KEY" in (result.fix or "")
+
+    def test_brave_inline_api_key_ok(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("config_version: 5\ntools:\n  - name: web_search\n    use: deerflow.community.brave.tools:web_search_tool\n    api_key: inline-key\n")
+        result = doctor.check_web_search(cfg)
+        assert result.status == "ok"
+        assert "inline api_key" in result.detail
+
+    def test_brave_config_env_api_key_ok(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("config_version: 5\ntools:\n  - name: web_search\n    use: deerflow.community.brave.tools:web_search_tool\n    api_key: $BRAVE_SEARCH_API_KEY\n")
+        result = doctor.check_web_search(cfg)
+        assert result.status == "ok"
+        assert "BRAVE_SEARCH_API_KEY" in result.detail
+
     def test_tavily_with_key_ok(self, tmp_path, monkeypatch):
         monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
         cfg = tmp_path / "config.yaml"
@@ -229,6 +260,13 @@ class TestCheckWebFetch:
         result = doctor.check_web_fetch(cfg)
         assert result.status == "ok"
         assert "Jina AI" in result.detail
+
+    def test_browserless_self_hosted_ok(self, tmp_path):
+        cfg = tmp_path / "config.yaml"
+        cfg.write_text("config_version: 5\ntools:\n  - name: web_fetch\n    use: deerflow.community.browserless.tools:web_fetch_tool\n")
+        result = doctor.check_web_fetch(cfg)
+        assert result.status == "ok"
+        assert "Browserless" in result.detail
 
     def test_firecrawl_without_key_warns(self, tmp_path, monkeypatch):
         monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)

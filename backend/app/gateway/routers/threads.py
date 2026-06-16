@@ -4,7 +4,7 @@ Combines the existing thread-local filesystem cleanup with LangGraph
 Platform-compatible thread management backed by the checkpointer.
 
 Channel values returned in state responses are serialized through
-:func:`deerflow.runtime.serialization.serialize_channel_values` to
+:func:`deerflow.runtime.serialization.serialize_channel_values_for_api` to
 ensure LangChain message objects are converted to JSON-safe dicts
 matching the LangGraph Platform wire format expected by the
 ``useStream`` React hook.
@@ -16,7 +16,7 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.gateway.authz import require_auth
@@ -34,7 +34,7 @@ from app.gateway.thread_resources import (
     user_thread_records_namespace,
 )
 from deerflow.config.paths import Paths, get_paths
-from deerflow.runtime import serialize_channel_values
+from deerflow.runtime import serialize_channel_values_for_api
 from deerflow.utils.time import coerce_iso, now_iso
 
 # ---------------------------------------------------------------------------
@@ -270,7 +270,11 @@ async def bind_user(body: BindUserRequest, request: Request) -> dict[str, bool]:
 
 @router.get("/listByUser", response_model=list[ThreadResponse])
 @require_auth
-async def list_by_user(request: Request) -> list[ThreadResponse]:
+async def list_by_user(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=1000, description="Maximum results"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+) -> list[ThreadResponse]:
     """Return only threads owned by the current user.
 
     Queries the user-scoped ``thread_owners`` namespace for mappings belonging
@@ -354,7 +358,7 @@ async def list_by_user(request: Request) -> list[ThreadResponse]:
 
     # Sort by updated_at descending
     results.sort(key=lambda r: r.updated_at, reverse=True)
-    return results
+    return results[offset : offset + limit]
 
 
 @router.delete("/{thread_id}", response_model=ThreadDeleteResponse)
@@ -621,7 +625,7 @@ async def get_thread(thread_id: str, request: Request) -> ThreadResponse:
         created_at=coerce_iso(record.get("created_at", "")),
         updated_at=coerce_iso(record.get("updated_at", "")),
         metadata=record.get("metadata", {}),
-        values=serialize_channel_values(channel_values),
+        values=serialize_channel_values_for_api(channel_values),
     )
 
 
@@ -664,7 +668,7 @@ async def get_thread_state(thread_id: str, request: Request) -> ThreadStateRespo
     tasks = [{"id": getattr(t, "id", ""), "name": getattr(t, "name", "")} for t in tasks_raw]
 
     return ThreadStateResponse(
-        values=serialize_channel_values(channel_values),
+        values=serialize_channel_values_for_api(channel_values),
         next=next_tasks,
         metadata=metadata,
         checkpoint={"id": checkpoint_id, "ts": coerce_iso(metadata.get("created_at", ""))},
@@ -753,7 +757,7 @@ async def update_thread_state(thread_id: str, body: ThreadStateUpdateRequest, re
             logger.debug("Failed to sync title to store for thread %s (non-fatal)", thread_id)
 
     return ThreadStateResponse(
-        values=serialize_channel_values(channel_values),
+        values=serialize_channel_values_for_api(channel_values),
         next=[],
         metadata=metadata,
         checkpoint_id=new_checkpoint_id,
@@ -795,7 +799,7 @@ async def get_thread_history(thread_id: str, body: ThreadHistoryRequest, request
                     checkpoint_id=checkpoint_id,
                     parent_checkpoint_id=parent_id,
                     metadata=metadata,
-                    values=serialize_channel_values(channel_values),
+                    values=serialize_channel_values_for_api(channel_values),
                     created_at=coerce_iso(metadata.get("created_at", "")),
                     next=next_tasks,
                 )

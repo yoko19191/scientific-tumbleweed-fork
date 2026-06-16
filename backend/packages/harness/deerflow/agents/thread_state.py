@@ -18,6 +18,25 @@ class ViewedImageData(TypedDict):
     mime_type: str
 
 
+class PromotedTools(TypedDict):
+    catalog_hash: str
+    names: list[str]
+
+
+def merge_sandbox(existing: SandboxState | None, new: SandboxState | None) -> SandboxState | None:
+    """Reducer for sandbox state that accepts idempotent writes only."""
+    if new is None:
+        return existing
+    if existing is None:
+        return new
+
+    existing_id = existing.get("sandbox_id")
+    new_id = new.get("sandbox_id")
+    if existing_id == new_id:
+        return existing
+    raise ValueError(f"Conflicting sandbox state updates: {existing_id!r} != {new_id!r}")
+
+
 def merge_artifacts(existing: list[str] | None, new: list[str] | None) -> list[str]:
     """Reducer for artifacts list - merges and deduplicates artifacts."""
     if existing is None:
@@ -45,11 +64,27 @@ def merge_viewed_images(existing: dict[str, ViewedImageData] | None, new: dict[s
     return {**existing, **new}
 
 
+def merge_promoted(existing: PromotedTools | None, new: PromotedTools | None) -> PromotedTools | None:
+    """Reducer for deferred-tool promotions, scoped by catalog hash."""
+    if not new:
+        return existing
+    if existing is None or existing.get("catalog_hash") != new["catalog_hash"]:
+        return {
+            "catalog_hash": new["catalog_hash"],
+            "names": list(dict.fromkeys(new["names"])),
+        }
+    return {
+        "catalog_hash": existing["catalog_hash"],
+        "names": list(dict.fromkeys(existing["names"] + new["names"])),
+    }
+
+
 class ThreadState(AgentState):
-    sandbox: NotRequired[SandboxState | None]
+    sandbox: Annotated[NotRequired[SandboxState | None], merge_sandbox]
     thread_data: NotRequired[ThreadDataState | None]
     title: NotRequired[str | None]
     artifacts: Annotated[list[str], merge_artifacts]
     todos: NotRequired[list | None]
     uploaded_files: NotRequired[list[dict] | None]
     viewed_images: Annotated[dict[str, ViewedImageData], merge_viewed_images]  # image_path -> {base64, mime_type}
+    promoted: Annotated[PromotedTools | None, merge_promoted]

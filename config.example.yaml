@@ -12,13 +12,27 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 7
+config_version: 11
 
 # ============================================================================
 # Logging
 # ============================================================================
 # Log level for deerflow modules (debug/info/warning/error)
 log_level: info
+
+# ============================================================================
+# Uploads
+# ============================================================================
+# App-level upload limits enforced by the Gateway. Nginx may impose an
+# additional client_max_body_size; the effective total upload limit is the
+# stricter of these values.
+uploads:
+  max_files: 10
+  max_file_size: 50MiB
+  max_total_size: 100MiB
+  # Host-side Office/PDF conversion is disabled by default because it parses
+  # untrusted user uploads on the Gateway host. Enable only in trusted deployments.
+  auto_convert_documents: false
 
 # ============================================================================
 # Token Usage Tracking
@@ -261,6 +275,10 @@ tools:
   #   group: web
   #   use: deerflow.community.ddg_search.tools:web_search_tool
   #   max_results: 5
+  #   # Optional DDGS controls: backend can be "auto", "duckduckgo", "brave", "wikipedia", or comma-separated.
+  #   region: wt-wt
+  #   safesearch: moderate
+  #   backend: auto
 
   # Web search tool (uses Serper - Google Search API, requires SERPER_API_KEY)
   # Serper provides real-time Google Search results. Sign up at https://serper.dev
@@ -271,6 +289,22 @@ tools:
   #   use: deerflow.community.serper.tools:web_search_tool
   #   max_results: 5
   #   # api_key: $SERPER_API_KEY  # Optional if SERPER_API_KEY env var is set
+
+  # Web search tool (uses official Brave Search API, requires BRAVE_SEARCH_API_KEY)
+  # - name: web_search
+  #   group: web
+  #   use: deerflow.community.brave.tools:web_search_tool
+  #   max_results: 5
+  #   api_key: $BRAVE_SEARCH_API_KEY
+
+  # Web search tool (uses a self-hosted SearXNG instance)
+  # - name: web_search
+  #   group: web
+  #   use: deerflow.community.searxng.tools:web_search_tool
+  #   max_results: 5
+  #   base_url: http://localhost:8088
+  #   language: auto
+  #   categories: general
 
   # Web search tool (requires Tavily API key)
   - name: web_search
@@ -293,6 +327,21 @@ tools:
   #   group: web
   #   use: deerflow.community.jina_ai.tools:web_fetch_tool
   #   timeout: 10
+  #   # Optional proxy controls for locked-down environments.
+  #   # proxy: http://127.0.0.1:7890
+  #   trust_env: true
+
+  # Web fetch tool (uses Browserless headless Chrome for JS-rendered pages)
+  # When enabled, fetched pages include citationUrl/citationTitle/fetchedAt provenance before the page content.
+  # - name: web_fetch
+  #   group: web
+  #   use: deerflow.community.browserless.tools:web_fetch_tool
+  #   base_url: http://localhost:3032
+  #   # token: $BROWSERLESS_TOKEN
+  #   timeout_s: 30
+  #   wait_for_event: networkidle
+  #   wait_for_timeout_ms: 0
+  #   wait_for_selector: ""
 
   # Web fetch tool (uses InfoQuest)
   # When enabled, fetched pages should be treated as body-level evidence for citationUrl-backed claims.
@@ -456,6 +505,27 @@ tools:
 
 tool_search:
   enabled: true
+
+# ============================================================================
+# Tool Output Budget Configuration
+# ============================================================================
+# Oversized tool outputs are externalized into the thread outputs directory and
+# replaced with a preview so model context stays bounded. If persistent storage
+# is unavailable, the middleware falls back to head/tail truncation.
+
+tool_output:
+  enabled: true
+  externalize_min_chars: 12000
+  preview_head_chars: 2000
+  preview_tail_chars: 1000
+  fallback_max_chars: 30000
+  fallback_head_chars: 8000
+  fallback_tail_chars: 3000
+  storage_subdir: .tool-results
+  exempt_tools:
+    - read_file
+    - read_file_tool
+  tool_overrides: {}
 
 # ============================================================================
 # Permissions Configuration
@@ -781,6 +851,8 @@ subagents:
 #     # auto_approve_permissions: false  # Set to true to auto-approve ACP permission requests
 #     # env:                             # Optional: inject environment variables into the agent subprocess
 #     #   ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY  # $VAR resolves from host environment
+#     # Prefer env credentials or a single credentials file path over mounting
+#     # the full host ~/.claude directory into Docker containers.
 #
 #   codex:
 #     # Scientific Tumbleweed expects an ACP adapter here. The standard `codex` CLI does not
@@ -792,6 +864,7 @@ subagents:
 #     # auto_approve_permissions: false  # Set to true to auto-approve ACP permission requests
 #     # env:                             # Optional: inject environment variables into the agent subprocess
 #     #   OPENAI_API_KEY: $OPENAI_API_KEY  # $VAR resolves from host environment
+#     #   CODEX_AUTH_PATH: $CODEX_AUTH_PATH  # Prefer a single auth file over mounting ~/.codex
 
 # ============================================================================
 # Skills Configuration
@@ -898,6 +971,10 @@ memory:
   fact_confidence_threshold: 0.7 # Minimum confidence for storing facts
   injection_enabled: true # Whether to inject memory into system prompt
   max_injection_tokens: 2000 # Maximum tokens for memory injection
+  # Token counting strategy for memory-injection budgeting:
+  #   tiktoken - more accurate, may download encoding data on first use.
+  #   char - network-free CJK-aware character estimate, never touches tiktoken.
+  token_counting: tiktoken
 
 # ============================================================================
 # Circuit Breaker Configuration

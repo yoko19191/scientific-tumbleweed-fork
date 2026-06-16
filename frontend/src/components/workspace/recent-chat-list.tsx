@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { resetThreadChatAfterDelete } from "@/components/workspace/chats/use-thread-chat";
 import { getAPIClient } from "@/core/api";
 import { useAuth } from "@/core/auth/AuthProvider";
 import type { User } from "@/core/auth/types";
@@ -51,8 +52,8 @@ import {
 } from "@/core/threads/export";
 import {
   useDeleteThread,
+  useInfiniteThreads,
   useRenameThread,
-  useThreads,
 } from "@/core/threads/hooks";
 import type { AgentThread, AgentThreadState } from "@/core/threads/types";
 import { pathOfThread, titleOfThread } from "@/core/threads/utils";
@@ -73,9 +74,36 @@ export function RecentChatList() {
       thread_id: string;
       agent_name?: string;
     }>();
-  const { data: threads = [] } = useThreads();
+  const {
+    data: infiniteThreads,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteThreads();
+  const threads = useMemo(
+    () => infiniteThreads?.pages.flat() ?? [],
+    [infiniteThreads],
+  );
   const { mutate: deleteThread } = useDeleteThread();
   const { mutate: renameThread } = useRenameThread();
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const element = sentinelRef.current;
+    if (!element || !hasNextPage) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          void fetchNextPage();
+        }
+      },
+      { rootMargin: "120px 0px 120px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   // Rename dialog state
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -83,24 +111,41 @@ export function RecentChatList() {
   const [renameValue, setRenameValue] = useState("");
 
   const handleDelete = useCallback(
-    (threadId: string) => {
-      deleteThread({ threadId });
-      if (threadId === threadIdFromPath) {
-        const threadIndex = threads.findIndex((t) => t.thread_id === threadId);
-        let nextThreadPath = pathOfThread("new", {
-          agent_name: agentNameFromPath,
-        });
-        if (threadIndex > -1) {
-          if (threads[threadIndex + 1]) {
-            nextThreadPath = pathOfThread(threads[threadIndex + 1]!);
-          } else if (threads[threadIndex - 1]) {
-            nextThreadPath = pathOfThread(threads[threadIndex - 1]!);
-          }
-        }
-        void router.push(nextThreadPath);
-      }
+    (thread: AgentThread) => {
+      const currentPathname =
+        typeof window === "undefined" ? pathname : window.location.pathname;
+      const threadPath = pathOfThread(thread);
+      const nextThreadPath = pathOfThread("new", {
+        agent_name: agentNameFromPath,
+      });
+      const isNewThreadPath = currentPathname === nextThreadPath;
+      const isCurrentThread =
+        thread.thread_id === threadIdFromPath ||
+        threadPath === currentPathname ||
+        (isNewThreadPath && threads[0]?.thread_id === thread.thread_id);
+
+      deleteThread({
+        threadId: thread.thread_id,
+        onRemoteDeleted: isCurrentThread
+          ? () => {
+              resetThreadChatAfterDelete({
+                deletedThreadId: thread.thread_id,
+                nextPath: nextThreadPath,
+                force: true,
+              });
+              void router.replace(nextThreadPath);
+            }
+          : undefined,
+      });
     },
-    [agentNameFromPath, deleteThread, router, threadIdFromPath, threads],
+    [
+      agentNameFromPath,
+      deleteThread,
+      pathname,
+      router,
+      threadIdFromPath,
+      threads,
+    ],
   );
 
   const handleRenameClick = useCallback(
@@ -252,7 +297,7 @@ export function RecentChatList() {
                               </DropdownMenuSub>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
-                                onSelect={() => handleDelete(thread.thread_id)}
+                                onSelect={() => handleDelete(thread)}
                               >
                                 <Trash2 className="text-muted-foreground" />
                                 <span>{t.common.delete}</span>
@@ -265,6 +310,26 @@ export function RecentChatList() {
                   </SidebarMenuItem>
                 );
               })}
+              {hasNextPage && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mx-2 my-1 w-[calc(100%-1rem)] justify-center text-xs"
+                    onClick={() => void fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                  >
+                    {isFetchingNextPage
+                      ? t.chats.loadingMore
+                      : t.chats.loadOlderChats}
+                  </Button>
+                  <div
+                    ref={sentinelRef}
+                    aria-hidden="true"
+                    className="h-px w-full"
+                  />
+                </>
+              )}
             </div>
           </SidebarMenu>
         </SidebarGroupContent>

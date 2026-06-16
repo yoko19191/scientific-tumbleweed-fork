@@ -115,10 +115,28 @@ export async function logout(): Promise<void> {
 export async function fetchCurrentUser(): Promise<User | null> {
   try {
     const res = await fetchWithAuth(`${AUTH_BASE()}/me`);
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
+    if (res.ok) return res.json();
+    if (res.status === 401 || res.status === 403) return null;
+    throw new AuthUnavailableError(res.status);
+  } catch (error) {
+    if (error instanceof AuthUnavailableError) {
+      throw error;
+    }
+    throw new AuthUnavailableError();
+  }
+}
+
+export class AuthUnavailableError extends Error {
+  status?: number;
+
+  constructor(status?: number) {
+    super(
+      status
+        ? `Auth service unavailable (${status})`
+        : "Auth service unavailable",
+    );
+    this.name = "AuthUnavailableError";
+    this.status = status;
   }
 }
 

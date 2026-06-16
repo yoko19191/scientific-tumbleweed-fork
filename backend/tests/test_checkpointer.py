@@ -1,6 +1,7 @@
 """Unit tests for checkpointer config and singleton factory."""
 
 import sys
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -284,6 +285,73 @@ class TestAsyncCheckpointer:
         assert called_fn.__name__ == "ensure_sqlite_parent_dir"
         assert called_path == "/tmp/resolved/test.db"
         mock_saver_cls.from_conn_string.assert_called_once_with("/tmp/resolved/test.db")
+        mock_saver.setup.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_postgres_uses_checked_pool_with_keepalives(self):
+        """Async Postgres setup should use a checked connection pool."""
+        from deerflow.agents.checkpointer.async_provider import make_checkpointer
+
+        mock_config = MagicMock()
+        mock_config.checkpointer = CheckpointerConfig(
+            type="postgres",
+            connection_string="postgresql://localhost/db",
+        )
+
+        captured_pool_kwargs = {}
+        mock_check_connection = object()
+
+        class FakeAsyncConnectionPool:
+            check_connection = mock_check_connection
+
+            def __init__(self, *args, **kwargs):
+                captured_pool_kwargs["args"] = args
+                captured_pool_kwargs["kwargs"] = kwargs
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        mock_saver = MagicMock()
+        mock_saver.setup = AsyncMock()
+        mock_saver_cls = MagicMock(return_value=mock_saver)
+        mock_dict_row = object()
+
+        postgres_module = ModuleType("langgraph.checkpoint.postgres.aio")
+        postgres_module.AsyncPostgresSaver = mock_saver_cls
+        psycopg_rows_module = ModuleType("psycopg.rows")
+        psycopg_rows_module.dict_row = mock_dict_row
+        psycopg_pool_module = ModuleType("psycopg_pool")
+        psycopg_pool_module.AsyncConnectionPool = FakeAsyncConnectionPool
+
+        with (
+            patch("deerflow.agents.checkpointer.async_provider.get_app_config", return_value=mock_config),
+            patch.dict(
+                sys.modules,
+                {
+                    "langgraph.checkpoint.postgres.aio": postgres_module,
+                    "psycopg.rows": psycopg_rows_module,
+                    "psycopg_pool": psycopg_pool_module,
+                },
+            ),
+        ):
+            async with make_checkpointer() as saver:
+                assert saver is mock_saver
+
+        assert captured_pool_kwargs["args"] == ("postgresql://localhost/db",)
+        assert captured_pool_kwargs["kwargs"]["open"] is False
+        assert captured_pool_kwargs["kwargs"]["check"] is mock_check_connection
+        conn_kwargs = captured_pool_kwargs["kwargs"]["kwargs"]
+        assert conn_kwargs["autocommit"] is True
+        assert conn_kwargs["prepare_threshold"] == 0
+        assert conn_kwargs["row_factory"] is mock_dict_row
+        assert conn_kwargs["keepalives"] == 1
+        assert conn_kwargs["keepalives_idle"] == 30
+        assert conn_kwargs["keepalives_interval"] == 10
+        assert conn_kwargs["keepalives_count"] == 5
+        mock_saver_cls.assert_called_once()
         mock_saver.setup.assert_awaited_once()
 
 

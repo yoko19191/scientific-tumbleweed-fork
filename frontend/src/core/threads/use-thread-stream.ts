@@ -1,5 +1,6 @@
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import { useStream } from "@langchain/langgraph-sdk/react";
+import type { InfiniteData } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -21,6 +22,11 @@ import { createThread } from "./api";
 import { getRunMetadataStorage, getStreamErrorMessage } from "./stream-utils";
 import { threadTokenUsageQueryKey } from "./token-usage";
 import type { AgentThread, AgentThreadState } from "./types";
+import {
+  INFINITE_THREADS_QUERY_KEY_PREFIX,
+  mapInfiniteThreadsCache,
+  upsertThreadInInfiniteCache,
+} from "./use-threads";
 
 export type ToolEndEvent = {
   name: string;
@@ -163,6 +169,20 @@ export function useThreadStream({
     onCreated(meta) {
       handleStreamStart(meta.thread_id);
       setOnStreamThreadId(meta.thread_id);
+      const now = new Date().toISOString();
+      upsertThreadInInfiniteCache(queryClient, {
+        thread_id: meta.thread_id,
+        created_at: now,
+        updated_at: now,
+        metadata: context.agent_name ? { agent_name: context.agent_name } : {},
+        status: "busy",
+        values: {
+          title: t.pages.newChat,
+          messages: [],
+          artifacts: [],
+        },
+        interrupts: {},
+      });
       // Custom: bind thread to current user (tenant isolation)
       fetchWithAuth(`${getBackendBaseURL()}/api/threads/bindUser`, {
         method: "POST",
@@ -216,6 +236,24 @@ export function useThreadStream({
               });
             },
           );
+          void queryClient.setQueriesData<InfiniteData<AgentThread[]>>(
+            {
+              queryKey: INFINITE_THREADS_QUERY_KEY_PREFIX,
+              exact: false,
+            },
+            (oldData) =>
+              mapInfiniteThreadsCache(oldData, (t) =>
+                t.thread_id === threadIdRef.current
+                  ? {
+                      ...t,
+                      values: {
+                        ...t.values,
+                        title: cleanedTitle,
+                      },
+                    }
+                  : t,
+              ),
+          );
         }
       }
     },
@@ -263,6 +301,9 @@ export function useThreadStream({
       listeners.current.onFinish?.(state.values);
       pendingUsageBaselineMessageIdsRef.current = new Set();
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      void queryClient.invalidateQueries({
+        queryKey: INFINITE_THREADS_QUERY_KEY_PREFIX,
+      });
       if (threadIdRef.current && !isMock) {
         void queryClient.invalidateQueries({
           queryKey: threadTokenUsageQueryKey(threadIdRef.current),
@@ -523,6 +564,9 @@ export function useThreadStream({
           },
         );
         void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+        void queryClient.invalidateQueries({
+          queryKey: INFINITE_THREADS_QUERY_KEY_PREFIX,
+        });
       } catch (error) {
         setOptimisticMessages([]);
         setIsUploading(false);

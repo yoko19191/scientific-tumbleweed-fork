@@ -5,7 +5,10 @@ import asyncio
 import pytest
 from langchain.agents.middleware import AgentMiddleware
 from langchain.tools import ToolRuntime
+from langchain_core.messages import ToolMessage
+from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
+from langgraph.types import Command
 
 from deerflow.sandbox.middleware import SandboxMiddleware
 from deerflow.sandbox.sandbox import Sandbox
@@ -222,3 +225,118 @@ async def test_aafter_agent_delegates_to_super_when_no_sandbox(monkeypatch: pyte
 
     assert result == {"delegated": True}
     assert calls == [(state, runtime)]
+
+
+def _make_tool_call_request(state: dict) -> ToolCallRequest:
+    runtime = ToolRuntime(
+        state=state,
+        context={},
+        config={"configurable": {}},
+        stream_writer=lambda _: None,
+        tool_call_id="call-1",
+        store=None,
+    )
+    return ToolCallRequest(
+        tool_call={"id": "call-1", "name": "bash", "args": {}},
+        tool=None,
+        state=state,
+        runtime=runtime,
+    )
+
+
+def test_wrap_tool_call_emits_command_when_lazy_init_happens() -> None:
+    middleware = SandboxMiddleware()
+    state: dict = {}
+    request = _make_tool_call_request(state)
+
+    def handler(req: ToolCallRequest) -> ToolMessage:
+        req.runtime.state["sandbox"] = {"sandbox_id": "new-sandbox"}
+        return ToolMessage(content="ok", tool_call_id="call-1", name="bash")
+
+    result = middleware.wrap_tool_call(request, handler)
+
+    assert isinstance(result, Command)
+    assert isinstance(result.update, dict)
+    assert result.update["sandbox"] == {"sandbox_id": "new-sandbox"}
+    assert len(result.update["messages"]) == 1
+    assert result.update["messages"][0].content == "ok"
+
+
+def test_wrap_tool_call_passthrough_when_sandbox_already_in_state() -> None:
+    middleware = SandboxMiddleware()
+    state: dict = {"sandbox": {"sandbox_id": "existing"}}
+    request = _make_tool_call_request(state)
+    original = ToolMessage(content="ok", tool_call_id="call-1", name="bash")
+
+    result = middleware.wrap_tool_call(request, lambda _req: original)
+
+    assert result is original
+
+
+def test_wrap_tool_call_passthrough_when_handler_did_not_initialize_sandbox() -> None:
+    middleware = SandboxMiddleware()
+    state: dict = {}
+    request = _make_tool_call_request(state)
+    original = ToolMessage(content="ok", tool_call_id="call-1", name="bash")
+
+    result = middleware.wrap_tool_call(request, lambda _req: original)
+
+    assert result is original
+
+
+def test_wrap_tool_call_merges_existing_command_update_and_preserves_fields() -> None:
+    middleware = SandboxMiddleware()
+    state: dict = {}
+    request = _make_tool_call_request(state)
+
+    def handler(req: ToolCallRequest) -> Command:
+        req.runtime.state["sandbox"] = {"sandbox_id": "new-sandbox"}
+        return Command(
+            update={"existing_key": "existing_value"},
+            graph="parent",
+            goto="next-node",
+            resume="resume-token",
+        )
+
+    result = middleware.wrap_tool_call(request, handler)
+
+    assert isinstance(result, Command)
+    assert result.update == {
+        "existing_key": "existing_value",
+        "sandbox": {"sandbox_id": "new-sandbox"},
+    }
+    assert result.graph == "parent"
+    assert result.goto == "next-node"
+    assert result.resume == "resume-token"
+
+
+def test_wrap_tool_call_does_not_override_non_dict_update() -> None:
+    middleware = SandboxMiddleware()
+    state: dict = {}
+    request = _make_tool_call_request(state)
+    command = Command(update=[("messages", [ToolMessage(content="x", tool_call_id="call-1", name="bash")])])
+
+    def handler(req: ToolCallRequest) -> Command:
+        req.runtime.state["sandbox"] = {"sandbox_id": "new-sandbox"}
+        return command
+
+    result = middleware.wrap_tool_call(request, handler)
+
+    assert result is command
+
+
+@pytest.mark.anyio
+async def test_awrap_tool_call_emits_command_when_lazy_init_happens() -> None:
+    middleware = SandboxMiddleware()
+    state: dict = {}
+    request = _make_tool_call_request(state)
+
+    async def handler(req: ToolCallRequest) -> ToolMessage:
+        req.runtime.state["sandbox"] = {"sandbox_id": "async-sandbox"}
+        return ToolMessage(content="ok", tool_call_id="call-1", name="bash")
+
+    result = await middleware.awrap_tool_call(request, handler)
+
+    assert isinstance(result, Command)
+    assert isinstance(result.update, dict)
+    assert result.update["sandbox"] == {"sandbox_id": "async-sandbox"}

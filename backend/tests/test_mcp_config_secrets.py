@@ -7,14 +7,22 @@ preserves existing secrets when the frontend round-trips masked values.
 
 from __future__ import annotations
 
-import pytest
+import json
+from types import SimpleNamespace
 
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.gateway.routers import mcp as mcp_router_module
 from app.gateway.routers.mcp import (
     McpOAuthConfigResponse,
     McpServerConfigResponse,
     _mask_server_config,
     _merge_preserving_secrets,
 )
+from deerflow.config.extensions_config import ExtensionsConfig, reset_extensions_config, set_extensions_config
+from deerflow.storage import user_extensions_override_key
 
 # ---------------------------------------------------------------------------
 # _mask_server_config
@@ -303,3 +311,113 @@ def test_roundtrip_mask_then_merge_preserves_original_secrets():
     assert restored.oauth.refresh_token == "refresh-abc"
     # Non-secret fields from the update are preserved
     assert restored.description == "GitHub MCP server"
+
+
+@pytest.fixture
+def mcp_endpoint_client(monkeypatch):
+    storage: dict[str, bytes] = {}
+
+    class FakeAsyncOperator:
+        async def read(self, key: str) -> bytes:
+            if key not in storage:
+                raise FileNotFoundError(key)
+            return storage[key]
+
+        async def write(self, key: str, payload: bytes) -> None:
+            storage[key] = bytes(payload)
+
+    set_extensions_config(
+        ExtensionsConfig.from_dict(
+            {
+                "mcpServers": {
+                    "github": {
+                        "enabled": True,
+                        "type": "http",
+                        "url": "https://mcp.example.com",
+                        "env": {"GITHUB_TOKEN": "ghp_real_secret"},
+                        "headers": {"Authorization": "Bearer real"},
+                        "oauth": {
+                            "token_url": "https://auth.example.com/token",
+                            "client_id": "client-id",
+                            "client_secret": "client-secret",
+                            "refresh_token": "refresh-token",
+                        },
+                    }
+                },
+                "skills": {"demo-skill": {"enabled": True}},
+            }
+        )
+    )
+    monkeypatch.setattr("deerflow.storage.get_async_operator", lambda: FakeAsyncOperator())
+
+    async def _optional_user(_request):
+        return SimpleNamespace(id="user-a")
+
+    monkeypatch.setattr(mcp_router_module, "get_optional_user_from_request", _optional_user)
+
+    app = FastAPI()
+    app.include_router(mcp_router_module.router)
+    app.dependency_overrides[mcp_router_module.get_current_user_id] = lambda: "user-a"
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client, storage
+
+    app.dependency_overrides.clear()
+    reset_extensions_config()
+
+
+def test_get_mcp_config_masks_endpoint_secrets(mcp_endpoint_client):
+    client, _storage = mcp_endpoint_client
+
+    response = client.get("/api/mcp/config")
+
+    assert response.status_code == 200
+    server = response.json()["mcp_servers"]["github"]
+    assert server["env"] == {"GITHUB_TOKEN": "***"}
+    assert server["headers"] == {"Authorization": "***"}
+    assert server["oauth"]["client_secret"] is None
+    assert server["oauth"]["refresh_token"] is None
+    assert server["url"] == "https://mcp.example.com"
+
+
+def test_global_mcp_config_put_is_forbidden(mcp_endpoint_client):
+    client, storage = mcp_endpoint_client
+
+    response = client.put("/api/mcp/config", json={"mcp_servers": {}})
+
+    assert response.status_code == 403
+    assert storage == {}
+
+
+def test_per_user_mcp_toggle_writes_only_enabled_override(mcp_endpoint_client):
+    client, storage = mcp_endpoint_client
+    key = user_extensions_override_key("user-a")
+    storage[key] = json.dumps(
+        {
+            "skills": {"demo-skill": {"enabled": False}},
+            "mcpServers": {"github": {"enabled": True, "env": {"GITHUB_TOKEN": "attempted-injection"}}},
+        }
+    ).encode("utf-8")
+
+    response = client.put("/api/mcp/servers/github/enabled", json={"enabled": False})
+
+    assert response.status_code == 200
+    assert response.json() == {"success": True, "name": "github", "enabled": False}
+    saved = json.loads(storage[key].decode("utf-8"))
+    assert saved == {
+        "skills": {"demo-skill": {"enabled": False}},
+        "mcpServers": {"github": {"enabled": False}},
+    }
+
+    effective = client.get("/api/mcp/config").json()["mcp_servers"]["github"]
+    assert effective["enabled"] is False
+    assert effective["env"] == {"GITHUB_TOKEN": "***"}
+
+
+def test_per_user_mcp_toggle_unknown_server_is_404(mcp_endpoint_client):
+    client, storage = mcp_endpoint_client
+
+    response = client.put("/api/mcp/servers/unknown/enabled", json={"enabled": False})
+
+    assert response.status_code == 404
+    assert storage == {}

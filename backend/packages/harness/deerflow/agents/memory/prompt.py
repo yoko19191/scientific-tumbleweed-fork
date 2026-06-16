@@ -1,8 +1,15 @@
 """Prompt templates for memory update and injection."""
 
+from __future__ import annotations
+
+import logging
 import math
 import re
-from typing import Any
+import threading
+import time
+from typing import Any, cast
+
+logger = logging.getLogger(__name__)
 
 try:
     import tiktoken
@@ -160,26 +167,94 @@ Rules:
 Return ONLY valid JSON."""
 
 
-def _count_tokens(text: str, encoding_name: str = "cl100k_base") -> int:
-    """Count tokens in text using tiktoken.
+# Module-level tiktoken encoding cache. Populated lazily on first use;
+# subsequent successful calls are a dict lookup. Failed loads and in-flight
+# loads are remembered too, so network-restricted deployments do not keep
+# spawning blocking BPE downloads on every memory injection.
+_TIKTOKEN_ENCODING_MISSING = object()
+_TIKTOKEN_ENCODING_LOADING = object()
+_TIKTOKEN_RETRY_COOLDOWN_S = 600.0
+_tiktoken_encoding_cache: dict[str, Any] = {}
+_tiktoken_encoding_cache_lock = threading.Lock()
+
+
+def _get_tiktoken_encoding(encoding_name: str = "cl100k_base") -> tiktoken.Encoding | None:
+    """Return a cached tiktoken encoding, or ``None`` on failure / unavailability.
+
+    The first tiktoken load may download BPE data from a public endpoint. Callers
+    on an asyncio path should run this off the event loop or use char mode.
+    """
+    if not TIKTOKEN_AVAILABLE:
+        return None
+
+    with _tiktoken_encoding_cache_lock:
+        cached = _tiktoken_encoding_cache.get(encoding_name, _TIKTOKEN_ENCODING_MISSING)
+        if cached is _TIKTOKEN_ENCODING_LOADING:
+            return None
+        if isinstance(cached, tuple):
+            _none_value, failed_at = cached
+            if time.monotonic() - failed_at < _TIKTOKEN_RETRY_COOLDOWN_S:
+                return None
+            cached = _TIKTOKEN_ENCODING_MISSING
+        if cached is not _TIKTOKEN_ENCODING_MISSING:
+            return cast("tiktoken.Encoding", cached)
+        _tiktoken_encoding_cache[encoding_name] = _TIKTOKEN_ENCODING_LOADING
+
+    try:
+        encoding = tiktoken.get_encoding(encoding_name)
+    except Exception:
+        logger.warning(
+            "Failed to load tiktoken encoding %r; falling back to char-based estimation",
+            encoding_name,
+            exc_info=True,
+        )
+        with _tiktoken_encoding_cache_lock:
+            _tiktoken_encoding_cache[encoding_name] = (None, time.monotonic())
+        return None
+
+    with _tiktoken_encoding_cache_lock:
+        _tiktoken_encoding_cache[encoding_name] = encoding
+    return encoding
+
+
+def _char_based_token_estimate(text: str) -> int:
+    """Network-free token estimate with denser accounting for CJK text."""
+    cjk = sum(
+        1
+        for ch in text
+        if "\u4e00" <= ch <= "\u9fff"
+        or "\u3040" <= ch <= "\u30ff"
+        or "\uac00" <= ch <= "\ud7a3"
+    )
+    return (len(text) - cjk) // 4 + cjk // 2
+
+
+def _count_tokens(text: str, encoding_name: str = "cl100k_base", *, use_tiktoken: bool = True) -> int:
+    """Count tokens in text using tiktoken or a network-free char estimate.
 
     Args:
         text: The text to count tokens for.
         encoding_name: The encoding to use (default: cl100k_base for GPT-4/3.5).
+        use_tiktoken: When ``False``, do not touch tiktoken at all.
 
     Returns:
         The number of tokens in the text.
     """
-    if not TIKTOKEN_AVAILABLE:
-        # Fallback to character-based estimation if tiktoken is not available
-        return len(text) // 4
+    if not use_tiktoken:
+        return _char_based_token_estimate(text)
 
+    encoding = _get_tiktoken_encoding(encoding_name)
+    if encoding is None:
+        return _char_based_token_estimate(text)
     try:
-        encoding = tiktoken.get_encoding(encoding_name)
         return len(encoding.encode(text))
     except Exception:
-        # Fallback to character-based estimation on error
-        return len(text) // 4
+        return _char_based_token_estimate(text)
+
+
+def warm_tiktoken_cache() -> bool:
+    """Pre-warm the tiktoken encoding cache off the event loop at startup."""
+    return _get_tiktoken_encoding("cl100k_base") is not None
 
 
 def _coerce_confidence(value: Any, default: float = 0.0) -> float:
@@ -198,12 +273,13 @@ def _coerce_confidence(value: Any, default: float = 0.0) -> float:
     return max(0.0, min(1.0, confidence))
 
 
-def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2000) -> str:
+def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2000, *, use_tiktoken: bool = True) -> str:
     """Format memory data for injection into system prompt.
 
     Args:
         memory_data: The memory data dictionary.
-        max_tokens: Maximum tokens to use (counted via tiktoken for accuracy).
+        max_tokens: Maximum tokens to use.
+        use_tiktoken: When ``False``, use the network-free char estimate.
 
     Returns:
         Formatted memory string for system prompt injection.
@@ -265,10 +341,14 @@ def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2
         # Compute token count for existing sections once, then account
         # incrementally for each fact line to avoid full-string re-tokenization.
         base_text = "\n\n".join(sections)
-        base_tokens = _count_tokens(base_text) if base_text else 0
+        base_tokens = _count_tokens(base_text, use_tiktoken=use_tiktoken) if base_text else 0
         # Account for the separator between existing sections and the facts section.
         facts_header = "Facts:\n"
-        separator_tokens = _count_tokens("\n\n" + facts_header) if base_text else _count_tokens(facts_header)
+        separator_tokens = (
+            _count_tokens("\n\n" + facts_header, use_tiktoken=use_tiktoken)
+            if base_text
+            else _count_tokens(facts_header, use_tiktoken=use_tiktoken)
+        )
         running_tokens = base_tokens + separator_tokens
 
         fact_lines: list[str] = []
@@ -289,7 +369,7 @@ def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2
 
             # Each additional line is preceded by a newline (except the first).
             line_text = ("\n" + line) if fact_lines else line
-            line_tokens = _count_tokens(line_text)
+            line_tokens = _count_tokens(line_text, use_tiktoken=use_tiktoken)
 
             if running_tokens + line_tokens <= max_tokens:
                 fact_lines.append(line)
@@ -305,8 +385,7 @@ def format_memory_for_injection(memory_data: dict[str, Any], max_tokens: int = 2
 
     result = "\n\n".join(sections)
 
-    # Use accurate token counting with tiktoken
-    token_count = _count_tokens(result)
+    token_count = _count_tokens(result, use_tiktoken=use_tiktoken)
     if token_count > max_tokens:
         # Truncate to fit within token limit
         # Estimate characters to remove based on token ratio

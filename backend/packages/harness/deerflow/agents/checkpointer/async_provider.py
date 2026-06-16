@@ -64,13 +64,30 @@ async def _async_checkpointer(config) -> AsyncIterator[Checkpointer]:
     if config.type == "postgres":
         try:
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            from psycopg.rows import dict_row
+            from psycopg_pool import AsyncConnectionPool
         except ImportError as exc:
             raise ImportError(POSTGRES_INSTALL) from exc
 
         if not config.connection_string:
             raise ValueError(POSTGRES_CONN_REQUIRED)
 
-        async with AsyncPostgresSaver.from_conn_string(config.connection_string) as saver:
+        pool = AsyncConnectionPool(
+            config.connection_string,
+            open=False,
+            check=AsyncConnectionPool.check_connection,
+            kwargs={
+                "autocommit": True,
+                "prepare_threshold": 0,
+                "row_factory": dict_row,
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 5,
+            },
+        )
+        async with pool:
+            saver = AsyncPostgresSaver(pool)
             await saver.setup()
             yield saver
         return
